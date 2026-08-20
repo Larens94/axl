@@ -1,33 +1,52 @@
-# AXL V0.1 — Core specification
+# AXL V0.2 — Core specification
 
-AXL (Agent eXecution Language) is a compact, deterministic language for agentic programs. The V0.1 reference interpreter proves the pipeline:
+AXL (Agent eXecution Language) is a compact, deterministic language for agentic programs.
 
 ```text
 AXL source → parser → typed IR → interpreter → result
+                                      ↓
+                              explicit tool registry
 ```
 
 ## Grammar
 
 ```ebnf
 program      = { instruction } ;
-instruction  = memory_write | memory_recall | emit ;
-memory_write = "memory", identifier, "=", string ;
-memory_recall= "let", identifier, "=", "recall", identifier ;
-emit         = "emit", identifier ;
+instruction  = memory_write | binding | emit | conditional ;
+memory_write = "memory", identifier, "=", expression ;
+binding      = "let", identifier, "=", expression ;
+emit         = "emit", expression ;
+conditional  = "if", expression, { instruction },
+               [ "else", { instruction } ], "end" ;
+expression   = primary, { operator, primary } ;
+primary      = string | integer | boolean | identifier |
+               "recall", identifier | tool_call |
+               "(", expression, ")" ;
+tool_call    = "call", identifier, "(", [ expression,
+               { ",", expression } ], ")" ;
+operator     = "+" | "-" | "*" | "/" |
+               "==" | "!=" | ">" | "<" | ">=" | "<=" ;
+boolean      = "true" | "false" ;
 identifier   = (letter | "_"), { letter | digit | "_" } ;
-string       = '"', { character - '"' - "\\" }, '"' ;
 ```
 
-Blank lines and lines beginning with `#` are ignored.
+Blank lines and lines beginning with `#` are ignored. Multiplication and division bind before addition and subtraction; comparisons bind last.
 
 ## Semantics
 
-- `memory key = "value"`: writes string data to execution memory.
-- `let target = recall key`: recalls memory into a local binding.
-- `emit target`: appends a local binding to deterministic output.
-- Unknown instructions are parse errors carrying their source line.
-- Missing memories are runtime errors; no implicit value is invented.
+- Values currently include strings, integers, and booleans.
+- `memory key = expression` writes a typed value to execution memory.
+- `recall key` reads memory and fails explicitly if absent.
+- `let name = expression` creates or replaces a local binding.
+- `emit expression` appends a typed value to deterministic output.
+- `if` requires a boolean and executes exactly one selected branch.
+- `call tool(args)` invokes only a host-registered tool. Unknown tools are denied by default.
+- Parse and runtime failures never invent fallback values.
 
-## Next compatibility boundary
+## Runtime boundary
 
-Syntax is user-facing. Typed IR is the stable runtime boundary. Future optimized Rust/WASM runtimes should consume equivalent IR rather than reimplement language semantics ad hoc.
+Syntax is user-facing. Typed IR is the stable runtime boundary. A future optimized Rust/WASM runtime should consume equivalent IR rather than reimplement semantics ad hoc.
+
+## Security baseline
+
+The language has no implicit filesystem, network, shell, model, or secret access. Capabilities enter through the explicit tool registry. Policy and approval metadata will extend this boundary in later versions.

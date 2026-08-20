@@ -1,0 +1,11 @@
+# AXL V0.2
+memory threshold = 10
+let score = 2 + 3 * 4
+
+if score >= recall threshold
+    emit "ready"
+else
+    emit "blocked"
+end
+
+emit score

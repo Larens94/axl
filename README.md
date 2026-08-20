@@ -1,26 +1,29 @@
 # AXL — Agent eXecution Language
 
-Initial executable implementation of a compact agent-native programming language.
+Executable reference implementation of a compact agent-native programming language.
 
-## Current milestone
+## V0.2 milestone
 
-- deterministic parser;
-- typed intermediate representation;
-- memory write/recall operations;
-- output primitive;
-- reference interpreter;
+- deterministic parser and typed IR;
+- typed strings, integers, and booleans;
+- arithmetic and comparison expressions;
+- `if/else/end` control flow;
+- typed memory write and recall;
+- explicit `call tool(...)` capability registry;
+- deny-by-default unknown tools;
 - CLI and automated tests.
 
 ## Run
 
 ```bash
-python3 -m axl run examples/hello.axl
+python3 -m axl run examples/decision.axl
 ```
 
 Expected output:
 
 ```text
-short
+ready
+14
 ```
 
 ## Test
@@ -31,6 +34,6 @@ python3 -m unittest discover -s tests -v
 
 ## Direction
 
-V0.1 is intentionally small. Planned layers: values and expressions, agents/tools, policy gates, workflows, adapter-based persistent memory, serialized IR, then an optimized Rust/WASM runtime.
+Next layers: loops with execution budgets, persistent memory adapters, tool policies/approvals, agent declarations, workflows, serialized IR, then an optimized Rust/WASM runtime.
 
 See [SPEC.md](SPEC.md) for normative syntax and semantics.
