@@ -4,6 +4,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
+from .compact import program_to_compact
 from .compiler import CompileError, compile_file
 from .interpreter import Interpreter, RuntimeError
 from .memory import SQLiteMemoryStore
@@ -93,6 +94,10 @@ def main(argv: list[str] | None = None) -> int:
     compile_command.add_argument("file", type=Path)
     compile_command.add_argument("-o", "--output", type=Path, required=True)
 
+    pack = commands.add_parser("pack", help="normalize source to canonical compact AXL")
+    pack.add_argument("file", type=Path)
+    pack.add_argument("-o", "--output", type=Path, required=True)
+
     execute = commands.add_parser("exec", help="execute versioned JSON IR")
     execute.add_argument("file", type=Path)
     _runtime_options(execute)
@@ -104,6 +109,12 @@ def main(argv: list[str] | None = None) -> int:
             validate(program)
             typecheck(program)
             args.output.write_text(program_to_json(program) + "\n", encoding="utf-8")
+            return 0
+        if args.command == "pack":
+            program = compile_file(args.file)
+            validate(program)
+            typecheck(program)
+            args.output.write_text(program_to_compact(program) + "\n", encoding="utf-8")
             return 0
         if args.command == "run":
             return _execute(compile_file(args.file), args)

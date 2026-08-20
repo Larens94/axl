@@ -1,6 +1,7 @@
 # Glossario
 
-- **AXL — Agent eXecution Language:** linguaggio general-purpose agent-native completo.
+- **AXL Compact Source:** stream sorgente canonico a opcode, ottimizzato per agenti e token.
+- **AXL legacy frontend:** sintassi keyword-based temporanea per migrazione/debug.
 - **AX-IR:** famiglia di rappresentazioni intermedie tipizzate e versionate di AXL.
 - **AX-HIR:** futura IR di alto livello, vicina alla semantica AXL.
 - **AX-MIR:** futura IR abbassata per VM, ottimizzazione e code generation.

@@ -1,122 +1,127 @@
-# AXL 1.1 development specification
+# AXL 2 compact-source development specification
 
-## Execution model
+## 1. Identità e obiettivo
 
-AXL programs compile into validated, typed IR. Declarations are inert. `run <name>` invokes a declared agent or workflow sequentially. Runtime effects occur only through memory adapters and explicitly registered tools.
+AXL — Agent eXecution Language — è un linguaggio general-purpose progettato esclusivamente per agenti software. Non ottimizza la leggibilità umana: ottimizza token, determinismo, generazione, validazione, hashing e correzione automatica.
 
-## Grammar
+AXL deve poter esprimere qualsiasi categoria di software. Rust è il primo runtime/backend di basso livello, non il solo target. Bridge e backend versionati devono permettere native, server, browser/WASM, desktop, mobile, GPU, sistemi operativi e future piattaforme senza cambiare la semantica sorgente.
 
-```ebnf
-source       = { import }, program ;
-import       = "import", id, "from", string ;
-program      = { instruction } ;
-instruction  = memory | forget | binding | return | emit | if | while |
-               function | agent | workflow | run ;
-memory       = "memory", id, "=", expression,
-               [ "meta", metadata, { metadata } ] ;
-metadata     = ("confidence" | "ttl" | "source"), "=", value ;
-forget       = "forget", id ;
-binding      = "let", id, [ ":", type ], "=", expression ;
-return       = "return", expression ;
-function     = "fn", id, "(", [ parameter, { ",", parameter } ], ")",
-               "->", type, block, "end" ;
-parameter    = id, ":", type ;
-type         = "int" | "string" | "bool" ;
-emit         = "emit", expression ;
-if           = "if", expression, block, [ "else", block ], "end" ;
-while        = "while", expression, block, "end" ;
-agent        = "agent", id, [ "uses", id, { ",", id } ], block, "end" ;
-workflow     = "workflow", id, block, "end" ;
-run          = "run", id ;
-expression   = primary, { operator, primary } ;
-primary      = string | integer | boolean | id | "recall", id |
-               id, "(", [ expression, { ",", expression } ], ")" |
-               "call", id, "(", [ expression, { ",", expression } ], ")" |
-               "(", expression, ")" ;
-operator     = "+" | "-" | "*" | "/" | "==" | "!=" |
-               ">" | "<" | ">=" | "<=" ;
+## 2. Pipeline
+
+```text
+AXL Compact Source 2
+→ parser deterministico
+→ AST/AX-HIR tipizzata
+→ validazione + type-check
+→ AX-MIR
+→ runtime/compiler backend
+→ Rust/native | VM | WASM | bridge piattaforma
 ```
 
-Blank lines and full-line `#` comments are ignored. Reserved words cannot be identifiers.
+La reference implementation Python definisce oggi la semantica e il corpus di conformità. Non è il runtime finale.
 
-Imports are compiler directives and do not survive into AX-IR. Paths resolve relative to the importing source. Aliases create qualified function namespaces. Duplicate aliases, import cycles and effectful module top levels are compile errors.
+## 3. Sorgente canonico
 
-## Types and operators
+```ebnf
+source = "2", { ";", frame } ;
+frame  = opcode, { "|", field } ;
+```
 
-Values are exactly strings, integers, or booleans. Python coercions are forbidden.
+Le righe e l'indentazione non hanno significato. `;`, `|` e `,` sono separatori strutturali fuori dalle stringhe JSON. Il formato completo è normato in [`docs/compact-syntax.md`](docs/compact-syntax.md).
 
-- `+`: integer addition or string concatenation with identical types;
-- `-`, `*`, `/`, ordering: integers only;
-- `/`: division by zero and fractional results are errors;
-- equality: operands must have identical runtime types;
-- conditions: booleans only;
-- tool results outside the value set are runtime errors.
+### Opcode 2.0
 
-Functions declare typed parameters and one return type. Calls are checked before CLI execution; wrong arity, unknown functions, incompatible arguments, incompatible returns and missing returns are static errors. Every call receives an isolated local frame. Runtime call depth is bounded.
+| Opcode | Operazione |
+|---:|---|
+| 1 | import modulo |
+| 10 | binding |
+| 11 | return |
+| 12 | emit |
+| 20 | memory write |
+| 21 | forget |
+| 30 | if |
+| 31 | else |
+| 32 | while |
+| 40 | function |
+| 50 | agent |
+| 51 | workflow |
+| 52 | run |
+| 99 | end block |
 
-## Agents and workflows
+### Espressioni
 
-An agent is a principal with a fixed set of tool grants and an isolated local-variable frame. A workflow is a sequential block that may run agents or workflows. Names are unique. Unknown references and recursive call cycles are rejected before effects.
+Le espressioni sono RPN e delimitate da virgole. Atomi: `#int`, `"string"`, `?1`, `?0`, `$variable`, `@memory`. Operatori: `+ - * / = ! > < G L`. Chiamate postfix: `^function/arity` e `!tool/arity`.
 
-A tool call succeeds only when:
+Il formato legacy keyword-based è soltanto un frontend di migrazione/debug. `axl pack` produce il sorgente canonico.
 
-1. the host explicitly registered the tool;
-2. the active agent declared the tool in `uses`;
-3. any required approval is granted before invocation;
-4. runtime budgets permit the call;
-5. the handler returns a valid AXL value.
+## 4. Tipi e operatori
 
-Top-level calls are host-context calls and remain limited to explicitly registered tools. Production integrations should prefer agent-scoped calls.
+Valori correnti: string, integer, boolean. Codici sorgente: `s`, `i`, `b`. Coercizioni host sono vietate.
 
-## Memory
+- `+`: integer addition o string concatenation con tipi identici;
+- `-`, `*`, `/`, ordering: interi;
+- `/`: errore su zero o risultato frazionario;
+- equality: tipi runtime identici;
+- condizioni: booleani;
+- risultati tool esterni al value algebra: errore.
 
-`MemoryStore` is provider-neutral. Runtime scope is host-provided and cannot be changed by source code. A memory record contains:
+Le funzioni dichiarano parametri e ritorno tipizzati, hanno frame locale isolato e profondità limitata. Arity, tipi, ritorni mancanti e riferimenti sconosciuti sono errori statici.
 
-- scope and key;
-- typed value;
-- monotonically increasing version;
-- confidence `0..100`;
-- source identifier;
-- update timestamp;
-- optional expiry timestamp.
+## 5. Moduli
 
-TTL expiry is enforced on read/inspection. `forget` is idempotent and confined to the active scope. SQLite upgrades legacy V0.3 tables on open.
+`1|alias|relative-path` importa dichiarazioni funzione. I path sono relativi all'importatore. Alias duplicati, cicli, moduli mancanti ed effetti top-level nei moduli sono errori. I namespace qualificano le chiamate (`^math.add/2`).
 
-Writes commit per memory instruction. A later program failure does not roll back earlier external effects; workflows requiring atomic domain behavior must expose one transactional host tool.
+## 6. Agenti e workflow
 
-## Policy and audit
+Un agente è un principal con grants tool espliciti e scope locale. Un workflow è un blocco sequenziale che esegue agenti/workflow. Riferimenti sconosciuti e cicli vengono rifiutati prima degli effetti.
 
-Tools declare an effect (`read`, `write`, `destructive`, or host-defined) and whether approval is required. Approval receives the exact tool name, typed arguments and effect. Missing or denied approval prevents execution. Events record approval-required, approved, denied, executed, or failed decisions.
+Una tool call riesce solo se:
 
-CLI `--approve-tool NAME` is explicit non-interactive preapproval by name for the current process. Rich integrations should bind approval to run, principal, argument hash, policy version and expiry.
+1. l'host registra la capability;
+2. l'agente la dichiara nei grants;
+3. la policy autorizza l'effetto;
+4. l'eventuale approvazione restituisce esattamente `True`;
+5. i budget consentono la chiamata;
+6. il risultato appartiene al value algebra.
 
-## Budgets
+## 7. AM — memoria
 
-The runtime enforces positive limits for:
+AM è provider-agnostic. Lo scope è host-owned. Ogni record contiene chiave, scope, valore tipizzato, versione, confidence, source, timestamp e TTL opzionale. Expiry è verificata in lettura. `forget` è idempotente e scoped.
 
-- instructions and expression evaluations;
-- intermediate value bytes (UTF-8 for strings, magnitude bytes for integers);
-- output UTF-8 bytes;
-- tool calls;
-- memory operations.
+## 8. Capability e bridge
 
-These budgets do not interrupt blocking trusted Python plugin code. Host deployments must execute untrusted or long-running tools in an isolated process/container with deadlines.
+Filesystem, network, HTTP, database, modelli, UI, GPU e API OS non sono keyword vendor-specific. Sono contratti capability tipizzati abbassati verso adapter/bridge host.
 
-## JSON AX-IR 1.1
+Un bridge dichiara:
 
-The envelope is:
+- ABI e versione;
+- tipi accettati/prodotti;
+- effetti e capability richieste;
+- target supportati;
+- limiti, cancellazione e comportamento d'errore.
+
+Il sorgente AXL resta indipendente dall'implementazione Rust, C ABI, WASI, JVM, JavaScript host o futuro backend.
+
+## 9. Policy, audit e budget
+
+Tool deny-by-default. Decisioni approval-required, approved, denied, executed e failed sono auditabili. Segreti non devono comparire in source, IR, output o audit arguments.
+
+Budget positivi limitano step/espressioni, profondità chiamate, valori intermedi, output, tool call e operazioni memoria. Plugin host bloccanti richiedono isolamento e timeout esterni.
+
+## 10. AX-IR 1.1
+
+Envelope:
 
 ```json
 {"ir_version":"1.1","program":{"type":"Program","instructions":[]}}
 ```
 
-The decoder rejects unknown versions/nodes/fields, invalid node placement, invalid literal types, invalid operators, malformed collections, unresolved references and cycles. It accepts AX-IR 1.0 through a tested legacy upgrade. Published schemas are immutable and versioned separately. Semantic validation is authoritative even when schema validation is not performed externally.
+Decoder strict: versioni, nodi, campi, tipi, placement, riferimenti e cicli sono validati. AX-IR 1.0 viene migrata da decoder testato. Schemi pubblicati sono immutabili.
 
-## Security boundaries
+## 11. Compatibilità
 
-- source and JSON are untrusted inputs;
-- decoded IR is validated before effects;
-- tools are deny-by-default and agent-granted;
-- memory scope is host-owned;
-- plugin code is trusted infrastructure, not sandboxed AXL code;
-- secrets should be resolved inside tools and never represented in AXL source, IR, output or audit arguments.
+- stesso Compact Source 2 → stessa semantica;
+- writer canonico → rappresentazione stabile;
+- reference runtime e backend ottimizzati → equivalenza osservazionale;
+- nuovi target → stessi effetti, errori e confini capability;
+- cambi incompatibili al source o all'IR → nuova versione esplicita.

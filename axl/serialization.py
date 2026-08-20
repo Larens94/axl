@@ -117,7 +117,11 @@ def _unique_object(pairs):
 
 
 def program_from_json(payload: str) -> Program:
-    if len(payload.encode("utf-8")) > MAX_IR_BYTES:
+    try:
+        payload_size = len(payload.encode("utf-8"))
+    except UnicodeEncodeError as error:
+        raise ValueError("invalid Unicode payload") from error
+    if payload_size > MAX_IR_BYTES:
         raise ValueError(f"IR payload exceeds {MAX_IR_BYTES} bytes")
     try:
         document = json.loads(payload, object_pairs_hook=_unique_object)

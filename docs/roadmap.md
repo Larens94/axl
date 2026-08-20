@@ -1,124 +1,118 @@
 # Roadmap AXL
 
-La roadmap procede per vertical slice verificabili. Le piattaforme applicative arrivano dopo la stabilizzazione del core.
+AXL procede per vertical slice: sorgente compatto → HIR/MIR → runtime → risultato osservabile.
 
 ## Stato
 
 | Area | Stato |
 |---|---|
-| Parser e runtime Python | funzionante |
-| AX-IR JSON 1.0/1.1 | funzionante, 1.1 in sviluppo |
-| Type-checker base | funzionante |
-| Funzioni e moduli | funzionante, scope iniziale |
-| AM memoria scoped | funzionante |
-| Agenti/workflow/tool policy | funzionante, sequenziale |
-| Collezioni e tipi utente | non iniziato |
-| Runtime/compilatore Rust | non iniziato |
-| Native/WASM | non iniziato |
-| Framework applicativi | non iniziato |
+| Compact Source 2 + RPN | funzionante |
+| Writer canonico + `axl pack` | funzionante |
+| Reference runtime Python | funzionante |
+| AX-IR JSON 1.0/1.1 | funzionante |
+| Funzioni, moduli, AM, agenti | funzionante, nucleo iniziale |
+| Collezioni e tipi utente | prossimo |
+| AX-HIR/AX-MIR | pianificato |
+| Runtime/compiler Rust | pianificato |
+| Native/VM/WASM | pianificato |
+| Bridge piattaforma | pianificato |
 
-## M1 — AXL Core
+## M1 — Compact Core
 
-- source span e diagnostica strutturata;
-- liste, mappe e tuple;
-- record/struct ed enum;
-- option/result e gestione errori;
-- pattern matching;
-- iterazione generalizzata;
-- contratti precisi per scope e mutabilità.
+- stabilizzare opcode Source 2;
+- source span per frame/token;
+- liste, mappe, tuple;
+- record/struct, enum;
+- option/result, pattern matching;
+- iterazione e mutabilità definite.
 
-**Gate:** programmi general-purpose non banali verificati end-to-end.
+**Gate:** programmi general-purpose non banali in formato esclusivamente compatto.
 
 ## M2 — Moduli e package
 
-- export/import espliciti;
-- manifest di progetto e lockfile;
+- export/import compact;
+- manifest e lockfile machine-first;
 - resolver deterministico;
-- versionamento dipendenze;
-- package firmati e cache locale.
+- package firmati e cache content-addressed.
 
-**Gate:** applicazione multi-package riproducibile offline da lockfile.
+**Gate:** applicazione multi-package riproducibile offline.
 
-## M3 — AX-HIR e AX-MIR
+## M3 — AX-HIR, AX-MIR e ABI
 
-- HIR tipizzata con source mapping;
+- HIR tipizzata;
 - lowering verso CFG MIR;
-- ABI dei valori e capability;
-- bytecode/serialization MIR;
-- equivalenza osservazionale con reference runtime.
+- ABI valori, effetti e capability;
+- source mapping ai frame compact;
+- equivalenza con reference runtime.
 
-**Gate:** stesso corpus eseguito da tree-walk e MIR con risultati identici.
+**Gate:** stesso corpus su tree-walk e MIR.
 
 ## M4 — Rust runtime e VM
 
 - workspace Rust;
-- decoder/validator AX-IR;
-- VM con budget e cancellazione;
+- decoder/validator;
+- VM budgeted e cancellabile;
 - AM, policy, approval e audit compatibili;
-- sandbox e adapter capability.
+- adapter capability isolati.
 
-**Gate:** suite di conformità Python/Rust senza divergenze.
+**Gate:** suite Python/Rust senza divergenze.
 
-## M5 — Target WASM e native
+## M5 — Backend e bridge base
 
-- WASM/WASI;
-- backend native iniziale;
-- FFI Rust/C ABI;
-- filesystem/rete/clock/random come capability;
-- profiling e ottimizzazione sicura.
+- native e WASM/WASI;
+- Rust/C ABI;
+- filesystem, processi, clock, random e networking;
+- sistema bridge versionato e discovery target.
 
-**Gate:** stessa applicazione CLI su VM, native e WASM.
+**Gate:** stessa CLI su VM, native e WASM.
 
-## M6 — Standard library e backend
+## M6 — Backend applicativo
 
 - HTTP client/server;
-- routing, middleware e serialization;
+- routing e middleware;
 - database e transazioni;
-- processi, filesystem e networking;
-- osservabilità e configurazione.
+- serialization, config e observability.
 
-**Gate:** servizio backend AXL completo e deployabile.
+**Gate:** servizio backend deployabile scritto in AXL.
 
-## M7 — Web frontend
+## M7 — Web
 
-- binding DOM e Web APIs;
+- DOM/Web APIs bridge;
 - component model e stato;
-- build WASM/browser;
-- networking, storage e worker;
-- WebGPU.
+- WASM/browser build;
+- storage, worker e WebGPU.
 
-**Gate:** web app full-stack scritta principalmente in AXL.
+**Gate:** web app full-stack principalmente AXL.
 
-## M8 — Desktop, mobile e grafica
+## M8 — Native, mobile e grafica
 
-- windowing/input/audio;
-- rendering GPU;
+- windowing, input, audio;
+- GPU/rendering;
 - packaging desktop;
 - bridge Android/iOS;
 - asset pipeline.
 
-**Gate:** applicazione grafica multipiattaforma dimostrativa.
+**Gate:** app grafica multipiattaforma.
 
-## M9 — Agent platform completa
+## M9 — Agent platform
 
 - task, eventi e scheduler DAG;
-- parallelismo strutturato;
-- checkpoint, sospensione e ripresa;
-- model providers e context management;
-- memoria semantica/vector/graph;
-- policy distribuite e attestazione degli effetti.
+- concorrenza strutturata;
+- checkpoint/suspend/resume;
+- model provider capability;
+- memoria semantic/vector/graph;
+- policy distribuite.
 
-**Gate:** workflow agentico durevole, riprendibile e auditabile.
+**Gate:** workflow durevole e auditabile.
 
-## M10 — Developer experience
+## M10 — Ecosistema
 
-- formatter canonico;
-- LSP e diagnostica incrementale;
-- debugger e profiler;
-- documentazione generata;
-- package registry;
+- optimizer token/source e MIR;
+- LSP machine-oriented;
+- debugger, profiler e trace;
+- registry package/bridge;
 - self-hosting progressivo.
 
-## Regola di rilascio
+## Regola
 
-Ogni milestone richiede test, lint, build/install, esempio reale, specifica aggiornata e compatibilità delle IR pubblicate.
+Ogni feature richiede opcode canonico, test RED→GREEN, specifica, round-trip source/IR, esempio reale e compatibilità backend.

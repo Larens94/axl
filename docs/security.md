@@ -27,6 +27,8 @@ Sono considerati infrastruttura fidata nella reference implementation:
 6. **Scope host-owned:** il sorgente non sceglie arbitrariamente lo scope memoria.
 7. **Budget:** loop, output, valori, tool e memoria sono limitati.
 8. **Segreti fuori dal linguaggio:** credenziali mai in sorgente, IR, output o audit.
+9. **Module root:** gli import accettano solo path relativi `.axl`, top-level e confinati alla directory autorizzata; path assoluti e `..` sono rifiutati.
+10. **Budget import:** profondità, numero di moduli e byte sorgente aggregati hanno limiti fail-closed.
 
 ## Confini non coperti
 

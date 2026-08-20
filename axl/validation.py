@@ -215,6 +215,11 @@ def _validate_expression(expression: Expression) -> None:
     if isinstance(expression, Literal):
         if not _is_value(expression.value):
             raise ValidationError("literal must be string, integer, or boolean")
+        if type(expression.value) is str:
+            try:
+                expression.value.encode("utf-8")
+            except UnicodeEncodeError as error:
+                raise ValidationError("invalid Unicode string") from error
     elif isinstance(expression, Binary):
         if expression.operator not in OPERATORS:
             raise ValidationError(f"unknown operator '{expression.operator}'")

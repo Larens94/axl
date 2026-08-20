@@ -1,160 +1,111 @@
-# Guida al linguaggio
+# Guida al sorgente compatto
 
-Questa guida descrive AXL `1.1-dev`, non tutte le funzionalità target.
+AXL Compact Source 2 è il formato canonico. Per la tabella normativa completa vedere [`compact-syntax.md`](compact-syntax.md).
 
-## Valori e variabili
+## Struttura
 
-I valori correnti sono `int`, `string` e `bool`.
-
-```axl
-let count: int = 3
-let name: string = "AXL"
-let ready: bool = true
-emit name
+```text
+2;frame;frame;frame
 ```
 
-Una variabile senza annotazione riceve il tipo inferito dall'espressione quando possibile.
+- `2`: versione;
+- `;`: separatore frame;
+- `|`: separatore campi;
+- `,`: separatore token RPN;
+- `99`: fine blocco.
 
-## Operatori
+Le newline sono opzionali e non strutturali. La forma canonica prodotta da `axl pack` è una singola riga.
 
-```axl
-let total = 2 + 3 * 4
-let label = "Agent " + "Language"
-let enough = total >= 10
+## Atomi
+
+```text
+#42       integer
+"AXL"     string JSON
+?1        true
+?0        false
+$x        variabile
+@finding  memoria
 ```
 
-- `+` somma interi o concatena stringhe;
-- `-`, `*`, `/` operano su interi;
-- `/` accetta solo risultati interi;
-- `==`, `!=` richiedono tipi uguali;
-- `<`, `<=`, `>`, `>=` operano su interi.
+## RPN
 
-## Controllo di flusso
-
-```axl
-if total >= 10
-    emit "large"
-else
-    emit "small"
-end
-
-let index = 0
-while index < 3
-    emit index
-    let index = index + 1
-end
+```text
+#2,#3,#4,*,+      2 + 3 * 4
+#8,#7,G           8 >= 7
+"AX","L",+       "AXL"
+#7,#8,^add/2      funzione add(7,8)
+"AXL",!search/1  capability search("AXL")
 ```
 
-Le condizioni devono essere booleane. I cicli sono protetti dal budget di esecuzione.
+Codici confronto: `=` (`==`), `!` (`!=`), `G` (`>=`), `L` (`<=`).
 
-## Funzioni tipizzate
+## Binding e output
 
 ```axl
-fn add(a: int, b: int) -> int
-    return a + b
-end
-
-fn describe(value: int) -> string
-    if value >= 10
-        return "large"
-    else
-        return "small"
-    end
-end
-
-let total: int = add(7, 8)
-emit describe(total)
+2;10|count|#3|i;10|name|"AXL"|s;10|ready|?1|b;12|$name
 ```
 
-Il type-checker verifica:
+Tipi: `i` integer, `s` string, `b` boolean.
 
-- nomi e parametri duplicati;
-- arità delle chiamate;
-- tipi degli argomenti;
-- tipo di ritorno;
-- presenza di un ritorno su tutti i percorsi richiesti.
+## If e while
 
-Ogni chiamata usa uno scope locale isolato ed è soggetta a un limite di profondità.
+```axl
+2;10|n|#0;32|$n,#3,<;30|$n,#1,=;12|"one";31;12|$n;99;10|n|$n,#1,+;99
+```
+
+- `30` apre if;
+- `31` apre else;
+- `32` apre while;
+- `99` chiude il blocco.
+
+## Funzioni
+
+```axl
+2;40|add|a:i,b:i|i;11|$a,$b,+;99;10|n|#7,#8,^add/2|i;12|$n
+```
+
+`40|add|a:i,b:i|i` dichiara firma e apre il corpo; `11` ritorna; `^add/2` consuma due argomenti dallo stack RPN.
 
 ## Moduli
 
-`math.axl`:
+`m.axl`:
 
 ```axl
-fn add(a: int, b: int) -> int
-    return a + b
-end
+2;40|add|a:i,b:i|i;11|$a,$b,+;99
 ```
 
 `app.axl`:
 
 ```axl
-import math from "math.axl"
-emit math.add(20, 22)
+2;1|m|m.axl;12|#20,#22,^m.add/2
 ```
 
-Gli import:
+Gli import sono relativi, espliciti e namespaced. Sono ammessi solo file `.axl` entro il module root; path assoluti e componenti `..` vengono rifiutati. Cicli, profondità oltre 256, più di 1024 moduli, oltre 4 MiB aggregati ed effetti top-level nei moduli vengono rifiutati.
 
-- sono relativi al file importatore;
-- richiedono alias espliciti;
-- creano namespace qualificati;
-- rifiutano alias duplicati e cicli;
-- nella versione corrente esportano soltanto funzioni, senza effetti top-level.
-
-## Output
+## Memoria AM
 
 ```axl
-emit "hello"
-emit 42
+2;20|finding|"AXL"|95|3600|researcher;10|x|@finding;12|$x;21|finding
 ```
 
-`emit` aggiunge un valore all'output del programma. Il runtime applica un budget in byte.
+Lo scope è deciso dall'host. Metadata: confidence, TTL (`-` se assente), source.
 
-## Memoria
+## Agenti, tool e workflow
 
 ```axl
-memory finding = "AXL" meta confidence=95 ttl=3600 source=researcher
-let saved = recall finding
-emit saved
-forget finding
+2;50|r|search;10|x|"AXL",!search/1;12|$x;99;51|w;52|r;99;52|w
 ```
 
-Lo scope memoria viene deciso dall'host, non dal sorgente.
+- `50`: agente e grants;
+- `!search/1`: tool call postfix;
+- `51`: workflow;
+- `52`: run;
+- `99`: fine dichiarazione.
 
-## Tool
+## Conversione legacy
 
-```axl
-let result = call search("AXL")
-emit result
+```bash
+axl pack readable.axl -o compact.axl
 ```
 
-`call` invoca una capability registrata dall'host. Non è una normale funzione AXL e resta soggetta a grants, policy, approvazioni e audit.
-
-## Agenti e workflow
-
-```axl
-agent researcher uses search
-    emit call search("AXL")
-end
-
-workflow release
-    run researcher
-end
-
-run release
-```
-
-Gli agenti hanno scope locale e grants espliciti. I workflow correnti sono sequenziali.
-
-## Commenti e identificatori
-
-```axl
-# commento su riga intera
-let valid_name = 1
-```
-
-Gli identificatori seguono `[A-Za-z_][A-Za-z0-9_]*`; le keyword sono riservate.
-
-## Limiti attuali
-
-Non sono ancora disponibili liste, mappe, record, enum, generics, pattern matching, eccezioni strutturate, async o metodi. La roadmap li introduce prima dei framework applicativi.
+Il frontend keyword-based resta solo per migrazione e debug. Nuove feature devono avere una codifica compact canonica prima di essere considerate parte del linguaggio.

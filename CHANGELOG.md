@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.0.0 — development
+
+- Added Compact Source 2 as the canonical agent-only syntax.
+- Added numeric instruction frames, RPN expressions and block opcodes.
+- Added compact functions, modules, memory, agents, workflows and tool calls.
+- Added canonical compact writer and `axl pack` migration command.
+- Reframed Rust as the first runtime/backend within a multi-backend bridge architecture.
+- Redesigned documentation and GitHub Pages around the compact language model.
+
 ## 1.1.0 — development
 
 - Added typed functions, parameters, returns and expression calls.

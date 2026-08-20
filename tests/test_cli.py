@@ -24,6 +24,42 @@ class CliTest(unittest.TestCase):
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout, "hello agent\n")
 
+    def test_cli_packs_legacy_source_into_canonical_compact_stream(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "legacy.axl"
+            target = root / "packed.axl"
+            source.write_text("let x = 2 + 3\nemit x")
+
+            completed = subprocess.run(
+                [sys.executable, "-m", "axl", "pack", str(source), "-o", str(target)],
+                cwd=Path(__file__).parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            packed = target.read_text().strip() if target.exists() else ""
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(packed, "2;10|x|#2,#3,+;12|$x")
+
+    def test_cli_runs_compact_typed_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            program = Path(directory) / "compact.axl"
+            program.write_text("2;10|x|#2,#3,+|i;12|$x")
+
+            completed = subprocess.run(
+                [sys.executable, "-m", "axl", "run", str(program)],
+                cwd=Path(__file__).parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "5\n")
+
     def test_cli_persists_memory_between_runs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

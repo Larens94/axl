@@ -21,7 +21,21 @@ Per sviluppo:
 python3 -m pip install --no-deps -e .
 ```
 
-## Eseguire sorgente
+## Esecuzione sorgente canonico
+
+```bash
+axl run examples/compact.axl
+```
+
+## Canonicalizzazione
+
+```bash
+axl pack legacy.axl -o compact.axl
+```
+
+`pack` accetta il frontend legacy o compact, esegue validazione e type-check e produce Compact Source 2 normalizzato su una riga.
+
+## Esecuzione sorgente con capability host
 
 ```bash
 axl run examples/functions.axl
@@ -45,6 +59,16 @@ axl exec functions.axlir.json
 ```
 
 `compile` risolve moduli, valida e type-checka prima di produrre AX-IR. `exec` valida nuovamente il documento prima degli effetti.
+
+La CLI usa come **module root** la directory del file di ingresso. Gli import devono essere relativi, top-level, con estensione `.axl`, senza `..`, e restare entro tale root. L'API Python consente di restringere o definire esplicitamente il confine:
+
+```python
+from axl import compile_file
+
+program = compile_file("src/app.axl", module_root="src")
+```
+
+Il resolver limita inoltre profondità, numero di moduli e byte sorgente aggregati.
 
 ## Budget CLI
 

@@ -1,52 +1,34 @@
-# Agenti, workflow, tool e memoria
+# Agenti, workflow, capability e AM
 
-## Agent-native non significa probabilistico
+## Deterministico, non probabilistico
 
-Le primitive agentiche fanno parte del modello del linguaggio, ma l'esecuzione del codice resta deterministica. Modelli AI, motori di ricerca e servizi esterni sono capability runtime.
+Le primitive agentiche appartengono al linguaggio, ma il loro parsing e controllo sono deterministici. Modelli AI, ricerca, filesystem, rete e servizi sono capability runtime tipizzate.
 
-## Agent
+## Agente
 
-Un `agent` è un principal di sicurezza con:
-
-- nome stabile;
-- frame locale isolato;
-- elenco esplicito di tool concessi;
-- corpo eseguibile;
-- futura identità, policy, budget e contesto dedicati.
+Un agente è un principal con nome, frame isolato, grants espliciti e corpo eseguibile.
 
 ```axl
-agent researcher uses search
-    let finding = call search("AXL")
-    memory finding = finding meta confidence=90 source=researcher
-    emit finding
-end
+2;50|researcher|search;10|finding|"AXL",!search/1;20|finding|$finding|90|-|researcher;12|$finding;99
 ```
 
-Un tool registrato dall'host ma non presente in `uses` viene negato.
+- `50|researcher|search` apre l'agente e concede solo `search`;
+- `!search/1` consuma un argomento e invoca la capability;
+- `99` chiude il corpo.
+
+Un tool registrato dall'host ma non concesso viene negato.
 
 ## Workflow
 
-Un `workflow` compone agenti o altri workflow:
-
 ```axl
-workflow research_and_publish
-    run researcher
-    run publisher
-end
+2;51|release;52|researcher;52|publisher;99;52|release
 ```
 
-La versione corrente è sequenziale e rifiuta cicli statici. Sono futuri: DAG, parallelismo, retry, checkpoint, sospensione e ripresa.
+`51` apre il workflow, `52` esegue un runnable, `99` chiude. Il runtime corrente è sequenziale e rifiuta cicli. DAG, parallelismo, retry e checkpoint sono roadmap.
 
-## Tool e capability
+## Capability host
 
-Un tool host dichiara:
-
-- nome;
-- handler;
-- effetto (`read`, `write`, `destructive` o altro);
-- necessità di approvazione.
-
-Esempio Python:
+Una capability dichiara nome, ABI, input/output, effetto, target e policy. Oggi il bridge Python usa `Tool`:
 
 ```python
 from axl import Tool
@@ -59,49 +41,35 @@ def tools():
     ]
 ```
 
-I plugin Python sono infrastruttura fidata: il runtime limita quali tool possono essere chiamati, ma non sandboxa il codice interno del plugin.
+I futuri bridge Rust/C/WASI/DOM/GPU implementeranno lo stesso modello. Le capability non diventano keyword vendor-specific nel sorgente.
 
 ## Approval fail-closed
 
-Solo il valore booleano esatto `True` autorizza un effetto. Valori truthy come `"true"` o `1`, eccezioni del provider e assenza di provider vengono negati.
+Solo il booleano esatto `True` autorizza. Stringhe truthy, numeri, eccezioni o provider assente vengono negati.
 
 ## Audit
 
-Il runtime registra eventi quali:
-
-- `approval_required`;
-- `approved`;
-- `denied`;
-- `executed`;
-- `failed`.
-
-Gli audit non devono contenere segreti. I tool devono risolvere credenziali internamente.
+Eventi: `approval_required`, `approved`, `denied`, `executed`, `failed`. Segreti e credenziali devono essere risolti dentro il bridge e non apparire in source, IR, output o audit.
 
 ## AM — memoria
 
-**AM** è il modulo memoria di AXL, non il nome del linguaggio.
+AM è il modulo memoria, non il nome del linguaggio.
 
-Proprietà correnti:
+```axl
+2;20|finding|"result"|95|3600|researcher;12|@finding;21|finding
+```
 
-- interfaccia `MemoryStore` provider-agnostic;
+Proprietà:
+
+- protocollo provider-agnostic;
 - adapter in-memory e SQLite;
-- scope host-controlled;
+- scope controllato dall'host;
 - valori tipizzati;
-- confidence, source, versione e timestamp;
-- TTL e scadenza automatica;
-- cancellazione esplicita tramite `forget`.
+- confidence, source, versione, timestamp e TTL;
+- cancellazione esplicita.
 
-La memoria non viene promossa automaticamente tra scope. Vector store, graph store e backend cloud dovranno implementare lo stesso contratto senza cambiare la semantica centrale.
+Nessuna promozione automatica tra scope. Backend vector, graph o cloud devono preservare il contratto AM.
 
 ## Budget
 
-Ogni esecuzione può limitare:
-
-- step di istruzioni/espressioni;
-- profondità delle funzioni;
-- byte dei valori;
-- byte dell'output;
-- numero di tool call;
-- operazioni memoria.
-
-Tool bloccanti o non fidati devono essere isolati dal processo host con timeout e sandbox esterni.
+Limiti su step/espressioni, profondità chiamate, valori, output, tool call e memoria. Capability bloccanti o non fidate richiedono isolamento, timeout e cancellazione host.

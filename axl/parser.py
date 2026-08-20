@@ -235,8 +235,21 @@ def _expression(text: str, line: int):
 
 
 def parse(source: str) -> Program:
-    if len(source.encode("utf-8")) > _MAX_SOURCE_BYTES:
+    try:
+        source_size = len(source.encode("utf-8"))
+    except UnicodeEncodeError as error:
+        raise ParseError("invalid Unicode source") from error
+    if source_size > _MAX_SOURCE_BYTES:
         raise ParseError(f"source exceeds {_MAX_SOURCE_BYTES} bytes")
+    from .compact import CompactParseError, is_compact_source, parse_compact
+
+    if is_compact_source(source):
+        try:
+            return parse_compact(source)
+        except CompactParseError as error:
+            raise ParseError(str(error)) from error
+        except RecursionError as error:
+            raise ParseError("source nesting is too deep") from error
     lines = [(number, raw.strip()) for number, raw in enumerate(source.splitlines(), 1)]
     try:
         instructions, position, terminator = _block(lines, 0, allow_else=False)

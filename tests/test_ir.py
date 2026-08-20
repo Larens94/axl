@@ -6,6 +6,19 @@ from axl.serialization import IR_VERSION, program_from_json, program_to_json
 
 
 class IRSerializationTest(unittest.TestCase):
+    def test_ir_literal_rejects_isolated_unicode_surrogate(self):
+        payload = (
+            '{"ir_version":"1.1","program":{"type":"Program","instructions":'
+            '[{"type":"Emit","value":{"type":"Literal","value":"\\ud800"}}]}}'
+        )
+
+        with self.assertRaisesRegex(ValueError, "invalid Unicode string"):
+            program_from_json(payload)
+
+    def test_ir_payload_rejects_raw_isolated_unicode_surrogate(self):
+        with self.assertRaisesRegex(ValueError, "invalid Unicode payload"):
+            program_from_json('"\ud800"')
+
     def test_program_round_trips_through_versioned_json(self):
         source = """
         let count = 0

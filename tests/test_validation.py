@@ -4,6 +4,12 @@ from axl import ValidationError, parse, validate
 
 
 class ValidationTest(unittest.TestCase):
+    def test_legacy_literal_rejects_isolated_unicode_surrogate(self):
+        program = parse(r'emit "\ud800"')
+
+        with self.assertRaisesRegex(ValidationError, "invalid Unicode string"):
+            validate(program)
+
     def test_duplicate_runnable_names_are_rejected(self):
         program = parse("agent worker\nend\nworkflow worker\nend")
 
