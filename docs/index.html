@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="AXL — Agent eXecution Language: linguaggio general-purpose agent-native, AX-IR, runtime sicuro e stack Rust/native/WASM.">
+  <meta name="theme-color" content="#07110e">
+  <meta property="og:title" content="AXL — Agent eXecution Language">
+  <meta property="og:description" content="Il linguaggio general-purpose agent-native per software, agenti e workflow verificabili.">
+  <meta property="og:type" content="website">
+  <title>AXL — Agent eXecution Language</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Vai al contenuto</a>
+  <header class="site-header">
+    <div class="nav-wrap">
+      <a class="brand" href="#top" aria-label="AXL home">
+        <span class="brand-mark">AX</span>
+        <span>AXL</span>
+        <span class="version">1.1 dev</span>
+      </a>
+      <nav class="desktop-nav" aria-label="Navigazione principale">
+        <a href="#language">Linguaggio</a>
+        <a href="#stack">Stack</a>
+        <a href="#agent-native">Agent-native</a>
+        <a href="#roadmap">Roadmap</a>
+        <a href="https://github.com/Larens94/axl/tree/main/docs">Docs</a>
+      </nav>
+      <div class="nav-actions">
+        <button id="theme-toggle" class="icon-button" type="button" aria-label="Cambia tema" title="Cambia tema">
+          <span aria-hidden="true">◐</span>
+        </button>
+        <a class="button button-ghost desktop-only" href="https://github.com/Larens94/axl">GitHub</a>
+        <a class="button button-primary" href="#quickstart">Inizia</a>
+        <button id="menu-toggle" class="icon-button mobile-only" type="button" aria-expanded="false" aria-controls="mobile-nav" aria-label="Apri menu">☰</button>
+      </div>
+    </div>
+    <nav id="mobile-nav" class="mobile-nav" aria-label="Navigazione mobile" hidden>
+      <a href="#language">Linguaggio</a>
+      <a href="#stack">Stack</a>
+      <a href="#agent-native">Agent-native</a>
+      <a href="#roadmap">Roadmap</a>
+      <a href="https://github.com/Larens94/axl/tree/main/docs">Documentazione</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+  </header>
+
+  <main id="main">
+    <section id="top" class="hero">
+      <div class="hero-glow" aria-hidden="true"></div>
+      <div class="container hero-grid">
+        <div class="hero-copy reveal">
+          <div class="eyebrow"><span class="pulse"></span> OPEN SOURCE · APACHE-2.0 · IN SVILUPPO</div>
+          <h1>Software completo.<br><span class="gradient-text">Nativo per gli agenti.</span></h1>
+          <p class="hero-lead">AXL è un linguaggio general-purpose agent-native: sintassi deterministica, tipi statici, capability sicure e uno stack progettato per backend, web, native, grafica e automazione.</p>
+          <div class="hero-actions">
+            <a class="button button-primary button-large" href="#quickstart">Esplora AXL <span aria-hidden="true">→</span></a>
+            <a class="button button-ghost button-large" href="https://github.com/Larens94/axl">Vedi il repository</a>
+          </div>
+          <dl class="hero-stats" aria-label="Stato del progetto">
+            <div><dt>76</dt><dd>test conformità</dd></div>
+            <div><dt>2</dt><dd>versioni AX-IR</dd></div>
+            <div><dt>Deny</dt><dd>security default</dd></div>
+          </dl>
+        </div>
+
+        <div class="terminal-card reveal delay-1" aria-label="Esempio di codice AXL">
+          <div class="terminal-bar">
+            <div class="traffic"><span></span><span></span><span></span></div>
+            <span>research.axl</span>
+            <button class="copy-button" type="button" data-copy-target="hero-code">Copia</button>
+          </div>
+          <pre id="hero-code"><code><span class="kw">agent</span> researcher <span class="kw">uses</span> search
+    <span class="kw">let</span> finding = <span class="call">call</span> search(<span class="str">"AXL"</span>)
+    <span class="mem">memory</span> finding = finding <span class="meta">meta</span>
+        confidence=<span class="num">95</span> ttl=<span class="num">3600</span>
+        source=researcher
+    <span class="out">emit</span> finding
+<span class="kw">end</span>
+
+<span class="kw">workflow</span> release
+    <span class="kw">run</span> researcher
+<span class="kw">end</span>
+
+<span class="kw">run</span> release</code></pre>
+          <div class="terminal-output"><span>$</span> axl run research.axl<br><strong>research:AXL</strong></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="signal-strip" aria-label="Caratteristiche">
+      <div class="container signal-grid">
+        <span>Deterministico</span><span>Tipizzato</span><span>Capability-safe</span><span>Provider-agnostic</span><span>Native + WASM</span>
+      </div>
+    </section>
+
+    <section id="language" class="section">
+      <div class="container">
+        <div class="section-heading reveal">
+          <div><p class="kicker">01 · IL LINGUAGGIO</p><h2>General-purpose, senza perdere il DNA agentico.</h2></div>
+          <p>AXL unisce normali primitive di programmazione a memoria, tool, agenti e workflow. Il compilatore resta deterministico: un modello AI può scrivere il codice, ma non serve per interpretarlo.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature-card reveal"><span class="feature-icon">ƒ</span><h3>Core tipizzato</h3><p>Funzioni, parametri, ritorni, moduli, namespace, controllo di flusso e diagnostica statica.</p><a href="https://github.com/Larens94/axl/blob/main/docs/language-guide.md">Guida al linguaggio →</a></article>
+          <article class="feature-card reveal delay-1"><span class="feature-icon">◇</span><h3>Agent-native</h3><p>Agenti come principal, workflow componibili, tool espliciti e memoria integrata nella semantica.</p><a href="https://github.com/Larens94/axl/blob/main/docs/agent-runtime.md">Runtime agentico →</a></article>
+          <article class="feature-card reveal delay-2"><span class="feature-icon">⌁</span><h3>Effetti controllati</h3><p>Filesystem, rete, modelli e servizi diventano capability: deny-by-default, budget e audit.</p><a href="https://github.com/Larens94/axl/blob/main/docs/security.md">Modello di sicurezza →</a></article>
+        </div>
+      </div>
+    </section>
+
+    <section id="stack" class="section section-tint">
+      <div class="container">
+        <div class="section-heading reveal">
+          <div><p class="kicker">02 · LO STACK</p><h2>Una pipeline, più target.</h2></div>
+          <p>La reference implementation Python fissa oggi la semantica. Lo stack definitivo abbasserà AX-HIR verso AX-MIR e un runtime Rust per VM, native e WebAssembly.</p>
+        </div>
+        <div class="pipeline reveal" role="img" aria-label="Pipeline AXL da sorgente a target native e WASM">
+          <div class="pipe-node active"><small>INPUT</small><strong>AXL Source</strong><span>.axl</span></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node"><small>FRONTEND</small><strong>Parser + Types</strong><span>AST</span></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node accent"><small>SEMANTICS</small><strong>AX-HIR</strong><span>typed</span></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node"><small>LOWERING</small><strong>AX-MIR</strong><span>CFG</span></div>
+          <div class="pipe-arrow">→</div>
+          <div class="pipe-node rust"><small>RUNTIME</small><strong>Rust</strong><span>safe core</span></div>
+          <div class="pipe-branches">
+            <span>↗ Native</span><span>→ VM</span><span>↘ WASM</span>
+          </div>
+        </div>
+        <div class="stack-grid">
+          <article class="stack-card reveal"><div class="stack-number">A</div><h3>Frontend</h3><p>Lexer, parser, source span, resolver moduli e type-checker. Nessun effetto runtime.</p><ul><li>Parsing deterministico</li><li>Diagnostica strutturata</li><li>Tipi e namespace</li></ul></article>
+          <article class="stack-card reveal delay-1"><div class="stack-number">IR</div><h3>AX-IR</h3><p>Famiglia di rappresentazioni intermedie tipizzate, serializzabili e versionate.</p><ul><li>AX-IR JSON 1.0/1.1</li><li>Future AX-HIR e AX-MIR</li><li>Compatibilità testata</li></ul></article>
+          <article class="stack-card reveal delay-2"><div class="stack-number">R</div><h3>Runtime Rust</h3><p>VM, scheduler, capability, memoria e backend multipiattaforma ad alte prestazioni.</p><ul><li>Native e WebAssembly</li><li>Rust/C ABI</li><li>Sandbox e budget</li></ul></article>
+        </div>
+        <div class="center-action"><a class="text-link" href="https://github.com/Larens94/axl/blob/main/docs/architecture.md">Architettura completa dello stack <span>→</span></a></div>
+      </div>
+    </section>
+
+    <section id="agent-native" class="section dark-section">
+      <div class="container split-layout">
+        <div class="reveal">
+          <p class="kicker kicker-light">03 · AGENT RUNTIME</p>
+          <h2>Gli agenti sono principal.<br>Non semplici funzioni.</h2>
+          <p class="light-lead">Ogni agente opera con uno scope locale e capability dichiarate. Le azioni sensibili sono verificate prima dell'effetto, registrate nell'audit e limitate da budget.</p>
+          <div class="security-list">
+            <div><span>01</span><strong>Deny-by-default</strong><p>Nessun tool è disponibile implicitamente.</p></div>
+            <div><span>02</span><strong>Approval fail-closed</strong><p>Solo il booleano esatto true autorizza.</p></div>
+            <div><span>03</span><strong>AM scoped memory</strong><p>Memoria persistente isolata e host-controlled.</p></div>
+            <div><span>04</span><strong>Audit + budget</strong><p>Decisioni ed esecuzione restano osservabili.</p></div>
+          </div>
+        </div>
+        <div class="capability-diagram reveal delay-1">
+          <div class="cap-agent"><span>AGENT</span><strong>researcher</strong></div>
+          <div class="cap-line"></div>
+          <div class="cap-gate"><small>POLICY GATE</small><strong>Capability + Scope + Budget</strong><span class="approved">APPROVED</span></div>
+          <div class="cap-connectors"><span></span><span></span><span></span></div>
+          <div class="cap-targets">
+            <div><b>⌕</b><span>Search</span><small>read</small></div>
+            <div><b>AM</b><span>Memory</span><small>scoped</small></div>
+            <div><b>↗</b><span>Publish</span><small>approval</small></div>
+          </div>
+          <div class="audit-line"><span>audit</span><code>approved → executed</code></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="quickstart" class="section">
+      <div class="container quickstart-grid">
+        <div class="reveal">
+          <p class="kicker">04 · QUICKSTART</p>
+          <h2>Dal sorgente all'esecuzione.</h2>
+          <p>Installa la reference implementation, esegui un file AXL oppure compilalo nella AX-IR JSON versionata.</p>
+          <ol class="steps">
+            <li><span>1</span><div><strong>Installa</strong><small>Python 3.11+</small></div></li>
+            <li><span>2</span><div><strong>Scrivi</strong><small>Codice deterministico .axl</small></div></li>
+            <li><span>3</span><div><strong>Valida ed esegui</strong><small>Type-check + runtime budgeted</small></div></li>
+          </ol>
+          <a class="button button-primary" href="https://github.com/Larens94/axl/blob/main/docs/toolchain.md">Toolchain completa</a>
+        </div>
+        <div class="command-panel reveal delay-1">
+          <div class="command-tabs" role="tablist" aria-label="Comandi AXL">
+            <button class="command-tab active" data-tab="install" type="button">Install</button>
+            <button class="command-tab" data-tab="run" type="button">Run</button>
+            <button class="command-tab" data-tab="compile" type="button">Compile</button>
+          </div>
+          <div class="command-content active" data-panel="install"><pre><code><span>$</span> git clone https://github.com/Larens94/axl.git
+<span>$</span> cd axl
+<span>$</span> python3 -m pip install .
+<span>$</span> axl --help</code></pre></div>
+          <div class="command-content" data-panel="run"><pre><code><span>$</span> axl run examples/functions.axl
+
+<span class="success">15
+large</span></code></pre></div>
+          <div class="command-content" data-panel="compile"><pre><code><span>$</span> axl compile app.axl -o app.axlir.json
+<span>$</span> axl exec app.axlir.json</code></pre></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="roadmap" class="section section-tint">
+      <div class="container">
+        <div class="section-heading reveal">
+          <div><p class="kicker">05 · ROADMAP</p><h2>Dalla semantica alle piattaforme.</h2></div>
+          <p>Ogni milestone richiede test, specifica aggiornata, compatibilità AX-IR e un programma reale eseguito end-to-end.</p>
+        </div>
+        <div class="timeline">
+          <div class="timeline-item complete reveal"><span class="dot"></span><small>FOUNDATION</small><h3>Reference runtime</h3><p>Parser, AX-IR, memoria, policy, agenti e workflow.</p><b>Disponibile</b></div>
+          <div class="timeline-item current reveal delay-1"><span class="dot"></span><small>CORE</small><h3>Tipi e strutture dati</h3><p>Record, enum, collezioni, result e pattern matching.</p><b>Prossima fase</b></div>
+          <div class="timeline-item reveal delay-2"><span class="dot"></span><small>COMPILER</small><h3>HIR, MIR e Rust</h3><p>Lowering, VM, ABI e suite cross-runtime.</p><b>Pianificato</b></div>
+          <div class="timeline-item reveal"><span class="dot"></span><small>PLATFORMS</small><h3>Native + WASM</h3><p>Backend, browser, desktop, mobile e grafica.</p><b>Pianificato</b></div>
+          <div class="timeline-item reveal delay-1"><span class="dot"></span><small>ECOSYSTEM</small><h3>Tooling e package</h3><p>LSP, formatter, debugger, registry e self-hosting.</p><b>Pianificato</b></div>
+        </div>
+        <div class="center-action"><a class="button button-ghost" href="https://github.com/Larens94/axl/blob/main/docs/roadmap.md">Leggi la roadmap dettagliata</a></div>
+      </div>
+    </section>
+
+    <section class="docs-section section">
+      <div class="container docs-layout">
+        <div><p class="kicker">DOCUMENTAZIONE</p><h2>Approfondisci ogni livello.</h2><p>Specifiche, guide e decisioni architetturali restano versionate insieme al codice.</p></div>
+        <div class="docs-grid">
+          <a href="https://github.com/Larens94/axl/blob/main/docs/overview.md"><span>01</span><strong>Visione</strong><small>Obiettivi e stato reale</small></a>
+          <a href="https://github.com/Larens94/axl/blob/main/docs/language-guide.md"><span>02</span><strong>Linguaggio</strong><small>Sintassi ed esempi</small></a>
+          <a href="https://github.com/Larens94/axl/blob/main/docs/architecture.md"><span>03</span><strong>Architettura</strong><small>Frontend, IR e runtime</small></a>
+          <a href="https://github.com/Larens94/axl/blob/main/docs/ax-ir.md"><span>04</span><strong>AX-IR</strong><small>Versioni e compatibilità</small></a>
+          <a href="https://github.com/Larens94/axl/blob/main/docs/security.md"><span>05</span><strong>Sicurezza</strong><small>Capability e threat model</small></a>
+          <a href="https://github.com/Larens94/axl/blob/main/docs/development.md"><span>06</span><strong>Sviluppo</strong><small>TDD e contribuzione</small></a>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-section">
+      <div class="container cta-card reveal">
+        <div><p class="kicker">BUILD FOR AGENTS</p><h2>Un linguaggio nuovo.<br>Una semantica verificabile.</h2></div>
+        <div><p>Segui lo sviluppo di AXL, esplora il codice e contribuisci alla costruzione dello stack.</p><div class="hero-actions"><a class="button button-primary button-large" href="https://github.com/Larens94/axl">Apri GitHub</a><a class="button button-ghost button-large" href="https://github.com/Larens94/axl/tree/main/docs">Leggi le docs</a></div></div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div><a class="brand footer-brand" href="#top"><span class="brand-mark">AX</span><span>AXL</span></a><p>Agent eXecution Language.<br>General-purpose. Agent-native.</p></div>
+      <div><strong>Progetto</strong><a href="https://github.com/Larens94/axl/blob/main/docs/overview.md">Visione</a><a href="https://github.com/Larens94/axl/blob/main/docs/architecture.md">Architettura</a><a href="https://github.com/Larens94/axl/blob/main/docs/roadmap.md">Roadmap</a></div>
+      <div><strong>Documentazione</strong><a href="https://github.com/Larens94/axl/blob/main/docs/language-guide.md">Linguaggio</a><a href="https://github.com/Larens94/axl/blob/main/docs/agent-runtime.md">Agent runtime</a><a href="https://github.com/Larens94/axl/blob/main/docs/security.md">Sicurezza</a></div>
+      <div><strong>Risorse</strong><a href="https://github.com/Larens94/axl/blob/main/SPEC.md">Specifica</a><a href="https://github.com/Larens94/axl/blob/main/LICENSE">Apache-2.0</a><a href="https://github.com/Larens94/axl">GitHub</a></div>
+    </div>
+    <div class="container footer-bottom"><span>© 2026 AXL contributors</span><span>Designed for deterministic execution.</span></div>
+  </footer>
+</body>
+</html>
+

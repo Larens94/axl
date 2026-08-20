@@ -2,6 +2,8 @@
 
 AXL is an in-development general-purpose, agent-native programming language with a deterministic Python reference runtime.
 
+**Website:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Documentation:** [`docs/`](docs/README.md)
+
 ```text
 AXL source → parser/type-checker → validated AX-IR 1.1 → budgeted runtime
                                       ├─ scoped memory adapters
