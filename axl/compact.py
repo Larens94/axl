@@ -12,6 +12,7 @@ from .ir import (
     Let,
     ListExpression,
     Literal,
+    MapExpression,
     MemoryWrite,
     Parameter,
     Program,
@@ -23,6 +24,7 @@ from .ir import (
     While,
     Workflow,
 )
+from .type_names import MAX_TYPE_DEPTH
 
 
 class CompactParseError(ValueError):
@@ -35,6 +37,7 @@ _TYPE_NAMES = {"i": "int", "s": "string", "b": "bool"}
 _TYPE_CODES = {value: key for key, value in _TYPE_NAMES.items()}
 _CALL = re.compile(r"(?P<kind>[!^])(?P<name>[A-Za-z_][A-Za-z0-9_.]*)/(?P<arity>\d+)")
 _LIST = re.compile(r"~(?P<arity>\d+)")
+_MAP = re.compile(r"%(?P<arity>\d+)")
 _OPERATOR_CODES = {value: key for key, value in _OPERATOR_NAMES.items()}
 _MAX_CALL_ARITY = 65_535
 _MAX_SOURCE_BYTES = 1_000_000
@@ -63,6 +66,9 @@ def program_to_compact(program: Program) -> str:
 def _type_code(type_name: str) -> str:
     if type_name.startswith("list<") and type_name.endswith(">"):
         return "l" + _type_code(type_name[5:-1])
+    if type_name.startswith("map<") and type_name.endswith(">"):
+        key_type, value_type = _split_map_type(type_name[4:-1])
+        return "m" + _type_code(key_type) + _type_code(value_type)
     try:
         return _TYPE_CODES[type_name]
     except KeyError as error:
@@ -70,14 +76,43 @@ def _type_code(type_name: str) -> str:
 
 
 def _type_name(type_code: str) -> str:
-    if type_code.startswith("l"):
-        if len(type_code) == 1:
-            raise CompactParseError("invalid list type")
-        return f"list<{_type_name(type_code[1:])}>"
+    type_name, position = _type_name_prefix(type_code, 0, 0)
+    if position != len(type_code):
+        raise CompactParseError(f"invalid type '{type_code}'")
+    return type_name
+
+
+def _type_name_prefix(type_code: str, position: int, depth: int) -> tuple[str, int]:
+    if position >= len(type_code):
+        raise CompactParseError("incomplete type")
+    code = type_code[position]
+    if code == "l":
+        if depth >= MAX_TYPE_DEPTH:
+            raise CompactParseError(f"type nesting is too deep ({MAX_TYPE_DEPTH})")
+        item_type, position = _type_name_prefix(type_code, position + 1, depth + 1)
+        return f"list<{item_type}>", position
+    if code == "m":
+        if depth >= MAX_TYPE_DEPTH:
+            raise CompactParseError(f"type nesting is too deep ({MAX_TYPE_DEPTH})")
+        key_type, position = _type_name_prefix(type_code, position + 1, depth + 1)
+        value_type, position = _type_name_prefix(type_code, position, depth + 1)
+        return f"map<{key_type},{value_type}>", position
     try:
-        return _TYPE_NAMES[type_code]
+        return _TYPE_NAMES[code], position + 1
     except KeyError as error:
-        raise CompactParseError(f"invalid type '{type_code}'") from error
+        raise CompactParseError(f"invalid type '{code}'") from error
+
+
+def _split_map_type(source: str) -> tuple[str, str]:
+    depth = 0
+    for index, character in enumerate(source):
+        if character == "<":
+            depth += 1
+        elif character == ">":
+            depth -= 1
+        elif character == "," and depth == 0:
+            return source[:index], source[index + 1 :]
+    raise CompactParseError("invalid map type")
 
 
 def _instruction_frames(instruction) -> list[str]:
@@ -178,6 +213,14 @@ def _expression_source(expression) -> str:
         _require_call_arity(len(expression.items))
         items = [_expression_source(item) for item in expression.items]
         return ",".join([*items, f"~{len(items)}"])
+    if isinstance(expression, MapExpression):
+        _require_call_arity(len(expression.entries))
+        items = [
+            source
+            for key, value in expression.entries
+            for source in (_expression_source(key), _expression_source(value))
+        ]
+        return ",".join([*items, f"%{len(expression.entries)}"])
     raise CompactParseError(f"cannot encode expression '{type(expression).__name__}'")
 
 
@@ -230,7 +273,7 @@ def _block(frames: list[str], position: int, allow_else: bool):
                     type_name = _type_name(fields[3])
                 except CompactParseError as error:
                     raise CompactParseError(
-                        f"frame {index}: invalid binding type '{fields[3]}'"
+                        f"frame {index}: invalid binding type '{fields[3]}': {error}"
                     ) from error
             instructions.append(
                 Let(fields[1], _expression(fields[2], index), type_name)
@@ -335,7 +378,22 @@ def _expression(source: str, frame: int):
     for token in _split(source, ","):
         call = _CALL.fullmatch(token)
         list_constructor = _LIST.fullmatch(token)
-        if list_constructor:
+        map_constructor = _MAP.fullmatch(token)
+        if map_constructor:
+            try:
+                arity = int(map_constructor.group("arity"))
+            except ValueError as error:
+                raise CompactParseError(f"frame {frame}: invalid map arity") from error
+            width = arity * 2
+            if arity > _MAX_CALL_ARITY or len(stack) < width:
+                raise CompactParseError(f"frame {frame}: invalid map arity")
+            values = tuple(stack[-width:]) if width else ()
+            if width:
+                del stack[-width:]
+            stack.append(
+                MapExpression(tuple(zip(values[::2], values[1::2], strict=True)))
+            )
+        elif list_constructor:
             try:
                 arity = int(list_constructor.group("arity"))
             except ValueError as error:

@@ -15,6 +15,8 @@ from .ir import (
     Let,
     ListExpression,
     Literal,
+    MapExpression,
+    MapValue,
     MemoryWrite,
     Program,
     Recall,
@@ -40,9 +42,11 @@ class RuntimeError(Exception):
 def render_value(value: Value) -> str:
     if type(value) is bool:
         return str(value).lower()
-    if type(value) is tuple:
+    if type(value) is tuple or isinstance(value, MapValue):
         try:
-            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            return json.dumps(
+                _json_value(value), ensure_ascii=False, separators=(",", ":")
+            )
         except (UnicodeEncodeError, ValueError) as error:
             raise RuntimeError("output value cannot be rendered") from error
     if type(value) is int:
@@ -54,6 +58,37 @@ def render_value(value: Value) -> str:
         return str(value)
     except ValueError as error:
         raise RuntimeError("integer output is too large") from error
+
+
+def _json_value(value: Value):
+    if type(value) is tuple:
+        return [_json_value(item) for item in value]
+    if isinstance(value, MapValue):
+        entries = sorted(
+            value.entries, key=lambda entry: (type(entry[0]).__name__, entry[0])
+        )
+        return {
+            "$ax.map": [[_json_value(key), _json_value(item)] for key, item in entries]
+        }
+    return value
+
+
+def _unify_value_shapes(left, right, context: str):
+    if left == "any":
+        return right
+    if right == "any" or left == right:
+        return left
+    if (
+        isinstance(left, tuple)
+        and isinstance(right, tuple)
+        and left[0] == right[0]
+        and len(left) == len(right)
+    ):
+        return (left[0],) + tuple(
+            _unify_value_shapes(a, b, context)
+            for a, b in zip(left[1:], right[1:], strict=True)
+        )
+    raise RuntimeError(f"{context} must have one type")
 
 
 class _FunctionReturn(Exception):
@@ -269,6 +304,18 @@ class Interpreter:
                 if depth >= self.max_value_depth:
                     raise RuntimeError(f"value nesting exceeds {self.max_value_depth}")
                 stack.extend((child, depth + 1) for child in item)
+            elif isinstance(item, MapValue):
+                size += 1
+                if depth >= self.max_value_depth:
+                    raise RuntimeError(f"value nesting exceeds {self.max_value_depth}")
+                if type(item.entries) is not tuple or any(
+                    type(entry) is not tuple or len(entry) != 2
+                    for entry in item.entries
+                ):
+                    raise RuntimeError(f"{context} contains invalid map")
+                stack.extend(
+                    (child, depth + 1) for entry in item.entries for child in entry
+                )
             elif type(item) is str:
                 try:
                     size += len(item.encode("utf-8"))
@@ -286,13 +333,13 @@ class Interpreter:
                 raise RuntimeError(
                     f"value budget exceeded ({self.max_value_bytes} bytes)"
                 )
-        if type(value) is tuple:
+        if type(value) is tuple or isinstance(value, MapValue):
             self._value_shape(value)
         return value
 
-    def _value_shape(self, value: Value) -> tuple[int, str | None]:
+    def _value_shape(self, value: Value):
         work = [(value, 0, False)]
-        shapes: list[tuple[int, str | None]] = []
+        shapes = []
         while work:
             item, depth, visited = work.pop()
             if type(item) is tuple:
@@ -305,20 +352,46 @@ class Interpreter:
                 children = shapes[-len(item) :] if item else []
                 if item:
                     del shapes[-len(item) :]
-                item_depths = {item_depth for item_depth, _ in children}
-                item_types = {
-                    item_type for _, item_type in children if item_type is not None
-                }
-                if len(item_depths) > 1 or len(item_types) > 1:
-                    raise RuntimeError("list items must have one type")
-                child_depth = next(iter(item_depths), 0)
-                shapes.append((child_depth + 1, next(iter(item_types), None)))
+                item_shape = "any"
+                for child in children:
+                    item_shape = _unify_value_shapes(item_shape, child, "list items")
+                shapes.append(("list", item_shape))
+            elif isinstance(item, MapValue):
+                if depth >= self.max_value_depth:
+                    raise RuntimeError(f"value nesting exceeds {self.max_value_depth}")
+                if not visited:
+                    work.append((item, depth, True))
+                    work.extend(
+                        (child, depth + 1, False)
+                        for entry in reversed(item.entries)
+                        for child in reversed(entry)
+                    )
+                    continue
+                width = len(item.entries) * 2
+                children = shapes[-width:] if width else []
+                if width:
+                    del shapes[-width:]
+                key_shapes = children[::2]
+                value_shapes = children[1::2]
+                keys = [key for key, _ in item.entries]
+                if any(type(key) not in (str, int, bool) for key in keys):
+                    raise RuntimeError("map keys must be scalar")
+                identities = [(type(key), key) for key in keys]
+                if len(identities) != len(set(identities)):
+                    raise RuntimeError("map keys must be unique")
+                key_shape = "any"
+                for child in key_shapes:
+                    key_shape = _unify_value_shapes(key_shape, child, "map keys")
+                value_shape = "any"
+                for child in value_shapes:
+                    value_shape = _unify_value_shapes(value_shape, child, "map values")
+                shapes.append(("map", key_shape, value_shape))
             elif type(item) is bool:
-                shapes.append((0, "bool"))
+                shapes.append("bool")
             elif type(item) is int:
-                shapes.append((0, "int"))
+                shapes.append("int")
             elif type(item) is str:
-                shapes.append((0, "string"))
+                shapes.append("string")
             else:
                 raise RuntimeError(
                     f"value contains invalid value '{type(item).__name__}'"
@@ -333,6 +406,12 @@ class Interpreter:
             return self._bounded_value(
                 tuple(self._evaluate(item) for item in expression.items)
             )
+        if isinstance(expression, MapExpression):
+            entries = tuple(
+                (self._evaluate(key), self._evaluate(value))
+                for key, value in expression.entries
+            )
+            return self._bounded_value(MapValue(entries))
         if isinstance(expression, Variable):
             if expression.name not in self.variables:
                 raise RuntimeError(f"unknown variable '{expression.name}'")
@@ -388,7 +467,9 @@ class Interpreter:
                 raise RuntimeError(
                     f"tool '{expression.name}' failed: {error}"
                 ) from error
-            if type(result) not in (str, int, bool, tuple):
+            if type(result) not in (str, int, bool, tuple) and not isinstance(
+                result, MapValue
+            ):
                 self.audit.append(AuditEvent.create(request, "failed"))
                 raise RuntimeError(
                     f"tool '{tool.name}' returned invalid value '{type(result).__name__}'"

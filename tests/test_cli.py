@@ -6,6 +6,25 @@ from pathlib import Path
 
 
 class CliTest(unittest.TestCase):
+    def test_cli_prints_map_as_canonical_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            program = Path(directory) / "map.axl"
+            program.write_text('2;12|"bob",#9,"alice",#7,%2')
+
+            completed = subprocess.run(
+                [sys.executable, "-m", "axl", "run", str(program)],
+                cwd=Path(__file__).parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(
+            completed.stdout,
+            '{"$ax.map":[["alice",7],["bob",9]]}\n',
+        )
+
     def test_cli_exec_rejects_non_string_ir_version_without_traceback(self):
         with tempfile.TemporaryDirectory() as directory:
             program = Path(directory) / "bad-version.json"

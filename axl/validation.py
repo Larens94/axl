@@ -13,6 +13,7 @@ from .ir import (
     Let,
     ListExpression,
     Literal,
+    MapExpression,
     MemoryWrite,
     Program,
     Recall,
@@ -23,7 +24,7 @@ from .ir import (
     While,
     Workflow,
 )
-from .type_names import split_type_name
+from .type_names import validate_type_name
 
 
 class ValidationError(ValueError):
@@ -50,6 +51,7 @@ EXPRESSION_TYPES = (
     ToolCall,
     FunctionCall,
     ListExpression,
+    MapExpression,
     Binary,
 )
 OPERATORS = {"+", "-", "*", "/", "==", "!=", ">", "<", ">=", "<="}
@@ -95,10 +97,9 @@ def _qualified_identifier(value, label: str) -> None:
 
 def _type_name(value) -> None:
     try:
-        _, base = split_type_name(value)
+        validate_type_name(value)
     except (TypeError, ValueError) as error:
         raise ValidationError(str(error)) from error
-    _identifier(base, "type")
 
 
 def _is_value(value) -> bool:
@@ -154,6 +155,8 @@ def _validate_nesting(instructions) -> None:
             stack.extend((argument, depth + 1) for argument in node.arguments)
         elif isinstance(node, ListExpression):
             stack.extend((item, depth + 1) for item in node.items)
+        elif isinstance(node, MapExpression):
+            stack.extend((item, depth + 1) for entry in node.entries for item in entry)
 
 
 def _require_instruction(instruction) -> None:
@@ -262,6 +265,14 @@ def _validate_expression(expression: Expression) -> None:
             raise ValidationError("list items must be an array")
         for item in expression.items:
             _validate_expression(item)
+    elif isinstance(expression, MapExpression):
+        if not isinstance(expression.entries, tuple):
+            raise ValidationError("map entries must be an array")
+        for entry in expression.entries:
+            if not isinstance(entry, tuple) or len(entry) != 2:
+                raise ValidationError("map entry must contain key and value")
+            _validate_expression(entry[0])
+            _validate_expression(entry[1])
     elif isinstance(expression, Variable):
         _identifier(expression.name, "variable")
     elif isinstance(expression, Recall):

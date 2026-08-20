@@ -5,10 +5,73 @@ from pathlib import Path
 from axl import Interpreter, ParseError, RuntimeError, TypeCheckError, parse, typecheck
 from axl.compact import CompactParseError, program_to_compact
 from axl.compiler import CompileError, compile_file
-from axl.ir import Emit, Let, ListExpression, Literal, Program, ToolCall
+from axl.ir import Emit, Let, ListExpression, Literal, MapValue, Program, ToolCall
 
 
 class CompactSyntaxTest(unittest.TestCase):
+    def test_compact_typed_map_executes_end_to_end(self):
+        source = '2;10|scores|"alice",#7,"bob",#9,%2|msi;12|$scores'
+
+        program = parse(source)
+        typecheck(program)
+        compact = program_to_compact(program)
+        result = Interpreter().run(program)
+
+        self.assertEqual(compact, source)
+        self.assertEqual(result.output, [MapValue((("alice", 7), ("bob", 9)))])
+
+    def test_compact_map_supports_nested_list_values(self):
+        source = '2;10|groups|"a",#1,#2,~2,%1|msli;12|$groups'
+
+        program = parse(source)
+        typecheck(program)
+
+        self.assertEqual(program_to_compact(program), source)
+        self.assertEqual(
+            Interpreter().run(program).output, [MapValue((("a", (1, 2)),))]
+        )
+
+    def test_compact_map_rejects_mixed_value_types(self):
+        program = parse('2;10|values|"a",#1,"b","two",%2|msi')
+
+        with self.assertRaisesRegex(TypeCheckError, "map values must have one type"):
+            typecheck(program)
+
+    def test_compact_map_rejects_duplicate_keys(self):
+        program = parse('2;12|"a",#1,"a",#2,%2')
+
+        with self.assertRaisesRegex(RuntimeError, "map keys must be unique"):
+            Interpreter().run(program)
+
+    def test_compact_map_type_depth_is_bounded(self):
+        source = f"2;10|value|#1|{'l' * 17}i"
+
+        with self.assertRaisesRegex(ParseError, "type nesting is too deep"):
+            parse(source)
+
+    def test_compact_empty_map_adopts_declared_types(self):
+        program = parse("2;10|values|%0|msi;12|$values")
+
+        typecheck(program)
+
+        self.assertEqual(Interpreter().run(program).output, [MapValue(())])
+
+    def test_empty_map_unifies_recursively_inside_list(self):
+        program = parse('2;10|values|%0,"x",#1,%1,~2|lmsi;12|$values')
+
+        typecheck(program)
+
+        self.assertEqual(
+            Interpreter().run(program).output,
+            [(MapValue(()), MapValue((("x", 1),)))],
+        )
+
+    def test_compact_map_rejects_collection_keys_statically(self):
+        program = parse("2;10|values|#1,~1,#2,%1|mlii")
+
+        with self.assertRaisesRegex(TypeCheckError, "map keys must be scalar"):
+            typecheck(program)
+
     def test_unknown_nested_list_type_is_rejected_statically(self):
         program = Program((Let("xs", ListExpression((Literal(1),)), "list<unknown>"),))
 

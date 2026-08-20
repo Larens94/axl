@@ -40,6 +40,7 @@ Le espressioni usano Reverse Polish Notation. Non servono parentesi né regole d
 | `^f/2` | chiama funzione `f` con 2 valori dallo stack |
 | `!t/1` | chiama tool `t` con 1 valore dallo stack |
 | `~3` | costruisce una lista con 3 valori dallo stack |
+| `%2` | costruisce una mappa con 2 coppie chiave/valore dallo stack |
 
 ```text
 #2,#3,#4,*,+      → 2 + (3 * 4)
@@ -47,6 +48,7 @@ Le espressioni usano Reverse Polish Notation. Non servono parentesi né regole d
 #7,#8,^add/2      → add(7,8)
 "AXL",!search/1  → tool search("AXL")
 #1,#2,#3,~3       → list<int>[1,2,3]
+"a",#1,"b",#2,%2 → map<string,int>{"a":1,"b":2}
 ```
 
 ## Tipi
@@ -59,6 +61,15 @@ Le espressioni usano Reverse Polish Notation. Non servono parentesi né regole d
 | `li` | list&lt;int&gt; |
 | `ls` | list&lt;string&gt; |
 | `lb` | list&lt;bool&gt; |
+| `msi` | map&lt;string,int&gt; |
+| `msli` | map&lt;string,list&lt;int&gt;&gt; |
+
+I codici collezione sono prefissi e auto-delimitanti: `lT` indica `list<T>`,
+mentre `mKV` indica `map<K,V>`. Le mappe sono immutabili, omogenee per chiavi
+e valori e richiedono chiavi scalari uniche. La CLI usa sempre il wrapper
+canonico non ambiguo `{\"$ax.map\":[[key,value],...]}`. In questa tranche il supporto
+mappe riguarda Compact Source e reference runtime; AX-IR e persistenza SQLite
+restano milestone successive.
 
 Il prefisso `l` è ricorsivo fino a 16 livelli: `lli` rappresenta `list<list<int>>`. Le liste sono immutabili e omogenee; `~0` crea una lista vuota il cui tipo elemento viene determinato dal contesto dichiarato.
 

@@ -14,7 +14,8 @@ La strategia completa per web, desktop, mobile, AX-UI, backend e networking è d
 | AX-IR JSON 1.0/1.1/1.2 | funzionante |
 | Funzioni, moduli, AM, agenti | funzionante, nucleo iniziale |
 | `list<T>` omogenee | funzionante, prima collezione |
-| mappe, record, option/result e tipi utente | prossimo |
+| tracer `map<K,V>` Compact/runtime | funzionante localmente; IR/persistenza prossimi |
+| record, option/result e tipi utente | prossimo |
 | AX-HIR/AX-MIR | pianificato |
 | Runtime/compiler Rust | pianificato |
 | Native/VM/WASM | pianificato |

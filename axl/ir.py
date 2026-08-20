@@ -1,7 +1,25 @@
 from dataclasses import dataclass
 from typing import TypeAlias
 
-Value: TypeAlias = str | int | bool | tuple["Value", ...]
+
+@dataclass(frozen=True, eq=False)
+class MapValue:
+    entries: tuple[tuple["Value", "Value"], ...]
+
+    def __eq__(self, other):
+        if not isinstance(other, MapValue):
+            return NotImplemented
+        return _map_items(self.entries) == _map_items(other.entries)
+
+    def __hash__(self):
+        return hash(frozenset(_map_items(self.entries)))
+
+
+def _map_items(entries):
+    return frozenset(((type(key), key), value) for key, value in entries)
+
+
+Value: TypeAlias = str | int | bool | tuple["Value", ...] | MapValue
 
 
 @dataclass(frozen=True)
@@ -37,6 +55,11 @@ class ListExpression:
 
 
 @dataclass(frozen=True)
+class MapExpression:
+    entries: tuple[tuple["Expression", "Expression"], ...]
+
+
+@dataclass(frozen=True)
 class Binary:
     left: "Expression"
     operator: str
@@ -44,7 +67,14 @@ class Binary:
 
 
 Expression: TypeAlias = (
-    Literal | Variable | Recall | ToolCall | FunctionCall | ListExpression | Binary
+    Literal
+    | Variable
+    | Recall
+    | ToolCall
+    | FunctionCall
+    | ListExpression
+    | MapExpression
+    | Binary
 )
 
 

@@ -9,6 +9,7 @@ from .ir import (
     Let,
     ListExpression,
     Literal,
+    MapExpression,
     MemoryWrite,
     Program,
     Recall,
@@ -17,7 +18,7 @@ from .ir import (
     Variable,
     While,
 )
-from .type_names import split_type_name
+from .type_names import is_known_type_name, split_map_type, validate_type_name
 
 
 class TypeCheckError(ValueError):
@@ -164,7 +165,26 @@ def _expression_type(expression, environment, signatures) -> str:
         item_type = _unify_types(item_types) if item_types else ANY
         result = f"list<{item_type}>"
         try:
-            split_type_name(result)
+            validate_type_name(result)
+        except ValueError as error:
+            raise TypeCheckError(str(error)) from error
+        return result
+    if isinstance(expression, MapExpression):
+        key_types = [
+            _expression_type(key, environment, signatures)
+            for key, _ in expression.entries
+        ]
+        value_types = [
+            _expression_type(value, environment, signatures)
+            for _, value in expression.entries
+        ]
+        key_type = _unify_types(key_types, "map keys") if key_types else ANY
+        value_type = _unify_types(value_types, "map values") if value_types else ANY
+        if key_type not in {"int", "string", "bool", ANY}:
+            raise TypeCheckError("map keys must be scalar")
+        result = f"map<{key_type},{value_type}>"
+        try:
+            validate_type_name(result)
         except ValueError as error:
             raise TypeCheckError(str(error)) from error
         return result
@@ -220,32 +240,56 @@ def _expression_type(expression, environment, signatures) -> str:
     raise TypeCheckError("unsupported expression")
 
 
-def _unify_types(type_names: list[str]) -> str:
-    try:
-        parsed = [split_type_name(type_name) for type_name in type_names]
-    except ValueError as error:
-        raise TypeCheckError(str(error)) from error
-    depths = {depth for depth, _ in parsed}
-    concrete = {base for _, base in parsed if base != ANY}
-    if len(depths) != 1 or len(concrete) > 1:
-        raise TypeCheckError("list items must have one type")
-    result = next(iter(concrete), ANY)
-    for _ in range(next(iter(depths))):
-        result = f"list<{result}>"
+def _unify_types(type_names: list[str], context: str = "list items") -> str:
+    result = ANY
+    for type_name in type_names:
+        result = _unify_type_pair(result, type_name, context)
     return result
+
+
+def _unify_type_pair(left: str, right: str, context: str) -> str:
+    if left == ANY:
+        return right
+    if right == ANY or left == right:
+        return left
+    left_list = _list_item_type(left)
+    right_list = _list_item_type(right)
+    if left_list is not None and right_list is not None:
+        return f"list<{_unify_type_pair(left_list, right_list, context)}>"
+    left_map = split_map_type(left)
+    right_map = split_map_type(right)
+    if left_map is not None and right_map is not None:
+        key = _unify_type_pair(left_map[0], right_map[0], context)
+        value = _unify_type_pair(left_map[1], right_map[1], context)
+        return f"map<{key},{value}>"
+    raise TypeCheckError(f"{context} must have one type")
 
 
 def _compatible(expected: str, actual: str) -> bool:
     if expected == actual or ANY in {expected, actual}:
         return True
-    try:
-        expected_depth, expected_base = split_type_name(expected)
-        actual_depth, actual_base = split_type_name(actual)
-    except (TypeError, ValueError):
-        return False
-    return expected_depth == actual_depth and (
-        expected_base == actual_base or ANY in {expected_base, actual_base}
+    expected_map = split_map_type(expected)
+    actual_map = split_map_type(actual)
+    if expected_map is not None or actual_map is not None:
+        return (
+            expected_map is not None
+            and actual_map is not None
+            and _compatible(expected_map[0], actual_map[0])
+            and _compatible(expected_map[1], actual_map[1])
+        )
+    expected_list = _list_item_type(expected)
+    actual_list = _list_item_type(actual)
+    return (
+        expected_list is not None
+        and actual_list is not None
+        and _compatible(expected_list, actual_list)
     )
+
+
+def _list_item_type(type_name: str) -> str | None:
+    if type_name.startswith("list<") and type_name.endswith(">"):
+        return type_name[5:-1]
+    return None
 
 
 def _require_known_type(type_name: str) -> None:
@@ -254,11 +298,7 @@ def _require_known_type(type_name: str) -> None:
 
 
 def _is_known_type(type_name: str) -> bool:
-    try:
-        _, base = split_type_name(type_name)
-    except (TypeError, ValueError):
-        return False
-    return base in TYPE_NAMES
+    return is_known_type_name(type_name)
 
 
 def _always_returns(instructions) -> bool:

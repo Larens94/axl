@@ -1,9 +1,59 @@
 import unittest
 
 from axl import Interpreter, RuntimeError, parse
+from axl.interpreter import render_value
+from axl.ir import MapValue
 
 
 class ProgramTest(unittest.TestCase):
+    def test_map_value_equality_and_hash_ignore_entry_order(self):
+        first = MapValue((("a", 1), ("b", 2)))
+        second = MapValue((("b", 2), ("a", 1)))
+
+        self.assertEqual(first, second)
+        self.assertEqual(hash(first), hash(second))
+        self.assertNotEqual(first, {"a": 1, "b": 2})
+
+    def test_tool_map_rejects_duplicate_typed_keys(self):
+        interpreter = Interpreter(
+            tools={"bad": lambda: MapValue(((True, "a"), (True, "b")))}
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "map keys must be unique"):
+            interpreter.run(parse("emit call bad()"))
+
+    def test_tool_map_rejects_collection_keys(self):
+        interpreter = Interpreter(tools={"bad": lambda: MapValue((((1,), "a"),))})
+
+        with self.assertRaisesRegex(RuntimeError, "map keys must be scalar"):
+            interpreter.run(parse("emit call bad()"))
+
+    def test_tool_map_rejects_malformed_entries(self):
+        interpreter = Interpreter(
+            tools={"bad": lambda: MapValue((("x",),))}  # type: ignore[arg-type]
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "contains invalid map"):
+            interpreter.run(parse("emit call bad()"))
+
+    def test_tool_nested_maps_must_have_one_recursive_shape(self):
+        value = MapValue(
+            (
+                ("a", MapValue((("x", 1),))),
+                ("b", MapValue((("x", "one"),))),
+            )
+        )
+        interpreter = Interpreter(tools={"bad": lambda: value})
+
+        with self.assertRaisesRegex(RuntimeError, "map values must have one type"):
+            interpreter.run(parse("emit call bad()"))
+
+    def test_map_rendering_is_injective_for_reserved_string_key(self):
+        reserved = MapValue((("$map", ((1, "x"),)),))
+        numeric = MapValue(((1, "x"),))
+
+        self.assertNotEqual(render_value(reserved), render_value(numeric))
+
     def test_program_remembers_recalls_and_prints(self):
         source = """
         memory user_style = "short"
