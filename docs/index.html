@@ -8,125 +8,125 @@
   <meta property="og:title" content="AXL — Agent eXecution Language">
   <meta property="og:description" content="Il linguaggio compatto per agenti che costruiscono software completo.">
   <meta property="og:type" content="website">
-  <title>AXL — Language for agents</title>
+  <title>AXL — Linguaggio per agenti</title>
   <link rel="stylesheet" href="styles.css">
   <script defer src="app.js"></script>
 </head>
 <body>
   <a class="skip" href="#main">Vai al contenuto</a>
   <header class="topbar">
-    <a class="logo" href="#top" aria-label="AXL home"><span class="logo-mark">A</span><strong>AXL</strong></a>
+    <a class="logo" href="#top" aria-label="Pagina iniziale AXL"><span class="logo-mark">A</span><strong>AXL</strong></a>
     <nav aria-label="Principale">
-      <a href="#language">Language</a>
-      <a href="#architecture">Architecture</a>
+      <a href="#language">Linguaggio</a>
+      <a href="#architecture">Architettura</a>
       <a href="#roadmap">Roadmap</a>
-      <a href="https://github.com/Larens94/axl/tree/main/docs">Docs</a>
+      <a href="https://github.com/Larens94/axl/tree/main/docs">Documentazione</a>
     </nav>
     <div class="top-actions">
       <a class="text-button" href="https://github.com/Larens94/axl">GitHub</a>
-      <a class="solid-button" href="#start">Get started</a>
+      <a class="solid-button" href="#start">Inizia</a>
       <button id="menu" aria-label="Apri menu" aria-expanded="false">Menu</button>
     </div>
   </header>
   <div id="mobile-nav" class="mobile-nav" hidden>
-    <a href="#language">Language</a><a href="#architecture">Architecture</a><a href="#roadmap">Roadmap</a><a href="https://github.com/Larens94/axl/tree/main/docs">Docs</a><a href="https://github.com/Larens94/axl">GitHub</a>
+    <a href="#language">Linguaggio</a><a href="#architecture">Architettura</a><a href="#roadmap">Roadmap</a><a href="https://github.com/Larens94/axl/tree/main/docs">Documentazione</a><a href="https://github.com/Larens94/axl">GitHub</a>
   </div>
 
   <main id="main">
     <section id="top" class="hero wrap">
-      <p class="overline">AGENT EXECUTION LANGUAGE · COMPACT SOURCE 2</p>
-      <h1>Not written for humans.<br><span>Built for agents.</span></h1>
+      <p class="overline">LINGUAGGIO DI ESECUZIONE PER AGENTI · SORGENTE COMPATTO 2</p>
+      <h1>Non scritto per gli esseri umani.<br><span>Creato per gli agenti.</span></h1>
       <p class="hero-copy">AXL è un linguaggio general-purpose compatto e deterministico. Gli agenti generano meno token, il compiler elimina l'ambiguità e i backend trasformano lo stesso sorgente in software per qualsiasi piattaforma.</p>
       <div class="hero-actions">
-        <a class="solid-button large" href="#start">Explore AXL</a>
-        <a class="outline-button large" href="https://github.com/Larens94/axl">View source</a>
+        <a class="solid-button large" href="#start">Esplora AXL</a>
+        <a class="outline-button large" href="https://github.com/Larens94/axl">Vedi il sorgente</a>
       </div>
 
       <div class="source-window" aria-label="Esempio AXL Compact Source 2">
         <div class="window-top">
           <span class="window-title"><i></i> main.axl</span>
-          <div class="window-tabs"><button class="source-tab active" data-source="compact">Compact</button><button class="source-tab" data-source="meaning">Meaning</button></div>
-          <button class="copy" data-copy="compact-code">Copy</button>
+          <div class="window-tabs"><button class="source-tab active" data-source="compact">Compatto</button><button class="source-tab" data-source="meaning">Significato</button></div>
+          <button class="copy" data-copy="compact-code">Copia</button>
         </div>
         <div id="compact" class="source-panel active">
           <pre id="compact-code"><code><b>2</b>;<em>50</em>|r|search;<em>10</em>|x|"AXL",!search/1;<em>20</em>|finding|$x|95|3600|r;<em>12</em>|$x;<em>99</em>;<em>51</em>|w;<em>52</em>|r;<em>99</em>;<em>52</em>|w</code></pre>
         </div>
         <div id="meaning" class="source-panel">
-          <div class="meaning-grid"><span>50</span><p>agent <b>r</b>, grant search</p><span>10</span><p>bind tool result to <b>x</b></p><span>20</span><p>persist finding in AM</p><span>51/52</span><p>define and run workflow</p><span>99</span><p>end current block</p></div>
+          <div class="meaning-grid"><span>50</span><p>agente <b>r</b>, autorizza search</p><span>10</span><p>assegna il risultato del tool a <b>x</b></p><span>20</span><p>salva il risultato in AM</p><span>51/52</span><p>definisce ed esegue il workflow</p><span>99</span><p>chiude il blocco corrente</p></div>
         </div>
-        <div class="window-bottom"><span>single stream</span><span>zero indentation</span><span>deterministic parse</span></div>
+        <div class="window-bottom"><span>flusso singolo</span><span>nessuna indentazione</span><span>parsing deterministico</span></div>
       </div>
     </section>
 
     <section class="proof-bar">
-      <div class="wrap proof-inner"><p><strong>156</strong> executable tests</p><p><strong>3</strong> AX-IR versions</p><p><strong>0</strong> implicit capabilities</p><p><strong>1</strong> canonical source form</p></div>
+      <div class="wrap proof-inner"><p><strong>156</strong> test eseguibili</p><p><strong>3</strong> versioni AX-IR</p><p><strong>0</strong> capability implicite</p><p><strong>1</strong> forma sorgente canonica</p></div>
     </section>
 
     <section id="language" class="chapter wrap">
-      <div class="chapter-index">01 / LANGUAGE</div>
+      <div class="chapter-index">01 / LINGUAGGIO</div>
       <div class="chapter-copy">
-        <h2>Less syntax.<br>More semantics.</h2>
+        <h2>Meno sintassi.<br>Più semantica.</h2>
         <p class="lead">AXL non imita linguaggi costruiti per essere letti dagli esseri umani. Usa frame numerici, campi delimitati ed espressioni RPN.</p>
       </div>
       <div class="language-demo">
-        <div class="demo-line"><span class="tag">BIND + MATH</span><code>10|x|#2,#3,#4,*,+|i</code><p>Typed binding. RPN removes precedence and parentheses.</p></div>
-        <div class="demo-line"><span class="tag">FUNCTION</span><code>40|add|a:i,b:i|i;11|$a,$b,+;99</code><p>Signature, body and return in one stream.</p></div>
-        <div class="demo-line"><span class="tag">IMPORT</span><code>1|m|m.axl;12|#20,#22,^m.add/2</code><p>Relative module, explicit namespace, postfix call.</p></div>
-        <div class="demo-line"><span class="tag">MEMORY</span><code>20|k|"v"|95|3600|r;12|@k</code><p>Scoped AM record with confidence, TTL and source.</p></div>
+        <div class="demo-line"><span class="tag">BINDING + CALCOLO</span><code>10|x|#2,#3,#4,*,+|i</code><p>Binding tipizzato. La RPN elimina precedenza e parentesi.</p></div>
+        <div class="demo-line"><span class="tag">FUNZIONE</span><code>40|add|a:i,b:i|i;11|$a,$b,+;99</code><p>Firma, corpo e ritorno in un unico flusso.</p></div>
+        <div class="demo-line"><span class="tag">IMPORTAZIONE</span><code>1|m|m.axl;12|#20,#22,^m.add/2</code><p>Modulo relativo, namespace esplicito, chiamata postfissa.</p></div>
+        <div class="demo-line"><span class="tag">MEMORIA</span><code>20|k|"v"|95|3600|r;12|@k</code><p>Record AM con scope, affidabilità, TTL e sorgente.</p></div>
       </div>
-      <a class="arrow-link" href="https://github.com/Larens94/axl/blob/main/docs/compact-syntax.md">Read the compact source specification <span>→</span></a>
+      <a class="arrow-link" href="https://github.com/Larens94/axl/blob/main/docs/compact-syntax.md">Leggi la specifica del sorgente compatto <span>→</span></a>
     </section>
 
     <section class="statement dark">
       <div class="wrap statement-grid">
-        <p class="overline">GENERAL-PURPOSE</p>
-        <h2>Compact does not mean limited.</h2>
-        <p>AXL is designed to express backend, web, native apps, mobile, systems, graphics, GPU workloads, agents and workflows. The source stays stable while target bridges evolve.</p>
+        <p class="overline">USO GENERALE</p>
+        <h2>Compatto non significa limitato.</h2>
+        <p>AXL è progettato per esprimere backend, web, applicazioni native e mobili, sistemi, grafica, carichi GPU, agenti e workflow. Il sorgente resta stabile mentre evolvono i bridge di destinazione.</p>
       </div>
     </section>
 
     <section id="architecture" class="chapter wrap architecture">
-      <div class="chapter-index">02 / ARCHITECTURE</div>
+      <div class="chapter-index">02 / ARCHITETTURA</div>
       <div class="chapter-copy">
-        <h2>One source.<br>Any backend.</h2>
+        <h2>Un solo sorgente.<br>Qualsiasi backend.</h2>
         <p class="lead">Rust è il primo runtime di basso livello, non un limite del linguaggio. AX-HIR, AX-MIR e ABI versionate separano semantica e piattaforma.</p>
       </div>
       <div class="pipeline" aria-label="Pipeline compiler AXL">
-        <div class="pipeline-row source"><span>01</span><b>Compact Source 2</b><small>opcode · RPN · canonical</small></div>
+        <div class="pipeline-row source"><span>01</span><b>Compact Source 2</b><small>opcode · RPN · canonico</small></div>
         <div class="connector"></div>
-        <div class="pipeline-row"><span>02</span><b>Parser + types</b><small>deterministic frontend</small></div>
+        <div class="pipeline-row"><span>02</span><b>Parser + tipi</b><small>frontend deterministico</small></div>
         <div class="connector"></div>
-        <div class="pipeline-row orange"><span>03</span><b>AX-HIR → AX-MIR</b><small>typed semantics · CFG · effects</small></div>
+        <div class="pipeline-row orange"><span>03</span><b>AX-HIR → AX-MIR</b><small>semantica tipizzata · CFG · effetti</small></div>
         <div class="connector branch"></div>
         <div class="targets">
-          <div><b>Rust / Native</b><small>server · CLI · system</small></div>
-          <div><b>VM</b><small>portable · sandboxed</small></div>
+          <div><b>Rust / Nativo</b><small>server · CLI · sistema</small></div>
+          <div><b>VM</b><small>portabile · isolata</small></div>
           <div><b>WASM / WASI</b><small>browser · edge</small></div>
-          <div><b>Platform bridges</b><small>mobile · GPU · OS · future</small></div>
+          <div><b>Bridge di piattaforma</b><small>mobile · GPU · SO · futuro</small></div>
         </div>
       </div>
-      <div class="bridge-note"><strong>Bridge contract</strong><p>Ogni bridge dichiara ABI, tipi, effetti, capability, target, cancellazione ed errori. Nessun provider o sistema operativo entra nella grammatica.</p></div>
-      <a class="arrow-link" href="https://github.com/Larens94/axl/blob/main/docs/architecture.md">Explore the complete architecture <span>→</span></a>
+      <div class="bridge-note"><strong>Contratto dei bridge</strong><p>Ogni bridge dichiara ABI, tipi, effetti, capability, target, cancellazione ed errori. Nessun provider o sistema operativo entra nella grammatica.</p></div>
+      <a class="arrow-link" href="https://github.com/Larens94/axl/blob/main/docs/architecture.md">Esplora l'architettura completa <span>→</span></a>
     </section>
 
     <section class="chapter safety-section">
       <div class="wrap safety-grid">
-        <div class="chapter-index">03 / EXECUTION</div>
-        <div><h2>Power, bounded.</h2><p class="lead">Un linguaggio per agenti deve poter fare qualsiasi cosa senza ricevere implicitamente accesso a tutto.</p></div>
+        <div class="chapter-index">03 / ESECUZIONE</div>
+        <div><h2>Potenza, con limiti.</h2><p class="lead">Un linguaggio per agenti deve poter fare qualsiasi cosa senza ricevere implicitamente accesso a tutto.</p></div>
         <div class="rules">
-          <article><span>01</span><h3>Deny by default</h3><p>Tool e bridge esistono solo quando l'host li registra e l'agente li riceve.</p></article>
-          <article><span>02</span><h3>Fail closed</h3><p>Solo un'approvazione booleana esatta autorizza gli effetti sensibili.</p></article>
-          <article><span>03</span><h3>Scoped memory</h3><p>AM conserva valori tipizzati, metadata e TTL dentro scope controllati dall'host.</p></article>
+          <article><span>01</span><h3>Negazione predefinita</h3><p>Tool e bridge esistono solo quando l'host li registra e l'agente li riceve.</p></article>
+          <article><span>02</span><h3>Chiusura sicura</h3><p>Solo un'approvazione booleana esatta autorizza gli effetti sensibili.</p></article>
+          <article><span>03</span><h3>Memoria con scope</h3><p>AM conserva valori tipizzati, metadati e TTL dentro scope controllati dall'host.</p></article>
           <article><span>04</span><h3>Budget + audit</h3><p>Step, valori, output, tool e memoria sono limitati; le decisioni restano osservabili.</p></article>
         </div>
       </div>
     </section>
 
     <section id="start" class="chapter wrap start-section">
-      <div class="chapter-index">04 / START</div>
-      <div class="chapter-copy"><h2>Run the reference.</h2><p class="lead">La reference Python fissa oggi la semantica. `pack` converte il frontend legacy nella forma compact canonica.</p></div>
+      <div class="chapter-index">04 / INIZIO</div>
+      <div class="chapter-copy"><h2>Esegui l'implementazione di riferimento.</h2><p class="lead">L'implementazione Python fissa oggi la semantica. `pack` converte il frontend precedente nella forma compatta canonica.</p></div>
       <div class="terminal">
-        <div class="terminal-tabs"><button class="cmd-tab active" data-cmd="run">Run</button><button class="cmd-tab" data-cmd="pack">Pack</button><button class="cmd-tab" data-cmd="ir">AX-IR</button></div>
+        <div class="terminal-tabs"><button class="cmd-tab active" data-cmd="run">Esegui</button><button class="cmd-tab" data-cmd="pack">Compatta</button><button class="cmd-tab" data-cmd="ir">AX-IR</button></div>
         <pre id="run" class="cmd-panel active"><code><i>$</i> git clone https://github.com/Larens94/axl.git
 <i>$</i> cd axl && python3 -m pip install .
 <i>$</i> axl run examples/compact.axl</code></pre>
@@ -139,36 +139,36 @@
 
     <section id="roadmap" class="chapter roadmap-section">
       <div class="wrap">
-        <div class="chapter-index">05 / ROADMAP</div>
-        <div class="chapter-copy"><h2>Semantics first.<br>Platforms next.</h2><p class="lead">Ogni fase deve chiudere il percorso da Compact Source a un programma reale verificato.</p></div>
+        <div class="chapter-index">05 / PERCORSO</div>
+        <div class="chapter-copy"><h2>Prima la semantica.<br>Poi le piattaforme.</h2><p class="lead">Ogni fase deve chiudere il percorso dal sorgente compatto a un programma reale verificato.</p></div>
         <ol class="roadmap-list">
-          <li class="done"><span>01</span><div><b>Compact foundation</b><p>Source 2, parser, canonical writer, IR, policy, AM, functions and modules.</p></div><em>working</em></li>
-          <li class="now"><span>02</span><div><b>General-purpose core</b><p>Collections, records, enums, result, pattern matching and structured errors.</p></div><em>next</em></li>
-          <li><span>03</span><div><b>HIR, MIR and Rust runtime</b><p>Lowering, VM, ABI, cancellation and cross-runtime conformance.</p></div><em>planned</em></li>
-          <li><span>04</span><div><b>Native, WASM and bridges</b><p>Filesystem, network, HTTP, database, DOM, mobile, GPU and OS targets.</p></div><em>planned</em></li>
-          <li><span>05</span><div><b>Ecosystem</b><p>Packages, registry, LSP, debugger, profiler and progressive self-hosting.</p></div><em>planned</em></li>
+          <li class="done"><span>01</span><div><b>Fondamenta compatte</b><p>Source 2, parser, writer canonico, IR, policy, AM, funzioni e moduli.</p></div><em>funzionante</em></li>
+          <li class="now"><span>02</span><div><b>Core general-purpose</b><p>Collezioni, record, enum, result, pattern matching ed errori strutturati.</p></div><em>prossimo</em></li>
+          <li><span>03</span><div><b>HIR, MIR e runtime Rust</b><p>Lowering, VM, ABI, cancellazione e conformità tra runtime.</p></div><em>pianificato</em></li>
+          <li><span>04</span><div><b>Nativo, WASM e bridge</b><p>Filesystem, rete, HTTP, database, DOM, mobile, GPU e sistemi operativi.</p></div><em>pianificato</em></li>
+          <li><span>05</span><div><b>Ecosistema</b><p>Pacchetti, registro, LSP, debugger, profiler e self-hosting progressivo.</p></div><em>pianificato</em></li>
         </ol>
-        <a class="arrow-link" href="https://github.com/Larens94/axl/blob/main/docs/roadmap.md">Read the detailed roadmap <span>→</span></a>
+        <a class="arrow-link" href="https://github.com/Larens94/axl/blob/main/docs/roadmap.md">Leggi la roadmap dettagliata <span>→</span></a>
       </div>
     </section>
 
     <section class="docs-section wrap">
-      <div><p class="overline">DOCUMENTATION</p><h2>Everything is versioned with the code.</h2></div>
+      <div><p class="overline">DOCUMENTAZIONE</p><h2>Tutto è versionato insieme al codice.</h2></div>
       <div class="docs-links">
-        <a href="https://github.com/Larens94/axl/blob/main/docs/compact-syntax.md"><b>Compact Source 2</b><span>Opcode and RPN reference →</span></a>
-        <a href="https://github.com/Larens94/axl/blob/main/SPEC.md"><b>Language specification</b><span>Normative semantics →</span></a>
-        <a href="https://github.com/Larens94/axl/blob/main/docs/architecture.md"><b>Architecture</b><span>HIR, MIR, runtime and bridges →</span></a>
-        <a href="https://github.com/Larens94/axl/blob/main/docs/security.md"><b>Security model</b><span>Capabilities, policy and audit →</span></a>
+        <a href="https://github.com/Larens94/axl/blob/main/docs/compact-syntax.md"><b>Compact Source 2</b><span>Riferimento per opcode e RPN →</span></a>
+        <a href="https://github.com/Larens94/axl/blob/main/SPEC.md"><b>Specifica del linguaggio</b><span>Semantica normativa →</span></a>
+        <a href="https://github.com/Larens94/axl/blob/main/docs/architecture.md"><b>Architettura</b><span>HIR, MIR, runtime e bridge →</span></a>
+        <a href="https://github.com/Larens94/axl/blob/main/docs/security.md"><b>Modello di sicurezza</b><span>Capability, policy e audit →</span></a>
       </div>
     </section>
 
     <section class="final-cta">
-      <div class="wrap"><h2>Build a language<br>agents deserve.</h2><div><p>Compact source. Deterministic execution. Any platform.</p><a class="solid-button large" href="https://github.com/Larens94/axl">Open on GitHub</a></div></div>
+      <div class="wrap"><h2>Costruiamo il linguaggio<br>che gli agenti meritano.</h2><div><p>Sorgente compatto. Esecuzione deterministica. Qualsiasi piattaforma.</p><a class="solid-button large" href="https://github.com/Larens94/axl">Apri su GitHub</a></div></div>
     </section>
   </main>
 
   <footer>
-    <div class="wrap footer-grid"><a class="logo" href="#top"><span class="logo-mark">A</span><strong>AXL</strong></a><p>Agent eXecution Language<br>Apache-2.0</p><div><a href="https://github.com/Larens94/axl">GitHub</a><a href="https://github.com/Larens94/axl/tree/main/docs">Documentation</a><a href="https://github.com/Larens94/axl/blob/main/SPEC.md">Specification</a></div></div>
+    <div class="wrap footer-grid"><a class="logo" href="#top"><span class="logo-mark">A</span><strong>AXL</strong></a><p>Agent eXecution Language<br>Apache-2.0</p><div><a href="https://github.com/Larens94/axl">GitHub</a><a href="https://github.com/Larens94/axl/tree/main/docs">Documentazione</a><a href="https://github.com/Larens94/axl/blob/main/SPEC.md">Specifica</a></div></div>
   </footer>
 </body>
 </html>

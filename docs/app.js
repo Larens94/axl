@@ -32,7 +32,7 @@
     if (!target) return;
     await navigator.clipboard.writeText(target.innerText);
     const label = button.textContent;
-    button.textContent = 'Copied';
+    button.textContent = 'Copiato';
     setTimeout(() => { button.textContent = label; }, 1200);
   }));
 })();

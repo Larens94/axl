@@ -1,6 +1,6 @@
 # Sicurezza e capability
 
-## Threat model
+## Modello delle minacce
 
 Sono considerati non fidati:
 

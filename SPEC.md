@@ -1,4 +1,4 @@
-# AXL 2 compact-source development specification
+# Specifica di sviluppo AXL 2 con sorgente compatto
 
 ## 1. Identità e obiettivo
 
@@ -18,7 +18,7 @@ AXL Compact Source 2
 → Rust/native | VM | WASM | bridge piattaforma
 ```
 
-La reference implementation Python definisce oggi la semantica e il corpus di conformità. Non è il runtime finale.
+L'implementazione di riferimento Python definisce oggi la semantica e il corpus di conformità. Non è il runtime finale.
 
 ## 3. Sorgente canonico
 
@@ -52,7 +52,7 @@ Le righe e l'indentazione non hanno significato. `;`, `|` e `,` sono separatori 
 
 Le espressioni sono RPN e delimitate da virgole. Atomi: `#int`, `"string"`, `?1`, `?0`, `$variable`, `@memory`. Operatori: `+ - * / = ! > < G L`. Chiamate postfix: `^function/arity` e `!tool/arity`. `~arity` costruisce una lista dai valori sullo stack.
 
-Il formato legacy keyword-based è soltanto un frontend di migrazione/debug. `axl pack` produce il sorgente canonico.
+Il formato precedente basato su parole chiave è soltanto un frontend di migrazione e debug. `axl pack` produce il sorgente canonico.
 
 ## 4. Tipi e operatori
 
@@ -61,7 +61,7 @@ Valori correnti: string, integer, boolean e liste omogenee immutabili. Codici so
 - `+`: integer addition o string concatenation con tipi identici;
 - `-`, `*`, `/`, ordering: interi;
 - `/`: errore su zero o risultato frazionario;
-- equality: tipi runtime identici;
+- uguaglianza: tipi runtime identici;
 - condizioni: booleani;
 - risultati tool esterni al value algebra: errore.
 
@@ -86,11 +86,11 @@ Una tool call riesce solo se:
 
 ## 7. AM — memoria
 
-AM è provider-agnostic. Lo scope è host-owned. Ogni record contiene chiave, scope, valore tipizzato, versione, confidence, source, timestamp e TTL opzionale. Expiry è verificata in lettura. `forget` è idempotente e scoped.
+AM è indipendente dal provider. Lo scope appartiene all'host. Ogni record contiene chiave, scope, valore tipizzato, versione, affidabilità, sorgente, timestamp e TTL opzionale. La scadenza è verificata in lettura. `forget` è idempotente e rispetta lo scope.
 
 ## 8. Capability e bridge
 
-Filesystem, network, HTTP, database, modelli, UI, GPU e API OS non sono keyword vendor-specific. Sono contratti capability tipizzati abbassati verso adapter/bridge host.
+Filesystem, rete, HTTP, database, modelli, UI, GPU e API del sistema operativo non sono parole chiave legate a un fornitore. Sono contratti di capability tipizzati tradotti verso adapter e bridge dell'host.
 
 Un bridge dichiara:
 
@@ -104,7 +104,7 @@ Il sorgente AXL resta indipendente dall'implementazione Rust, C ABI, WASI, JVM, 
 
 ## 9. Policy, audit e budget
 
-Tool deny-by-default. Decisioni approval-required, approved, denied, executed e failed sono auditabili. Segreti non devono comparire in source, IR, output o audit arguments.
+I tool sono negati per impostazione predefinita. Le decisioni `approval_required`, `approved`, `denied`, `executed` e `failed` sono verificabili tramite audit. I segreti non devono comparire nel sorgente, nell'IR, nell'output o negli argomenti di audit.
 
 Budget positivi limitano step/espressioni, profondità chiamate, byte e nodi dei valori intermedi, profondità delle collezioni, byte della serializzazione canonica dei valori in output (escluso il delimitatore di riga), tool call e operazioni memoria. Plugin host bloccanti richiedono isolamento e timeout esterni.
 
@@ -122,6 +122,6 @@ Decoder strict: versioni, nodi, campi, tipi, placement, riferimenti e cicli sono
 
 - stesso Compact Source 2 → stessa semantica;
 - writer canonico → rappresentazione stabile;
-- reference runtime e backend ottimizzati → equivalenza osservazionale;
+- runtime di riferimento e backend ottimizzati → equivalenza osservazionale;
 - nuovi target → stessi effetti, errori e confini capability;
-- cambi incompatibili al source o all'IR → nuova versione esplicita.
+- cambi incompatibili al sorgente o all'IR → nuova versione esplicita.

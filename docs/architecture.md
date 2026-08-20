@@ -29,13 +29,13 @@ AX-MIR ── CFG, tipi abbassati, effetti, capability ABI
              └── futuri backend
 ```
 
-## Source layer
+## Livello sorgente
 
 Il sorgente canonico è ottimizzato per agenti: opcode numerici, frame delimitati, espressioni RPN, nessuna indentazione. È compatto ma versionato e completamente deterministico.
 
 Il frontend verbose esistente serve soltanto a migrazione, debug e conversione con `axl pack`.
 
-## Frontend
+## Analisi del sorgente
 
 Responsabilità:
 
@@ -56,7 +56,7 @@ Oggi il frontend/reference runtime è Python. Il corpus di test ne rende la sema
 
 Separare i livelli consente ottimizzazione e target multipli senza contaminare il sorgente.
 
-## Runtime
+## Motore di esecuzione
 
 Il runtime governa:
 

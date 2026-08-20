@@ -10,7 +10,7 @@ sorgente → parser → IR → validazione/type-check → runtime → output oss
 
 Una modifica alla grammatica non è completa senza IR, semantica, diagnostica, test, esempio e documentazione coerenti.
 
-## Workflow TDD
+## Flusso di lavoro TDD
 
 Per ogni comportamento:
 
@@ -68,6 +68,6 @@ Non modificare uno schema pubblicato. Una modifica incompatibile richiede:
 - i plugin implementano capability host;
 - segreti e credenziali non entrano in sorgente, IR o audit.
 
-## Issue di sicurezza
+## Segnalazioni di sicurezza
 
 Non pubblicare vulnerabilità sfruttabili o credenziali in issue pubbliche. Contattare privatamente il maintainer del repository fino alla definizione di un processo formale di security reporting.

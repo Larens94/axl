@@ -1,46 +1,47 @@
-# Changelog
+# Registro delle modifiche
 
-## 2.0.0 — development
+## 2.0.0 — in sviluppo
 
-- Added Compact Source 2 as the canonical agent-only syntax.
-- Added numeric instruction frames, RPN expressions and block opcodes.
-- Added compact functions, modules, memory, agents, workflows and tool calls.
-- Added canonical compact writer and `axl pack` migration command.
-- Reframed Rust as the first runtime/backend within a multi-backend bridge architecture.
-- Redesigned documentation and GitHub Pages around the compact language model.
-- Added homogeneous immutable `list<T>` values with compact `~arity` construction.
-- Published AX-IR 1.2 while preserving AX-IR 1.0/1.1 decoding.
-- Added list transport through functions, tool capabilities, SQLite AM and canonical CLI JSON output.
+- Aggiunto Compact Source 2 come sintassi canonica destinata esclusivamente agli agenti.
+- Aggiunti frame numerici per le istruzioni, espressioni RPN e opcode per i blocchi.
+- Aggiunti funzioni, moduli, memoria, agenti, workflow e chiamate ai tool in formato compatto.
+- Aggiunti il writer compatto canonico e il comando di migrazione `axl pack`.
+- Ridefinito Rust come primo runtime/backend all'interno di un'architettura a bridge e backend multipli.
+- Ridisegnate la documentazione e le GitHub Pages attorno al modello di linguaggio compatto.
+- Aggiunti valori `list<T>` omogenei e immutabili con costruzione compatta `~arity`.
+- Pubblicato AX-IR 1.2 mantenendo la decodifica di AX-IR 1.0 e 1.1.
+- Aggiunto il trasporto delle liste attraverso funzioni, capability dei tool, AM SQLite e output JSON canonico della CLI.
+- Aggiunto il tracer `map<K,V>` tipizzato per Compact Source e runtime di riferimento.
 
-## 1.1.0 — development
+## 1.1.0 — in sviluppo
 
-- Added typed functions, parameters, returns and expression calls.
-- Added static type checking for function contracts and typed variables.
-- Added isolated function scopes and bounded recursion depth.
-- Extended JSON IR/schema with function nodes.
-- Added relative module imports, aliases, namespaced functions and cycle detection.
-- Published AX-IR 1.1 while preserving tested AX-IR 1.0 decoding.
-- Added complete architecture, language, runtime, security, toolchain and roadmap documentation under `docs/`.
-- Added the Apache License 2.0 text for the public open-source repository.
+- Aggiunti funzioni tipizzate, parametri, ritorni e chiamate nelle espressioni.
+- Aggiunto il controllo statico dei tipi per i contratti delle funzioni e le variabili tipizzate.
+- Aggiunti scope isolati per le funzioni e profondità di ricorsione limitata.
+- Estesi IR e schema JSON con i nodi funzione.
+- Aggiunti import relativi dei moduli, alias, funzioni con namespace e rilevamento dei cicli.
+- Pubblicato AX-IR 1.1 mantenendo la decodifica verificata di AX-IR 1.0.
+- Aggiunta in `docs/` la documentazione completa su architettura, linguaggio, runtime, sicurezza, toolchain e roadmap.
+- Aggiunto il testo della licenza Apache 2.0 per il repository open source pubblico.
 
 ## 1.0.0
 
-- Added typed, validated JSON IR 1.0 and compile/exec CLI.
-- Added agents, tool grants, workflows and static cycle detection.
-- Added tool effects, explicit approvals and audit events.
-- Added scoped memory, metadata, TTL, versioning and forgetting.
-- Added SQLite schema migration and provider-neutral memory interface.
-- Added expression, intermediate-value, output, tool-call and memory-operation budgets.
-- Hardened runtime typing, CLI errors, reserved identifiers and IR validation.
+- Aggiunti IR JSON 1.0 tipizzati e validati e i comandi CLI `compile`/`exec`.
+- Aggiunti agenti, autorizzazioni ai tool, workflow e rilevamento statico dei cicli.
+- Aggiunti effetti dei tool, approvazioni esplicite ed eventi di audit.
+- Aggiunti memoria con scope, metadati, TTL, versionamento e cancellazione.
+- Aggiunti migrazione dello schema SQLite e interfaccia di memoria indipendente dal provider.
+- Aggiunti budget per espressioni, valori intermedi, output, chiamate ai tool e operazioni di memoria.
+- Rafforzati tipi runtime, errori CLI, identificatori riservati e validazione IR.
 
 ## 0.3.0
 
-- Added bounded loops and persistent SQLite memory.
+- Aggiunti cicli limitati e memoria persistente SQLite.
 
 ## 0.2.0
 
-- Added typed expressions, conditions and explicit tools.
+- Aggiunti espressioni tipizzate, condizioni e tool espliciti.
 
 ## 0.1.0
 
-- Initial parser, IR, interpreter and CLI.
+- Prima versione di parser, IR, interprete e CLI.

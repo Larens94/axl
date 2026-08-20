@@ -43,7 +43,7 @@ def tools():
 
 I futuri bridge Rust/C/WASI/DOM/GPU implementeranno lo stesso modello. Le capability non diventano keyword vendor-specific nel sorgente.
 
-## Approval fail-closed
+## Approvazione a chiusura sicura
 
 Solo il booleano esatto `True` autorizza. Stringhe truthy, numeri, eccezioni o provider assente vengono negati.
 

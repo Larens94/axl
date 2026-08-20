@@ -2,7 +2,7 @@
 
 **AX** è l'ecosistema Agent eXecution. **AXL** è il core eseguibile agent-native corrente: il sorgente canonico usa stream a singola riga, opcode numerici ed espressioni RPN, senza indentazione e con minimo overhead di token.
 
-**Website:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Docs:** [`docs/`](docs/README.md) · **Spec:** [`SPEC.md`](SPEC.md)
+**Sito:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Documentazione:** [`docs/`](docs/README.md) · **Specifica:** [`SPEC.md`](SPEC.md)
 
 ```text
 AXL Compact Source 2 → parser/type-checker → AX-IR/HIR/MIR
@@ -60,10 +60,10 @@ Rust è il primo runtime/backend di basso livello, **non un vincolo**. Bridge ve
 - `axl pack` per migrare il frontend legacy;
 - tipi `int`, `string`, `bool` e `list<T>` omogenee;
 - funzioni, parametri, ritorni, moduli e namespace;
-- condizioni e cicli bounded;
+- condizioni e cicli limitati;
 - agenti, workflow e tool grants;
-- AM scoped in-memory/SQLite con metadata e TTL;
-- policy deny-by-default, approval fail-closed e audit;
+- AM con scope, in memoria/SQLite, metadati e TTL;
+- policy con negazione predefinita, approvazione a chiusura sicura e audit;
 - budget multidimensionali;
 - AX-IR JSON 1.0/1.1/1.2;
 - CLI `run`, `pack`, `compile`, `exec`.

@@ -21,7 +21,7 @@ La strategia completa per web, desktop, mobile, AX-UI, backend e networking è d
 | Native/VM/WASM | pianificato |
 | Bridge piattaforma | pianificato |
 
-## M1 — Compact Core
+## M1 — Core compatto
 
 - stabilizzare opcode Source 2;
 - source span per frame/token;
@@ -51,7 +51,7 @@ La strategia completa per web, desktop, mobile, AX-UI, backend e networking è d
 
 **Gate:** stesso corpus su tree-walk e MIR.
 
-## M4 — Rust runtime e VM
+## M4 — Runtime Rust e VM
 
 - workspace Rust;
 - decoder/validator;
@@ -105,7 +105,7 @@ La strategia completa per web, desktop, mobile, AX-UI, backend e networking è d
 
 **Gate:** app grafica multipiattaforma.
 
-## M9 — Agent platform
+## M9 — Piattaforma agentica
 
 - task, eventi e scheduler DAG;
 - concorrenza strutturata;
