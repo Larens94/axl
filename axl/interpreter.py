@@ -1,3 +1,4 @@
+import json
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from .ir import (
     FunctionCall,
     If,
     Let,
+    ListExpression,
     Literal,
     MemoryWrite,
     Program,
@@ -28,9 +30,30 @@ from .memory import InMemoryStore, MemoryStore
 from .policy import ApprovalRequest, ApprovalRequired, AuditEvent, Tool, validate_tool
 from .validation import validate
 
+MAX_VALUE_DEPTH = 256
+
 
 class RuntimeError(Exception):
     """Raised when a valid AXL program cannot be executed."""
+
+
+def render_value(value: Value) -> str:
+    if type(value) is bool:
+        return str(value).lower()
+    if type(value) is tuple:
+        try:
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        except (UnicodeEncodeError, ValueError) as error:
+            raise RuntimeError("output value cannot be rendered") from error
+    if type(value) is int:
+        digit_limit = sys.get_int_max_str_digits()
+        estimated_digits = (value.bit_length() * 30103) // 100000 + 1
+        if digit_limit and estimated_digits >= digit_limit:
+            raise RuntimeError("integer output is too large")
+    try:
+        return str(value)
+    except ValueError as error:
+        raise RuntimeError("integer output is too large") from error
 
 
 class _FunctionReturn(Exception):
@@ -55,6 +78,8 @@ class Interpreter:
         scope: str = "session:default",
         max_output_bytes: int = 1_000_000,
         max_value_bytes: int = 1_000_000,
+        max_value_nodes: int = 100_000,
+        max_value_depth: int = 256,
         max_tool_calls: int = 100,
         max_memory_ops: int = 1_000,
         max_function_depth: int = 256,
@@ -64,6 +89,8 @@ class Interpreter:
                 max_steps,
                 max_output_bytes,
                 max_value_bytes,
+                max_value_nodes,
+                max_value_depth,
                 max_tool_calls,
                 max_memory_ops,
                 max_function_depth,
@@ -71,6 +98,8 @@ class Interpreter:
             < 1
         ):
             raise ValueError("runtime budgets must be positive")
+        if max_value_depth > MAX_VALUE_DEPTH:
+            raise ValueError(f"max_value_depth cannot exceed {MAX_VALUE_DEPTH}")
         if isinstance(tools, dict):
             tool_list = [Tool(name, handler) for name, handler in tools.items()]
         else:
@@ -83,10 +112,19 @@ class Interpreter:
         self.tools = {tool.name: tool for tool in tool_list}
         self.max_steps = max_steps
         self.memory_store = memory_store or InMemoryStore()
+        configure_limits = getattr(self.memory_store, "configure_limits", None)
+        if configure_limits is not None:
+            configure_limits(
+                max_bytes=max_value_bytes,
+                max_nodes=max_value_nodes,
+                max_depth=max_value_depth,
+            )
         self.approve = approve
         self.scope = scope
         self.max_output_bytes = max_output_bytes
         self.max_value_bytes = max_value_bytes
+        self.max_value_nodes = max_value_nodes
+        self.max_value_depth = max_value_depth
         self.max_tool_calls = max_tool_calls
         self.max_memory_ops = max_memory_ops
         self.max_function_depth = max_function_depth
@@ -115,9 +153,13 @@ class Interpreter:
             if isinstance(instruction, Function)
         }
         self._execute(program.instructions)
+        try:
+            snapshot = self.memory_store.snapshot(self.scope)
+        except (RecursionError, TypeError, ValueError) as error:
+            raise RuntimeError("memory snapshot is invalid") from error
         memory = {
             key: self._bounded_value(value, f"memory '{key}'")
-            for key, value in self.memory_store.snapshot(self.scope).items()
+            for key, value in snapshot.items()
         }
         return ExecutionResult(
             output=self.output,
@@ -126,15 +168,7 @@ class Interpreter:
         )
 
     def _render_output(self, value: Value) -> str:
-        if type(value) is int:
-            digit_limit = sys.get_int_max_str_digits()
-            estimated_digits = (value.bit_length() * 30103) // 100000 + 1
-            if digit_limit and estimated_digits >= digit_limit:
-                raise RuntimeError("integer output is too large")
-        try:
-            return str(value)
-        except ValueError as error:
-            raise RuntimeError("integer output is too large") from error
+        return render_value(value)
 
     def _execute(self, instructions) -> None:
         for instruction in instructions:
@@ -220,31 +254,95 @@ class Interpreter:
             raise RuntimeError(f"tool call budget exceeded ({self.max_tool_calls})")
 
     def _bounded_value(self, value, context: str = "value") -> Value:
-        if type(value) not in (str, int, bool):
-            raise RuntimeError(
-                f"{context} contains invalid value '{type(value).__name__}'"
-            )
-        if type(value) is str:
-            size = len(value.encode("utf-8"))
-        elif type(value) is int:
-            size = max(1, (value.bit_length() + 7) // 8)
-        else:
-            size = 1
-        if size > self.max_value_bytes:
-            raise RuntimeError(f"value budget exceeded ({self.max_value_bytes} bytes)")
+        size = 0
+        nodes = 0
+        stack = [(value, 0)]
+        while stack:
+            item, depth = stack.pop()
+            nodes += 1
+            if nodes > self.max_value_nodes:
+                raise RuntimeError(
+                    f"value node budget exceeded ({self.max_value_nodes})"
+                )
+            if type(item) is tuple:
+                size += 1
+                if depth >= self.max_value_depth:
+                    raise RuntimeError(f"value nesting exceeds {self.max_value_depth}")
+                stack.extend((child, depth + 1) for child in item)
+            elif type(item) is str:
+                try:
+                    size += len(item.encode("utf-8"))
+                except UnicodeEncodeError as error:
+                    raise RuntimeError(f"{context} contains invalid Unicode") from error
+            elif type(item) is int:
+                size += max(1, (item.bit_length() + 7) // 8)
+            elif type(item) is bool:
+                size += 1
+            else:
+                raise RuntimeError(
+                    f"{context} contains invalid value '{type(item).__name__}'"
+                )
+            if size > self.max_value_bytes:
+                raise RuntimeError(
+                    f"value budget exceeded ({self.max_value_bytes} bytes)"
+                )
+        if type(value) is tuple:
+            self._value_shape(value)
         return value
+
+    def _value_shape(self, value: Value) -> tuple[int, str | None]:
+        work = [(value, 0, False)]
+        shapes: list[tuple[int, str | None]] = []
+        while work:
+            item, depth, visited = work.pop()
+            if type(item) is tuple:
+                if depth >= self.max_value_depth:
+                    raise RuntimeError(f"value nesting exceeds {self.max_value_depth}")
+                if not visited:
+                    work.append((item, depth, True))
+                    work.extend((child, depth + 1, False) for child in reversed(item))
+                    continue
+                children = shapes[-len(item) :] if item else []
+                if item:
+                    del shapes[-len(item) :]
+                item_depths = {item_depth for item_depth, _ in children}
+                item_types = {
+                    item_type for _, item_type in children if item_type is not None
+                }
+                if len(item_depths) > 1 or len(item_types) > 1:
+                    raise RuntimeError("list items must have one type")
+                child_depth = next(iter(item_depths), 0)
+                shapes.append((child_depth + 1, next(iter(item_types), None)))
+            elif type(item) is bool:
+                shapes.append((0, "bool"))
+            elif type(item) is int:
+                shapes.append((0, "int"))
+            elif type(item) is str:
+                shapes.append((0, "string"))
+            else:
+                raise RuntimeError(
+                    f"value contains invalid value '{type(item).__name__}'"
+                )
+        return shapes[0]
 
     def _evaluate(self, expression: Expression) -> Value:
         self._step()
         if isinstance(expression, Literal):
             return self._bounded_value(expression.value)
+        if isinstance(expression, ListExpression):
+            return self._bounded_value(
+                tuple(self._evaluate(item) for item in expression.items)
+            )
         if isinstance(expression, Variable):
             if expression.name not in self.variables:
                 raise RuntimeError(f"unknown variable '{expression.name}'")
             return self._bounded_value(self.variables[expression.name])
         if isinstance(expression, Recall):
             self._memory_op()
-            value = self.memory_store.get(expression.key, self.scope)
+            try:
+                value = self.memory_store.get(expression.key, self.scope)
+            except (RecursionError, TypeError, ValueError) as error:
+                raise RuntimeError(f"memory '{expression.key}' is invalid") from error
             if value is None:
                 raise RuntimeError(f"unknown memory '{expression.key}'")
             return self._bounded_value(value, f"memory '{expression.key}'")
@@ -290,7 +388,7 @@ class Interpreter:
                 raise RuntimeError(
                     f"tool '{expression.name}' failed: {error}"
                 ) from error
-            if type(result) not in (str, int, bool):
+            if type(result) not in (str, int, bool, tuple):
                 self.audit.append(AuditEvent.create(request, "failed"))
                 raise RuntimeError(
                     f"tool '{tool.name}' returned invalid value '{type(result).__name__}'"

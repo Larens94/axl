@@ -2,13 +2,95 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from axl import Interpreter, ParseError, parse
+from axl import Interpreter, ParseError, RuntimeError, TypeCheckError, parse, typecheck
 from axl.compact import CompactParseError, program_to_compact
 from axl.compiler import CompileError, compile_file
-from axl.ir import Emit, Let, Literal, Program, ToolCall
+from axl.ir import Emit, Let, ListExpression, Literal, Program, ToolCall
 
 
 class CompactSyntaxTest(unittest.TestCase):
+    def test_unknown_nested_list_type_is_rejected_statically(self):
+        program = Program((Let("xs", ListExpression((Literal(1),)), "list<unknown>"),))
+
+        with self.assertRaisesRegex(TypeCheckError, "unknown type 'list<unknown>'"):
+            typecheck(program)
+
+    def test_inferred_list_type_cannot_exceed_depth_limit(self):
+        expression = Literal(1)
+        for _ in range(17):
+            expression = ListExpression((expression,))
+        program = Program((Let("xs", expression),))
+
+        with self.assertRaisesRegex(TypeCheckError, "type nesting is too deep"):
+            typecheck(program)
+
+    def test_compact_typed_list_executes_end_to_end(self):
+        program = parse("2;10|xs|#1,#2,#3,~3|li;12|$xs")
+
+        typecheck(program)
+        compact = program_to_compact(program)
+        result = Interpreter().run(parse(compact))
+
+        self.assertEqual(compact, "2;10|xs|#1,#2,#3,~3|li;12|$xs")
+        self.assertEqual(result.output, [(1, 2, 3)])
+
+    def test_compact_nested_list_round_trips(self):
+        source = "2;10|matrix|#1,#2,~2,#3,#4,~2,~2|lli;12|$matrix"
+
+        program = parse(source)
+        typecheck(program)
+
+        self.assertEqual(program_to_compact(program), source)
+        self.assertEqual(Interpreter().run(program).output, [((1, 2), (3, 4))])
+
+    def test_compact_function_accepts_and_returns_typed_list(self):
+        source = "2;40|identity|xs:li|li;11|$xs;99;12|#1,#2,~2,^identity/1"
+
+        program = parse(source)
+        typecheck(program)
+        result = Interpreter().run(program)
+
+        self.assertEqual(result.output, [(1, 2)])
+
+    def test_tool_capability_can_return_a_bounded_list(self):
+        program = parse("2;12|!items/0")
+        interpreter = Interpreter(tools={"items": lambda: (1, 2, 3)})
+
+        result = interpreter.run(program)
+
+        self.assertEqual(result.output, [(1, 2, 3)])
+
+    def test_tool_capability_list_depth_is_bounded(self):
+        value = 0
+        for _ in range(257):
+            value = (value,)
+        interpreter = Interpreter(tools={"deep": lambda: value})
+
+        with self.assertRaisesRegex(RuntimeError, "value nesting exceeds 256"):
+            interpreter.run(parse("2;12|!deep/0"))
+
+    def test_compact_empty_list_adopts_declared_item_type(self):
+        program = parse("2;10|xs|~0|li;12|$xs")
+
+        typecheck(program)
+        result = Interpreter().run(program)
+
+        self.assertEqual(result.output, [()])
+
+    def test_nested_empty_list_adopts_declared_item_type(self):
+        program = parse("2;10|xs|~0,#1,~1,~2|lli;12|$xs")
+
+        typecheck(program)
+        result = Interpreter().run(program)
+
+        self.assertEqual(result.output, [((), (1,))])
+
+    def test_compact_typed_list_rejects_mixed_item_types(self):
+        program = parse('2;10|xs|#1,"two",~2|li')
+
+        with self.assertRaisesRegex(ValueError, "list items must have one type"):
+            typecheck(program)
+
     def test_compact_writer_rejects_call_above_parser_arity_limit(self):
         arguments = tuple(Literal(1) for _ in range(65_536))
         program = Program((Emit(ToolCall("tool", arguments)),))

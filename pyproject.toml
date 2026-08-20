@@ -16,4 +16,4 @@ axl = "axl.__main__:main"
 packages = ["axl"]
 
 [tool.setuptools.data-files]
-"share/axl/schema" = ["schema/axl-ir-1.0.schema.json", "schema/axl-ir-1.1.schema.json"]
+"share/axl/schema" = ["schema/axl-ir-1.0.schema.json", "schema/axl-ir-1.1.schema.json", "schema/axl-ir-1.2.schema.json"]

@@ -1,6 +1,6 @@
-# AXL — Agent eXecution Language
+# AX / AXL — Agent eXecution
 
-AXL è un linguaggio general-purpose progettato **esclusivamente per agenti software**. Il sorgente canonico usa stream a singola riga, opcode numerici ed espressioni RPN: nessuna indentazione, nessuna sintassi imitata da Python, minimo overhead di token.
+**AX** è l'ecosistema Agent eXecution. **AXL** è il core eseguibile agent-native corrente: il sorgente canonico usa stream a singola riga, opcode numerici ed espressioni RPN, senza indentazione e con minimo overhead di token.
 
 **Website:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Docs:** [`docs/`](docs/README.md) · **Spec:** [`SPEC.md`](SPEC.md)
 
@@ -58,14 +58,14 @@ Rust è il primo runtime/backend di basso livello, **non un vincolo**. Bridge ve
 - Compact Source 2 e writer canonico;
 - parser deterministico ed espressioni RPN;
 - `axl pack` per migrare il frontend legacy;
-- tipi `int`, `string`, `bool`;
+- tipi `int`, `string`, `bool` e `list<T>` omogenee;
 - funzioni, parametri, ritorni, moduli e namespace;
 - condizioni e cicli bounded;
 - agenti, workflow e tool grants;
 - AM scoped in-memory/SQLite con metadata e TTL;
 - policy deny-by-default, approval fail-closed e audit;
 - budget multidimensionali;
-- AX-IR JSON 1.0/1.1;
+- AX-IR JSON 1.0/1.1/1.2;
 - CLI `run`, `pack`, `compile`, `exec`.
 
 ## Installazione e uso

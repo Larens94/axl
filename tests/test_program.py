@@ -115,6 +115,28 @@ class ProgramTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "invalid operands"):
             Interpreter().run(parse("emit true + 1"))
 
+    def test_tool_result_list_must_be_homogeneous(self):
+        interpreter = Interpreter(tools={"mixed": lambda: (1, "x")})
+
+        with self.assertRaisesRegex(RuntimeError, "list items must have one type"):
+            interpreter.run(parse("emit call mixed()"))
+
+    def test_value_depth_above_safe_limit_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "max_value_depth cannot exceed 256"):
+            Interpreter(max_value_depth=2_000)
+
+    def test_deep_tool_list_shape_is_checked_iteratively(self):
+        value = 1
+        for _ in range(255):
+            value = (value,)
+        interpreter = Interpreter(
+            tools={"deep": lambda: value},
+            max_value_depth=256,
+            max_value_nodes=300,
+        )
+
+        interpreter.run(parse("let value = call deep()"))
+
     def test_tool_result_must_be_an_axl_value(self):
         interpreter = Interpreter(tools={"bad": lambda: None})
 
@@ -125,11 +147,33 @@ class ProgramTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "output budget exceeded"):
             Interpreter(max_output_bytes=3).run(parse('emit "four"'))
 
+    def test_output_budget_uses_canonical_list_json_bytes(self):
+        interpreter = Interpreter(tools={"quoted": lambda: ('""',)}, max_output_bytes=7)
+
+        with self.assertRaisesRegex(RuntimeError, "output budget exceeded"):
+            interpreter.run(parse("emit call quoted()"))
+
     def test_tool_call_budget_is_enforced(self):
         interpreter = Interpreter(tools={"ping": lambda: "ok"}, max_tool_calls=1)
 
         with self.assertRaisesRegex(RuntimeError, "tool call budget exceeded"):
             interpreter.run(parse("emit call ping()\nemit call ping()"))
+
+    def test_empty_list_nodes_consume_value_budget(self):
+        interpreter = Interpreter(tools={"wide": lambda: ((), ())}, max_value_bytes=2)
+
+        with self.assertRaisesRegex(RuntimeError, "value budget exceeded"):
+            interpreter.run(parse("emit call wide()"))
+
+    def test_value_node_budget_is_enforced(self):
+        interpreter = Interpreter(
+            tools={"wide": lambda: ((), ())},
+            max_value_bytes=1_000,
+            max_value_nodes=2,
+        )
+
+        with self.assertRaisesRegex(RuntimeError, "value node budget exceeded"):
+            interpreter.run(parse("emit call wide()"))
 
     def test_intermediate_value_budget_is_enforced(self):
         interpreter = Interpreter(max_value_bytes=4)

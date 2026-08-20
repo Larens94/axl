@@ -39,12 +39,14 @@ Le espressioni usano Reverse Polish Notation. Non servono parentesi né regole d
 | `= ! > < G L` | `== != > < >= <=` |
 | `^f/2` | chiama funzione `f` con 2 valori dallo stack |
 | `!t/1` | chiama tool `t` con 1 valore dallo stack |
+| `~3` | costruisce una lista con 3 valori dallo stack |
 
 ```text
 #2,#3,#4,*,+      → 2 + (3 * 4)
 "AX","L",+       → "AXL"
 #7,#8,^add/2      → add(7,8)
 "AXL",!search/1  → tool search("AXL")
+#1,#2,#3,~3       → list<int>[1,2,3]
 ```
 
 ## Tipi
@@ -54,6 +56,11 @@ Le espressioni usano Reverse Polish Notation. Non servono parentesi né regole d
 | `i` | int |
 | `s` | string |
 | `b` | bool |
+| `li` | list&lt;int&gt; |
+| `ls` | list&lt;string&gt; |
+| `lb` | list&lt;bool&gt; |
+
+Il prefisso `l` è ricorsivo fino a 16 livelli: `lli` rappresenta `list<list<int>>`. Le liste sono immutabili e omogenee; `~0` crea una lista vuota il cui tipo elemento viene determinato dal contesto dichiarato.
 
 ## Opcode
 

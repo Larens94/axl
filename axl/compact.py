@@ -10,6 +10,7 @@ from .ir import (
     FunctionCall,
     If,
     Let,
+    ListExpression,
     Literal,
     MemoryWrite,
     Parameter,
@@ -33,6 +34,7 @@ _OPERATOR_NAMES = {"=": "==", "!": "!=", "G": ">=", "L": "<="}
 _TYPE_NAMES = {"i": "int", "s": "string", "b": "bool"}
 _TYPE_CODES = {value: key for key, value in _TYPE_NAMES.items()}
 _CALL = re.compile(r"(?P<kind>[!^])(?P<name>[A-Za-z_][A-Za-z0-9_.]*)/(?P<arity>\d+)")
+_LIST = re.compile(r"~(?P<arity>\d+)")
 _OPERATOR_CODES = {value: key for key, value in _OPERATOR_NAMES.items()}
 _MAX_CALL_ARITY = 65_535
 _MAX_SOURCE_BYTES = 1_000_000
@@ -59,10 +61,23 @@ def program_to_compact(program: Program) -> str:
 
 
 def _type_code(type_name: str) -> str:
+    if type_name.startswith("list<") and type_name.endswith(">"):
+        return "l" + _type_code(type_name[5:-1])
     try:
         return _TYPE_CODES[type_name]
     except KeyError as error:
         raise CompactParseError(f"cannot encode type '{type_name}'") from error
+
+
+def _type_name(type_code: str) -> str:
+    if type_code.startswith("l"):
+        if len(type_code) == 1:
+            raise CompactParseError("invalid list type")
+        return f"list<{_type_name(type_code[1:])}>"
+    try:
+        return _TYPE_NAMES[type_code]
+    except KeyError as error:
+        raise CompactParseError(f"invalid type '{type_code}'") from error
 
 
 def _instruction_frames(instruction) -> list[str]:
@@ -159,6 +174,10 @@ def _expression_source(expression) -> str:
         _require_call_arity(len(expression.arguments))
         arguments = [_expression_source(item) for item in expression.arguments]
         return ",".join([*arguments, f"^{expression.name}/{len(arguments)}"])
+    if isinstance(expression, ListExpression):
+        _require_call_arity(len(expression.items))
+        items = [_expression_source(item) for item in expression.items]
+        return ",".join([*items, f"~{len(items)}"])
     raise CompactParseError(f"cannot encode expression '{type(expression).__name__}'")
 
 
@@ -207,11 +226,12 @@ def _block(frames: list[str], position: int, allow_else: bool):
         if opcode == "10" and len(fields) in {3, 4}:
             type_name = None
             if len(fields) == 4:
-                if fields[3] not in _TYPE_NAMES:
+                try:
+                    type_name = _type_name(fields[3])
+                except CompactParseError as error:
                     raise CompactParseError(
                         f"frame {index}: invalid binding type '{fields[3]}'"
-                    )
-                type_name = _TYPE_NAMES[fields[3]]
+                    ) from error
             instructions.append(
                 Let(fields[1], _expression(fields[2], index), type_name)
             )
@@ -257,24 +277,30 @@ def _block(frames: list[str], position: int, allow_else: bool):
             if fields[2]:
                 for raw in fields[2].split(","):
                     name, separator, type_code = raw.partition(":")
-                    if not separator or type_code not in _TYPE_NAMES:
+                    if not separator:
                         raise CompactParseError(
                             f"frame {index}: invalid function parameter '{raw}'"
                         )
-                    parameters.append(Parameter(name, _TYPE_NAMES[type_code]))
-            if fields[3] not in _TYPE_NAMES:
+                    try:
+                        parameter_type = _type_name(type_code)
+                    except CompactParseError as error:
+                        raise CompactParseError(
+                            f"frame {index}: invalid function parameter '{raw}'"
+                        ) from error
+                    parameters.append(Parameter(name, parameter_type))
+            try:
+                return_type = _type_name(fields[3])
+            except CompactParseError as error:
                 raise CompactParseError(
                     f"frame {index}: invalid return type '{fields[3]}'"
-                )
+                ) from error
             body, position, terminator = _block(frames, position, False)
             if terminator != "99":
                 raise CompactParseError(
                     f"frame {index}: function missing end opcode 99"
                 )
             instructions.append(
-                Function(
-                    fields[1], tuple(parameters), _TYPE_NAMES[fields[3]], tuple(body)
-                )
+                Function(fields[1], tuple(parameters), return_type, tuple(body))
             )
         elif opcode == "11" and len(fields) == 2:
             instructions.append(Return(_expression(fields[1], index)))
@@ -308,7 +334,19 @@ def _expression(source: str, frame: int):
     stack = []
     for token in _split(source, ","):
         call = _CALL.fullmatch(token)
-        if call:
+        list_constructor = _LIST.fullmatch(token)
+        if list_constructor:
+            try:
+                arity = int(list_constructor.group("arity"))
+            except ValueError as error:
+                raise CompactParseError(f"frame {frame}: invalid list arity") from error
+            if arity > _MAX_CALL_ARITY or len(stack) < arity:
+                raise CompactParseError(f"frame {frame}: invalid list arity")
+            items = tuple(stack[-arity:]) if arity else ()
+            if arity:
+                del stack[-arity:]
+            stack.append(ListExpression(items))
+        elif call:
             try:
                 arity = int(call.group("arity"))
             except ValueError as error:

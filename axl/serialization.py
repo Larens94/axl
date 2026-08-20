@@ -6,8 +6,8 @@ from . import ir
 from .ir import Program
 from .validation import validate
 
-IR_VERSION = "1.1"
-SUPPORTED_IR_VERSIONS = {"1.0", IR_VERSION}
+IR_VERSION = "1.2"
+SUPPORTED_IR_VERSIONS = {"1.0", "1.1", IR_VERSION}
 MAX_IR_BYTES = 2_000_000
 
 _NODE_TYPES = {
@@ -18,6 +18,7 @@ _NODE_TYPES = {
         ir.Recall,
         ir.ToolCall,
         ir.FunctionCall,
+        ir.ListExpression,
         ir.Binary,
         ir.MemoryWrite,
         ir.Forget,
@@ -81,12 +82,15 @@ def program_from_document(document: dict[str, Any]) -> Program:
     if set(document) != {"ir_version", "program"}:
         raise ValueError("invalid IR envelope fields")
     version = document.get("ir_version")
+    if not isinstance(version, str):
+        raise ValueError("IR version must be a string")  # noqa: TRY004
     if version not in SUPPORTED_IR_VERSIONS:
         raise ValueError(f"unsupported IR version '{version}'")
     payload = document.get("program")
-    if version == "1.0":
-        payload = _upgrade_1_0(payload)
     try:
+        _require_version_features(payload, version)
+        if version == "1.0":
+            payload = _upgrade_1_0(payload)
         program = _decode(payload)
     except RecursionError as error:
         raise ValueError("IR nesting is too deep") from error
@@ -94,6 +98,26 @@ def program_from_document(document: dict[str, Any]) -> Program:
         raise ValueError("IR root must be Program")  # noqa: TRY004
     validate(program)
     return program
+
+
+def _require_version_features(payload: Any, version: str) -> None:
+    if version == "1.2":
+        return
+    stack = [payload]
+    while stack:
+        value = stack.pop()
+        if isinstance(value, list):
+            stack.extend(value)
+            continue
+        if not isinstance(value, dict):
+            continue
+        if value.get("type") == "ListExpression":
+            raise ValueError("ListExpression requires AX-IR 1.2")
+        for key in ("type_name", "return_type"):
+            type_name = value.get(key)
+            if isinstance(type_name, str) and type_name.startswith("list<"):
+                raise ValueError("list types require AX-IR 1.2")
+        stack.extend(value.values())
 
 
 def _upgrade_1_0(value: Any) -> Any:

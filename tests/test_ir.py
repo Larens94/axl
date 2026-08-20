@@ -1,11 +1,89 @@
 import json
+import re
 import unittest
+from pathlib import Path
 
 from axl import Interpreter, parse
 from axl.serialization import IR_VERSION, program_from_json, program_to_json
 
 
 class IRSerializationTest(unittest.TestCase):
+    def test_ir_1_2_schema_type_pattern_is_canonical(self):
+        schema = json.loads(
+            (
+                Path(__file__).parents[1] / "schema" / "axl-ir-1.2.schema.json"
+            ).read_text()
+        )
+        pattern = schema["$defs"]["typeName"]["pattern"]
+
+        self.assertIsNotNone(re.fullmatch(pattern, "list<list<int>>"))
+        self.assertIsNone(re.fullmatch(pattern, "list<foo>"))
+        self.assertIsNone(re.fullmatch(pattern, "list<int>>"))
+
+    def test_typed_list_round_trips_through_ir_1_2(self):
+        program = parse("2;10|xs|#1,#2,#3,~3|li;12|$xs")
+
+        encoded = program_to_json(program)
+        restored = program_from_json(encoded)
+
+        self.assertEqual(json.loads(encoded)["ir_version"], "1.2")
+        self.assertEqual(Interpreter().run(restored).output, [(1, 2, 3)])
+
+    def test_legacy_ir_versions_reject_list_features(self):
+        payloads = [
+            {
+                "type": "Program",
+                "instructions": [
+                    {
+                        "type": "Emit",
+                        "value": {"type": "ListExpression", "items": []},
+                    }
+                ],
+            },
+            {
+                "type": "Program",
+                "instructions": [
+                    {
+                        "type": "Let",
+                        "target": "xs",
+                        "value": {"type": "Literal", "value": 1},
+                        "type_name": "list<int>",
+                    }
+                ],
+            },
+        ]
+        for version in ("1.0", "1.1"):
+            for payload in payloads:
+                document = {"ir_version": version, "program": payload}
+
+                with (
+                    self.subTest(
+                        version=version, node=payload["instructions"][0]["type"]
+                    ),
+                    self.assertRaisesRegex(ValueError, "requir(?:e|es) AX-IR 1.2"),
+                ):
+                    program_from_json(json.dumps(document))
+
+    def test_excessively_nested_list_type_is_controlled_error(self):
+        type_name = "list<" * 2_000 + "int" + ">" * 2_000
+        document = {
+            "ir_version": "1.2",
+            "program": {
+                "type": "Program",
+                "instructions": [
+                    {
+                        "type": "Let",
+                        "target": "xs",
+                        "value": {"type": "ListExpression", "items": []},
+                        "type_name": type_name,
+                    }
+                ],
+            },
+        }
+
+        with self.assertRaisesRegex(ValueError, "type nesting is too deep"):
+            program_from_json(json.dumps(document))
+
     def test_ir_literal_rejects_isolated_unicode_surrogate(self):
         payload = (
             '{"ir_version":"1.1","program":{"type":"Program","instructions":'
@@ -78,6 +156,21 @@ class IRSerializationTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "unsupported IR version"):
             program_from_json(payload)
+
+    def test_non_string_ir_version_is_controlled_error(self):
+        for version in ([], {}):
+            payload = json.dumps(
+                {
+                    "ir_version": version,
+                    "program": {"type": "Program", "instructions": []},
+                }
+            )
+
+            with (
+                self.subTest(version=version),
+                self.assertRaisesRegex(ValueError, "IR version must be a string"),
+            ):
+                program_from_json(payload)
 
     def test_invalid_literal_type_is_rejected(self):
         payload = json.dumps(

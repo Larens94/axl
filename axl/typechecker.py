@@ -7,6 +7,7 @@ from .ir import (
     FunctionCall,
     If,
     Let,
+    ListExpression,
     Literal,
     MemoryWrite,
     Program,
@@ -16,6 +17,7 @@ from .ir import (
     Variable,
     While,
 )
+from .type_names import split_type_name
 
 
 class TypeCheckError(ValueError):
@@ -39,6 +41,9 @@ def typecheck(program: Program) -> None:
         if isinstance(instruction, Function):
             if instruction.name in functions:
                 raise TypeCheckError(f"duplicate function '{instruction.name}'")
+            for parameter in instruction.parameters:
+                _require_known_type(parameter.type_name)
+            _require_known_type(instruction.return_type)
             parameter_names = [parameter.name for parameter in instruction.parameters]
             if len(parameter_names) != len(set(parameter_names)):
                 raise TypeCheckError(
@@ -87,6 +92,8 @@ def _check_block(
         if isinstance(instruction, Function):
             continue
         if isinstance(instruction, Let):
+            if instruction.type_name is not None:
+                _require_known_type(instruction.type_name)
             value_type = _expression_type(instruction.value, environment, signatures)
             if instruction.type_name and not _compatible(
                 instruction.type_name, value_type
@@ -150,6 +157,17 @@ def _check_block(
 def _expression_type(expression, environment, signatures) -> str:
     if isinstance(expression, Literal):
         return {str: "string", int: "int", bool: "bool"}[type(expression.value)]
+    if isinstance(expression, ListExpression):
+        item_types = [
+            _expression_type(item, environment, signatures) for item in expression.items
+        ]
+        item_type = _unify_types(item_types) if item_types else ANY
+        result = f"list<{item_type}>"
+        try:
+            split_type_name(result)
+        except ValueError as error:
+            raise TypeCheckError(str(error)) from error
+        return result
     if isinstance(expression, Variable):
         if expression.name not in environment:
             raise TypeCheckError(f"unknown variable '{expression.name}'")
@@ -202,8 +220,45 @@ def _expression_type(expression, environment, signatures) -> str:
     raise TypeCheckError("unsupported expression")
 
 
+def _unify_types(type_names: list[str]) -> str:
+    try:
+        parsed = [split_type_name(type_name) for type_name in type_names]
+    except ValueError as error:
+        raise TypeCheckError(str(error)) from error
+    depths = {depth for depth, _ in parsed}
+    concrete = {base for _, base in parsed if base != ANY}
+    if len(depths) != 1 or len(concrete) > 1:
+        raise TypeCheckError("list items must have one type")
+    result = next(iter(concrete), ANY)
+    for _ in range(next(iter(depths))):
+        result = f"list<{result}>"
+    return result
+
+
 def _compatible(expected: str, actual: str) -> bool:
-    return expected == actual or ANY in {expected, actual}
+    if expected == actual or ANY in {expected, actual}:
+        return True
+    try:
+        expected_depth, expected_base = split_type_name(expected)
+        actual_depth, actual_base = split_type_name(actual)
+    except (TypeError, ValueError):
+        return False
+    return expected_depth == actual_depth and (
+        expected_base == actual_base or ANY in {expected_base, actual_base}
+    )
+
+
+def _require_known_type(type_name: str) -> None:
+    if not _is_known_type(type_name):
+        raise TypeCheckError(f"unknown type '{type_name}'")
+
+
+def _is_known_type(type_name: str) -> bool:
+    try:
+        _, base = split_type_name(type_name)
+    except (TypeError, ValueError):
+        return False
+    return base in TYPE_NAMES
 
 
 def _always_returns(instructions) -> bool:

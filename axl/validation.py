@@ -11,6 +11,7 @@ from .ir import (
     If,
     Instruction,
     Let,
+    ListExpression,
     Literal,
     MemoryWrite,
     Program,
@@ -22,6 +23,7 @@ from .ir import (
     While,
     Workflow,
 )
+from .type_names import split_type_name
 
 
 class ValidationError(ValueError):
@@ -41,7 +43,15 @@ INSTRUCTION_TYPES = (
     Run,
     Function,
 )
-EXPRESSION_TYPES = (Literal, Variable, Recall, ToolCall, FunctionCall, Binary)
+EXPRESSION_TYPES = (
+    Literal,
+    Variable,
+    Recall,
+    ToolCall,
+    FunctionCall,
+    ListExpression,
+    Binary,
+)
 OPERATORS = {"+", "-", "*", "/", "==", "!=", ">", "<", ">=", "<="}
 MAX_NESTING_DEPTH = 256
 MAX_CALL_DEPTH = 256
@@ -81,6 +91,14 @@ def _qualified_identifier(value, label: str) -> None:
         raise ValidationError(f"invalid {label} identifier")
     for part in value.split("."):
         _identifier(part, label)
+
+
+def _type_name(value) -> None:
+    try:
+        _, base = split_type_name(value)
+    except (TypeError, ValueError) as error:
+        raise ValidationError(str(error)) from error
+    _identifier(base, "type")
 
 
 def _is_value(value) -> bool:
@@ -134,6 +152,8 @@ def _validate_nesting(instructions) -> None:
             stack.append((node.right, depth + 1))
         elif isinstance(node, (ToolCall, FunctionCall)):
             stack.extend((argument, depth + 1) for argument in node.arguments)
+        elif isinstance(node, ListExpression):
+            stack.extend((item, depth + 1) for item in node.items)
 
 
 def _require_instruction(instruction) -> None:
@@ -169,10 +189,10 @@ def _validate_instruction(
         if isinstance(instruction, Function):
             if not isinstance(instruction.parameters, tuple):
                 raise ValidationError("function parameters must be an array")
-            _identifier(instruction.return_type, "type")
+            _type_name(instruction.return_type)
             for parameter in instruction.parameters:
                 _identifier(parameter.name, "parameter")
-                _identifier(parameter.type_name, "type")
+                _type_name(parameter.type_name)
         _validate_block(instruction.body, names)
     elif isinstance(instruction, Run):
         _identifier(instruction.name, "runnable")
@@ -201,7 +221,7 @@ def _validate_instruction(
     elif isinstance(instruction, Let):
         _identifier(instruction.target, "variable")
         if instruction.type_name is not None:
-            _identifier(instruction.type_name, "type")
+            _type_name(instruction.type_name)
         _validate_expression(instruction.value)
     elif isinstance(instruction, (Return, Emit)):
         _validate_expression(instruction.value)
@@ -237,6 +257,11 @@ def _validate_expression(expression: Expression) -> None:
             raise ValidationError("function arguments must be an array")
         for argument in expression.arguments:
             _validate_expression(argument)
+    elif isinstance(expression, ListExpression):
+        if not isinstance(expression.items, tuple):
+            raise ValidationError("list items must be an array")
+        for item in expression.items:
+            _validate_expression(item)
     elif isinstance(expression, Variable):
         _identifier(expression.name, "variable")
     elif isinstance(expression, Recall):

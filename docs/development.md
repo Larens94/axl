@@ -29,6 +29,7 @@ python3 -m ruff format --check .
 python3 -m compileall -q axl tests examples
 python3 -m json.tool schema/axl-ir-1.0.schema.json >/dev/null
 python3 -m json.tool schema/axl-ir-1.1.schema.json >/dev/null
+python3 -m json.tool schema/axl-ir-1.2.schema.json >/dev/null
 git diff --check
 ```
 

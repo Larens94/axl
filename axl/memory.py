@@ -9,6 +9,7 @@ from typing import Protocol
 from .ir import Value
 
 DEFAULT_SCOPE = "session:default"
+MAX_PERSISTED_VALUE_BYTES = 2_000_000
 
 
 @dataclass(frozen=True)
@@ -24,6 +25,9 @@ class MemoryRecord:
 
 
 class MemoryStore(Protocol):
+    def configure_limits(
+        self, *, max_bytes: int, max_nodes: int, max_depth: int
+    ) -> None: ...
     def get(self, key: str, scope: str = DEFAULT_SCOPE) -> Value | None: ...
     def set(
         self,
@@ -44,6 +48,11 @@ class InMemoryStore:
         self._values: dict[tuple[str, str], MemoryRecord] = {}
         for key, value in (initial or {}).items():
             self.set(key, value)
+
+    def configure_limits(
+        self, *, max_bytes: int, max_nodes: int, max_depth: int
+    ) -> None:
+        pass
 
     def get(self, key: str, scope: str = DEFAULT_SCOPE) -> Value | None:
         record = self._values.get((scope, key))
@@ -92,7 +101,20 @@ class InMemoryStore:
 class SQLiteMemoryStore:
     def __init__(self, path: str | Path):
         self.connection = sqlite3.connect(str(path))
+        self.max_persisted_value_bytes = MAX_PERSISTED_VALUE_BYTES
+        self.max_value_nodes = 100_000
+        self.max_value_depth = 256
         self._initialize()
+
+    def configure_limits(
+        self, *, max_bytes: int, max_nodes: int, max_depth: int
+    ) -> None:
+        self.max_persisted_value_bytes = min(
+            MAX_PERSISTED_VALUE_BYTES,
+            max_bytes * 6 + max_nodes * 2 + 2,
+        )
+        self.max_value_nodes = max_nodes
+        self.max_value_depth = max_depth
 
     def _initialize(self) -> None:
         exists = self.connection.execute(
@@ -145,7 +167,7 @@ class SQLiteMemoryStore:
         if row is not None and _expired(row[1]):
             self.delete(key, scope)
             return None
-        return None if row is None else json.loads(row[0])
+        return None if row is None else self._load_value(row[0])
 
     def set(
         self,
@@ -198,12 +220,28 @@ class SQLiteMemoryStore:
             None
             if row is None
             else MemoryRecord(
-                key, scope, json.loads(row[0]), row[1], row[2], row[3], row[4], row[5]
+                key,
+                scope,
+                self._load_value(row[0]),
+                row[1],
+                row[2],
+                row[3],
+                row[4],
+                row[5],
             )
         )
 
     def close(self) -> None:
         self.connection.close()
+
+    def _load_value(self, payload: str):
+        _preflight_value_json(
+            payload,
+            max_bytes=self.max_persisted_value_bytes,
+            max_nodes=self.max_value_nodes,
+            max_depth=self.max_value_depth,
+        )
+        return _load_value(payload)
 
     def __enter__(self):
         return self
@@ -216,6 +254,85 @@ def _expiry(ttl_seconds: int | None) -> str | None:
     if ttl_seconds is None:
         return None
     return (datetime.now(UTC) + timedelta(seconds=ttl_seconds)).isoformat()
+
+
+def _load_value(payload: str):
+    try:
+        return _decode_value(json.loads(payload))
+    except (json.JSONDecodeError, RecursionError) as error:
+        raise ValueError("invalid persisted memory value") from error
+
+
+def _preflight_value_json(
+    payload: str, *, max_bytes: int, max_nodes: int, max_depth: int
+) -> None:
+    if not isinstance(payload, str):
+        raise ValueError("persisted memory value must be text")  # noqa: TRY004
+    try:
+        size = len(payload.encode("utf-8"))
+    except UnicodeEncodeError as error:
+        raise ValueError("invalid persisted memory Unicode") from error
+    if size > max_bytes:
+        raise ValueError(f"persisted memory exceeds {max_bytes} bytes")
+
+    nodes = 0
+    depth = 0
+    in_string = False
+    escaped = False
+    expecting_value = True
+    for character in payload:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character.isspace():
+            continue
+        if character == '"':
+            if expecting_value:
+                nodes += 1
+                expecting_value = False
+            in_string = True
+        elif character == "[":
+            nodes += 1
+            depth += 1
+            if depth > max_depth:
+                raise ValueError(f"persisted memory nesting exceeds {max_depth}")
+            expecting_value = True
+        elif character in "{}":
+            raise ValueError("persisted memory objects are not supported")
+        elif character == ",":
+            expecting_value = True
+        elif character == "]":
+            depth -= 1
+            expecting_value = False
+        elif expecting_value:
+            nodes += 1
+            expecting_value = False
+        if nodes > max_nodes:
+            raise ValueError(f"persisted memory node budget exceeded ({max_nodes})")
+
+
+def _decode_value(value):
+    work = [(value, False)]
+    decoded = []
+    while work:
+        item, visited = work.pop()
+        if isinstance(item, list):
+            if not visited:
+                work.append((item, True))
+                work.extend((child, False) for child in reversed(item))
+                continue
+            children = decoded[-len(item) :] if item else []
+            if item:
+                del decoded[-len(item) :]
+            decoded.append(tuple(children))
+        else:
+            decoded.append(item)
+    return decoded[0]
 
 
 def _expired(expires_at: str | None) -> bool:

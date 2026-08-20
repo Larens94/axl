@@ -2,6 +2,8 @@
 
 AXL procede per vertical slice: sorgente compatto → HIR/MIR → runtime → risultato osservabile.
 
+La strategia completa per web, desktop, mobile, AX-UI, backend e networking è definita in [Analisi demo applicative e piattaforme](platform-demo-analysis.md). Il prodotto dimostrativo condiviso è Syncboard, affiancato da Network Lab e UI Gallery: non sei codebase o mockup indipendenti.
+
 ## Stato
 
 | Area | Stato |
@@ -9,9 +11,10 @@ AXL procede per vertical slice: sorgente compatto → HIR/MIR → runtime → ri
 | Compact Source 2 + RPN | funzionante |
 | Writer canonico + `axl pack` | funzionante |
 | Reference runtime Python | funzionante |
-| AX-IR JSON 1.0/1.1 | funzionante |
+| AX-IR JSON 1.0/1.1/1.2 | funzionante |
 | Funzioni, moduli, AM, agenti | funzionante, nucleo iniziale |
-| Collezioni e tipi utente | prossimo |
+| `list<T>` omogenee | funzionante, prima collezione |
+| mappe, record, option/result e tipi utente | prossimo |
 | AX-HIR/AX-MIR | pianificato |
 | Runtime/compiler Rust | pianificato |
 | Native/VM/WASM | pianificato |
@@ -72,6 +75,8 @@ AXL procede per vertical slice: sorgente compatto → HIR/MIR → runtime → ri
 - routing e middleware;
 - database e transazioni;
 - serialization, config e observability.
+- demo Network Lab: HTTP/1.1-2, SSE, WebSocket, timeout, cancellazione e backpressure;
+- demo Syncboard backend: PostgreSQL, auth, OpenAPI e OpenTelemetry.
 
 **Gate:** servizio backend deployabile scritto in AXL.
 
@@ -81,6 +86,8 @@ AXL procede per vertical slice: sorgente compatto → HIR/MIR → runtime → ri
 - component model e stato;
 - WASM/browser build;
 - storage, worker e WebGPU.
+- AX-UI semantic IR con renderer DOM;
+- demo UI Gallery e Syncboard Web accessibili e realtime.
 
 **Gate:** web app full-stack principalmente AXL.
 
@@ -91,6 +98,9 @@ AXL procede per vertical slice: sorgente compatto → HIR/MIR → runtime → ri
 - packaging desktop;
 - bridge Android/iOS;
 - asset pipeline.
+- bootstrap desktop Tauri 2, dichiarato esplicitamente WebView;
+- renderer mobile nativi SwiftUI e Jetpack Compose;
+- build/smoke su runner Windows, macOS, iOS e Android.
 
 **Gate:** app grafica multipiattaforma.
 

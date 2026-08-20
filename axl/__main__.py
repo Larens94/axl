@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .compact import program_to_compact
 from .compiler import CompileError, compile_file
-from .interpreter import Interpreter, RuntimeError
+from .interpreter import Interpreter, RuntimeError, render_value
 from .memory import SQLiteMemoryStore
 from .parser import ParseError
 from .policy import ApprovalRequired, Tool
@@ -24,6 +24,8 @@ def _runtime_options(command: argparse.ArgumentParser) -> None:
     )
     command.add_argument("--max-output-bytes", type=int, default=1_000_000)
     command.add_argument("--max-value-bytes", type=int, default=1_000_000)
+    command.add_argument("--max-value-nodes", type=int, default=100_000)
+    command.add_argument("--max-value-depth", type=int, default=256)
     command.add_argument("--max-tool-calls", type=int, default=100)
     command.add_argument("--max-memory-ops", type=int, default=1_000)
     command.add_argument("--max-function-depth", type=int, default=256)
@@ -66,6 +68,8 @@ def _execute(program, args) -> int:
             max_steps=args.max_steps,
             max_output_bytes=args.max_output_bytes,
             max_value_bytes=args.max_value_bytes,
+            max_value_nodes=args.max_value_nodes,
+            max_value_depth=args.max_value_depth,
             max_tool_calls=args.max_tool_calls,
             max_memory_ops=args.max_memory_ops,
             max_function_depth=args.max_function_depth,
@@ -73,7 +77,7 @@ def _execute(program, args) -> int:
             approve=lambda request: request.tool in approved,
         ).run(program)
         for line in result.output:
-            print(str(line).lower() if isinstance(line, bool) else line)
+            print(render_value(line))
     finally:
         if store is not None:
             store.close()

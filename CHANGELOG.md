@@ -8,6 +8,9 @@
 - Added canonical compact writer and `axl pack` migration command.
 - Reframed Rust as the first runtime/backend within a multi-backend bridge architecture.
 - Redesigned documentation and GitHub Pages around the compact language model.
+- Added homogeneous immutable `list<T>` values with compact `~arity` construction.
+- Published AX-IR 1.2 while preserving AX-IR 1.0/1.1 decoding.
+- Added list transport through functions, tool capabilities, SQLite AM and canonical CLI JSON output.
 
 ## 1.1.0 — development
 

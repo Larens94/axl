@@ -50,13 +50,13 @@ Le righe e l'indentazione non hanno significato. `;`, `|` e `,` sono separatori 
 
 ### Espressioni
 
-Le espressioni sono RPN e delimitate da virgole. Atomi: `#int`, `"string"`, `?1`, `?0`, `$variable`, `@memory`. Operatori: `+ - * / = ! > < G L`. Chiamate postfix: `^function/arity` e `!tool/arity`.
+Le espressioni sono RPN e delimitate da virgole. Atomi: `#int`, `"string"`, `?1`, `?0`, `$variable`, `@memory`. Operatori: `+ - * / = ! > < G L`. Chiamate postfix: `^function/arity` e `!tool/arity`. `~arity` costruisce una lista dai valori sullo stack.
 
 Il formato legacy keyword-based è soltanto un frontend di migrazione/debug. `axl pack` produce il sorgente canonico.
 
 ## 4. Tipi e operatori
 
-Valori correnti: string, integer, boolean. Codici sorgente: `s`, `i`, `b`. Coercizioni host sono vietate.
+Valori correnti: string, integer, boolean e liste omogenee immutabili. Codici sorgente: `s`, `i`, `b`; il prefisso ricorsivo `l` forma `list<T>` (`li`, `ls`, `lb`, `lli`) fino a 16 livelli. Coercizioni host sono vietate.
 
 - `+`: integer addition o string concatenation con tipi identici;
 - `-`, `*`, `/`, ordering: interi;
@@ -106,17 +106,17 @@ Il sorgente AXL resta indipendente dall'implementazione Rust, C ABI, WASI, JVM, 
 
 Tool deny-by-default. Decisioni approval-required, approved, denied, executed e failed sono auditabili. Segreti non devono comparire in source, IR, output o audit arguments.
 
-Budget positivi limitano step/espressioni, profondità chiamate, valori intermedi, output, tool call e operazioni memoria. Plugin host bloccanti richiedono isolamento e timeout esterni.
+Budget positivi limitano step/espressioni, profondità chiamate, byte e nodi dei valori intermedi, profondità delle collezioni, byte della serializzazione canonica dei valori in output (escluso il delimitatore di riga), tool call e operazioni memoria. Plugin host bloccanti richiedono isolamento e timeout esterni.
 
-## 10. AX-IR 1.1
+## 10. AX-IR 1.2
 
 Envelope:
 
 ```json
-{"ir_version":"1.1","program":{"type":"Program","instructions":[]}}
+{"ir_version":"1.2","program":{"type":"Program","instructions":[]}}
 ```
 
-Decoder strict: versioni, nodi, campi, tipi, placement, riferimenti e cicli sono validati. AX-IR 1.0 viene migrata da decoder testato. Schemi pubblicati sono immutabili.
+Decoder strict: versioni, nodi, campi, tipi, placement, riferimenti e cicli sono validati. AX-IR 1.0 e 1.1 restano leggibili. Schemi pubblicati sono immutabili.
 
 ## 11. Compatibilità
 

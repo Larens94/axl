@@ -6,6 +6,25 @@ from pathlib import Path
 
 
 class CliTest(unittest.TestCase):
+    def test_cli_exec_rejects_non_string_ir_version_without_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            program = Path(directory) / "bad-version.json"
+            program.write_text(
+                '{"ir_version":[],"program":{"type":"Program","instructions":[]}}'
+            )
+
+            completed = subprocess.run(
+                [sys.executable, "-m", "axl", "exec", str(program)],
+                cwd=Path(__file__).parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertIn("IR version must be a string", completed.stderr)
+        self.assertNotIn("Traceback", completed.stderr)
+
     def test_run_file_prints_program_output(self):
         with tempfile.TemporaryDirectory() as directory:
             program = Path(directory) / "hello.axl"
@@ -23,6 +42,22 @@ class CliTest(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(completed.stdout, "hello agent\n")
+
+    def test_cli_prints_list_as_canonical_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            program = Path(directory) / "list.axl"
+            program.write_text("2;12|#1,#2,#3,~3")
+
+            completed = subprocess.run(
+                [sys.executable, "-m", "axl", "run", str(program)],
+                cwd=Path(__file__).parents[1],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(completed.stdout, "[1,2,3]\n")
 
     def test_cli_packs_legacy_source_into_canonical_compact_stream(self):
         with tempfile.TemporaryDirectory() as directory:

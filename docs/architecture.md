@@ -2,6 +2,8 @@
 
 ## Pipeline stabile
 
+La tassonomia completa AA/AM/AW/AP/AT/AE/AS/AD/AI è definita in [AX — Agent eXecution](ax-ecosystem.md). Tutte le superfici convergono su AX-IR prima dell'esecuzione.
+
 ```text
 Compact Source 2
       │
@@ -75,6 +77,8 @@ capability id + ABI version + input/output types + effects + target + cancellati
 ```
 
 Questo permette a uno stesso programma AXL di usare implementazioni diverse per Linux, Windows, macOS, browser, Android, iOS, GPU o cloud.
+
+Il disegno applicativo concreto, inclusi AX-UI, networking moderno, renderer e demo verticali, è descritto in [Analisi demo applicative e piattaforme](platform-demo-analysis.md).
 
 ## Componenti correnti
 

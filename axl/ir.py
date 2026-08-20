@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from typing import TypeAlias
 
-Value: TypeAlias = str | int | bool
+Value: TypeAlias = str | int | bool | tuple["Value", ...]
 
 
 @dataclass(frozen=True)
@@ -32,13 +32,20 @@ class FunctionCall:
 
 
 @dataclass(frozen=True)
+class ListExpression:
+    items: tuple["Expression", ...]
+
+
+@dataclass(frozen=True)
 class Binary:
     left: "Expression"
     operator: str
     right: "Expression"
 
 
-Expression: TypeAlias = Literal | Variable | Recall | ToolCall | FunctionCall | Binary
+Expression: TypeAlias = (
+    Literal | Variable | Recall | ToolCall | FunctionCall | ListExpression | Binary
+)
 
 
 @dataclass(frozen=True)

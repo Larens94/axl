@@ -29,6 +29,8 @@ Sono considerati infrastruttura fidata nella reference implementation:
 8. **Segreti fuori dal linguaggio:** credenziali mai in sorgente, IR, output o audit.
 9. **Module root:** gli import accettano solo path relativi `.axl`, top-level e confinati alla directory autorizzata; path assoluti e `..` sono rifiutati.
 10. **Budget import:** profondità, numero di moduli e byte sorgente aggregati hanno limiti fail-closed.
+11. **Budget valori:** byte, nodi e profondità delle collezioni sono verificati anche sui risultati tool e sulla memoria; SQLite esegue un preflight sui JSON persistiti prima della materializzazione.
+12. **Output canonico:** il budget usa la serializzazione del valore emessa dalla CLI; il delimitatore di riga del trasporto è escluso.
 
 ## Confini non coperti
 

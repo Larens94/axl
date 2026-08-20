@@ -6,11 +6,11 @@
 
 ## Envelope JSON
 
-AX-IR 1.1 viene serializzata così:
+AX-IR 1.2 viene serializzata così:
 
 ```json
 {
-  "ir_version": "1.1",
+  "ir_version": "1.2",
   "program": {
     "type": "Program",
     "instructions": []
@@ -34,8 +34,9 @@ I nodi usano un discriminatore `type` e campi chiusi. Il decoder rifiuta:
 
 - **1.0:** agenti, workflow, memoria, tool e controllo di flusso base.
 - **1.1:** funzioni tipizzate, `return`, chiamate funzione e annotazioni sui binding.
+- **1.2:** `ListExpression` e tipi `list<T>` omogenei.
 
-Il decoder 1.1 legge documenti 1.0 e applica un upgrade controllato. Lo schema 1.0 resta immutato; lo schema 1.1 vive in un file separato.
+Il decoder 1.2 legge documenti 1.0 e 1.1 e applica upgrade controllati dove necessari. Ogni schema pubblicato resta immutato e vive in un file separato.
 
 ## Moduli
 
@@ -66,3 +67,4 @@ Ogni lowering dovrà preservare output, effetti, errori, audit e limiti osservab
 
 - [`../schema/axl-ir-1.0.schema.json`](../schema/axl-ir-1.0.schema.json)
 - [`../schema/axl-ir-1.1.schema.json`](../schema/axl-ir-1.1.schema.json)
+- [`../schema/axl-ir-1.2.schema.json`](../schema/axl-ir-1.2.schema.json)
