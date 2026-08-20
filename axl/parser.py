@@ -2,7 +2,7 @@ import ast
 import re
 from dataclasses import dataclass
 
-from .ir import Binary, Emit, If, Let, Literal, MemoryWrite, Program, Recall, ToolCall, Variable
+from .ir import Binary, Emit, If, Let, Literal, MemoryWrite, Program, Recall, ToolCall, Variable, While
 
 
 class ParseError(ValueError):
@@ -163,6 +163,11 @@ def _block(lines: list[tuple[int, str]], position: int, allow_else: bool):
             instructions.append(
                 If(_expression(line[3:].strip(), number), tuple(body), tuple(else_body))
             )
+        elif line.startswith("while "):
+            body, position, terminator = _block(lines, position, allow_else=False)
+            if terminator != "end":
+                raise ParseError(f"line {number}: missing end")
+            instructions.append(While(_expression(line[6:].strip(), number), tuple(body)))
         else:
             raise ParseError(f"line {number}: invalid instruction: {line}")
     return instructions, position, None

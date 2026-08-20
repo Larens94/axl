@@ -59,7 +59,13 @@ class If:
     else_body: tuple["Instruction", ...] = ()
 
 
-Instruction: TypeAlias = MemoryWrite | Let | Emit | If
+@dataclass(frozen=True)
+class While:
+    condition: Expression
+    body: tuple["Instruction", ...]
+
+
+Instruction: TypeAlias = MemoryWrite | Let | Emit | If | While
 
 
 @dataclass(frozen=True)

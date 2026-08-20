@@ -1,7 +1,8 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from .ir import Binary, Emit, Expression, If, Let, Literal, MemoryWrite, Program, Recall, ToolCall, Value, Variable
+from .ir import Binary, Emit, Expression, If, Let, Literal, MemoryWrite, Program, Recall, ToolCall, Value, Variable, While
+from .memory import InMemoryStore, MemoryStore
 
 
 class RuntimeError(Exception):
@@ -15,20 +16,30 @@ class ExecutionResult:
 
 
 class Interpreter:
-    def __init__(self, tools: dict[str, Callable[..., Value]] | None = None):
+    def __init__(
+        self,
+        tools: dict[str, Callable[..., Value]] | None = None,
+        max_steps: int = 10_000,
+        memory_store: MemoryStore | None = None,
+    ):
+        if max_steps < 1:
+            raise ValueError("max_steps must be positive")
         self.tools = dict(tools or {})
+        self.max_steps = max_steps
+        self.memory_store = memory_store or InMemoryStore()
 
     def run(self, program: Program) -> ExecutionResult:
-        self.memory: dict[str, Value] = {}
         self.variables: dict[str, Value] = {}
         self.output: list[Value] = []
+        self.steps = 0
         self._execute(program.instructions)
-        return ExecutionResult(output=self.output, memory=self.memory)
+        return ExecutionResult(output=self.output, memory=self.memory_store.snapshot())
 
     def _execute(self, instructions) -> None:
         for instruction in instructions:
+            self._step()
             if isinstance(instruction, MemoryWrite):
-                self.memory[instruction.key] = self._evaluate(instruction.value)
+                self.memory_store.set(instruction.key, self._evaluate(instruction.value))
             elif isinstance(instruction, Let):
                 self.variables[instruction.target] = self._evaluate(instruction.value)
             elif isinstance(instruction, Emit):
@@ -41,6 +52,20 @@ class Interpreter:
                     self._execute(instruction.body)
                 else:
                     self._execute(instruction.else_body)
+            elif isinstance(instruction, While):
+                while True:
+                    condition = self._evaluate(instruction.condition)
+                    if not isinstance(condition, bool):
+                        raise RuntimeError("while condition must be boolean")
+                    if not condition:
+                        break
+                    self._step()
+                    self._execute(instruction.body)
+
+    def _step(self) -> None:
+        self.steps += 1
+        if self.steps > self.max_steps:
+            raise RuntimeError(f"execution budget exceeded ({self.max_steps} steps)")
 
     def _evaluate(self, expression: Expression) -> Value:
         if isinstance(expression, Literal):
@@ -50,9 +75,10 @@ class Interpreter:
                 raise RuntimeError(f"unknown variable '{expression.name}'")
             return self.variables[expression.name]
         if isinstance(expression, Recall):
-            if expression.key not in self.memory:
+            value = self.memory_store.get(expression.key)
+            if value is None:
                 raise RuntimeError(f"unknown memory '{expression.key}'")
-            return self.memory[expression.key]
+            return value
         if isinstance(expression, ToolCall):
             if expression.name not in self.tools:
                 raise RuntimeError(f"tool '{expression.name}' is not allowed")

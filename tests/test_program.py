@@ -79,6 +79,25 @@ class ProgramTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "tool 'shell' is not allowed"):
             Interpreter().run(program)
 
+    def test_while_repeats_until_condition_is_false(self):
+        source = '''
+        let count = 0
+        while count < 3
+            emit count
+            let count = count + 1
+        end
+        '''
+
+        result = Interpreter().run(parse(source))
+
+        self.assertEqual(result.output, [0, 1, 2])
+
+    def test_execution_budget_stops_infinite_loop(self):
+        program = parse("while true\n  emit 1\nend")
+
+        with self.assertRaisesRegex(RuntimeError, "execution budget exceeded"):
+            Interpreter(max_steps=5).run(program)
+
 
 if __name__ == "__main__":
     unittest.main()

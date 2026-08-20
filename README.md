@@ -2,28 +2,27 @@
 
 Executable reference implementation of a compact agent-native programming language.
 
-## V0.2 milestone
+## V0.3 milestone
 
 - deterministic parser and typed IR;
-- typed strings, integers, and booleans;
-- arithmetic and comparison expressions;
-- `if/else/end` control flow;
-- typed memory write and recall;
-- explicit `call tool(...)` capability registry;
-- deny-by-default unknown tools;
-- CLI and automated tests.
+- strings, integers, booleans, arithmetic and comparisons;
+- `if/else/end` and budgeted `while/end` control flow;
+- configurable execution-step limit against infinite programs;
+- typed memory through provider-neutral adapters;
+- in-memory and persistent SQLite stores;
+- explicit `call tool(...)` registry, deny-by-default;
+- CLI, specification, examples, and automated tests.
 
 ## Run
 
 ```bash
-python3 -m axl run examples/decision.axl
+python3 -m axl run examples/loop.axl
 ```
 
-Expected output:
+Persistent memory and custom execution budget:
 
-```text
-ready
-14
+```bash
+python3 -m axl run --memory .axl-memory.sqlite --max-steps 5000 program.axl
 ```
 
 ## Test
@@ -34,6 +33,6 @@ python3 -m unittest discover -s tests -v
 
 ## Direction
 
-Next layers: loops with execution budgets, persistent memory adapters, tool policies/approvals, agent declarations, workflows, serialized IR, then an optimized Rust/WASM runtime.
+Next layers: scoped memory metadata, tool policies/approvals, agent declarations, workflows, serialized IR, then an optimized Rust/WASM runtime.
 
 See [SPEC.md](SPEC.md) for normative syntax and semantics.

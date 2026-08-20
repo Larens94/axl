@@ -1,0 +1,6 @@
+# AXL V0.3 — bounded loop
+let count = 0
+while count < 3
+    emit count
+    let count = count + 1
+end
