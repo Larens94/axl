@@ -1,0 +1,15 @@
+fn add(a: int, b: int) -> int
+    return a + b
+end
+
+fn describe(total: int) -> string
+    if total >= 10
+        return "large"
+    else
+        return "small"
+    end
+end
+
+let total: int = add(7, 8)
+emit total
+emit describe(total)

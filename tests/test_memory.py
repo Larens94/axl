@@ -10,7 +10,9 @@ class PersistentMemoryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "agent-memory.sqlite"
             first_store = SQLiteMemoryStore(path)
-            Interpreter(memory_store=first_store).run(parse('memory preference = "concise"'))
+            Interpreter(memory_store=first_store).run(
+                parse('memory preference = "concise"')
+            )
             first_store.close()
 
             second_store = SQLiteMemoryStore(path)
