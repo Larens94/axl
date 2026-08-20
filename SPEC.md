@@ -1,5 +1,7 @@
 # Specifica di sviluppo AXL 2 con sorgente compatto
 
+[Italiano](SPEC.md) · [English](SPEC.en.md)
+
 ## 1. Identità e obiettivo
 
 AXL — Agent eXecution Language — è un linguaggio general-purpose progettato esclusivamente per agenti software. Non ottimizza la leggibilità umana: ottimizza token, determinismo, generazione, validazione, hashing e correzione automatica.

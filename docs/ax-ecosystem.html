@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentazione: AX — Agent eXecution">
+  <title>AX — Agent eXecution · AXL Documentazione</title>
+  <link rel="stylesheet" href="docs.css">
+  <script defer src="docs.js"></script>
+</head>
+<body data-lang="it" data-page="ax-ecosystem">
+  <a class="skip" href="#content">Vai al contenuto</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
+    <nav class="product-nav" aria-label="Documentazione">
+      <a class="active" href="./">Documentazione</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="en/ax-ecosystem.html" hreflang="en">English</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html" aria-current="page" class="active">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>AX — Agent eXecution</p>
+        <article class="prose"><h1 id="ax-agent-execution">AX — Agent eXecution</h1>
+<h2 id="ruolo">Ruolo</h2>
+<p><strong>AX</strong> è l’ecosistema ombrello per definire, compilare ed eseguire software agent-native. Il repository AXL contiene oggi il core eseguibile di riferimento: Compact Source 2, parser, validazione, type-check, AX-IR e runtime Python.</p>
+<p>Le superfici specializzate elencate qui definiscono la tassonomia target. Non sono dichiarate implementate finché non dispongono di parser, lowering e test di conformità propri.</p>
+<h2 id="linguaggi-e-moduli">Linguaggi e moduli</h2>
+<table>
+<thead>
+<tr>
+<th>Sigla</th>
+<th>Nome</th>
+<th>Responsabilità</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>AA</td>
+<td>Agent Definition</td>
+<td>identità operativa, obiettivi, grants e lifecycle degli agenti</td>
+</tr>
+<tr>
+<td>AM</td>
+<td>Memory</td>
+<td>memoria, scope, routing, retention e provider</td>
+</tr>
+<tr>
+<td>AW</td>
+<td>Workflow</td>
+<td>orchestrazione, dipendenze, task e compensazioni</td>
+</tr>
+<tr>
+<td>AP</td>
+<td>Policy</td>
+<td>capability, decisioni, approval e vincoli</td>
+</tr>
+<tr>
+<td>AT</td>
+<td>Tools</td>
+<td>contratti tool, MCP, effetti e adapter</td>
+</tr>
+<tr>
+<td>AE</td>
+<td>Events</td>
+<td>eventi, stream, subscription e delivery</td>
+</tr>
+<tr>
+<td>AS</td>
+<td>State</td>
+<td>stato applicativo, transizioni e sincronizzazione</td>
+</tr>
+<tr>
+<td>AD</td>
+<td>Data</td>
+<td>modelli, schema, query, storage e migrazioni</td>
+</tr>
+<tr>
+<td>AI</td>
+<td>Identity</td>
+<td>principal, autenticazione, autorizzazione e credenziali indirette</td>
+</tr>
+</tbody>
+</table>
+<p><code>AI</code> significa <strong>Identity</strong> nel namespace AX. La documentazione deve scrivere il nome esteso quando il contesto può confonderlo con “Artificial Intelligence”.</p>
+<h2 id="core-condiviso">Core condiviso</h2>
+<ul>
+<li>AX-IR, con evoluzione separata verso AX-HIR e AX-MIR;</li>
+<li>compiler e parser;</li>
+<li>runtime e scheduler;</li>
+<li>sandbox e Capability ABI;</li>
+<li>Context Engine;</li>
+<li>Memory Router;</li>
+<li>Model Router;</li>
+<li>Policy Engine;</li>
+<li>Tool/MCP Router.</li>
+</ul>
+<h2 id="servizi-di-piattaforma">Servizi di piattaforma</h2>
+<ul>
+<li>secrets tramite riferimenti host, mai valori nel sorgente o nell’IR;</li>
+<li>audit, tracing ed evals;</li>
+<li>versioning e compatibilità;</li>
+<li>registry e package manager;</li>
+<li>SDK Python e TypeScript;</li>
+<li>core Rust e target WASM;</li>
+<li>CLI e API;</li>
+<li>adapter web, mobile, desktop e server.</li>
+</ul>
+<h2 id="pipeline">Pipeline</h2>
+<pre class="codehilite"><code class="language-text">AA | AM | AW | AP | AT | AE | AS | AD | AI
+                    ↓
+                  AX-IR
+                    ↓
+       runtime + scheduler + sandbox
+                    ↓
+        adapter/provider versionati
+                    ↓
+ web | mobile | desktop | server | sistemi esistenti
+</code></pre>
+
+<p>I linguaggi specializzati non accedono direttamente all’host. Ogni effetto passa attraverso IR tipizzata, policy, capability e adapter versionati.</p>
+<h2 id="stato-implementato">Stato implementato</h2>
+<p>Alla versione di sviluppo corrente sono reali e testati:</p>
+<ul>
+<li>AXL Compact Source 2;</li>
+<li>AX-IR 1.0, 1.1 e 1.2;</li>
+<li>runtime Python sincrono di riferimento;</li>
+<li>tipi scalari e <code>list&lt;T&gt;</code> omogenee;</li>
+<li>funzioni, moduli, AM iniziale, agenti, workflow, tool e policy.</li>
+</ul>
+<p>Scheduler async, runtime Rust/WASM, router completi, registry, SDK e adapter multipiattaforma restano milestone successive.</p></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/ax-ecosystem.md">Modifica questa pagina ↗</a></div>
+        <nav class="pager" aria-label="Paginazione"><a class="prev" href="./"><small>← Precedente</small><b>Benvenuto</b></a><a class="next" href="overview.html"><small>Successivo →</small><b>Visione e obiettivi</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#ruolo">Ruolo</a><a class="toc-l2" href="#linguaggi-e-moduli">Linguaggi e moduli</a><a class="toc-l2" href="#core-condiviso">Core condiviso</a><a class="toc-l2" href="#servizi-di-piattaforma">Servizi di piattaforma</a><a class="toc-l2" href="#pipeline">Pipeline</a><a class="toc-l2" href="#stato-implementato">Stato implementato</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>
+    <form method="dialog"><button aria-label="Chiudi">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca nella documentazione" placeholder="Cerca nella documentazione" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentazione: Agenti, workflow, capability e AM">
+  <title>Agenti, workflow, capability e AM · AXL Documentazione</title>
+  <link rel="stylesheet" href="docs.css">
+  <script defer src="docs.js"></script>
+</head>
+<body data-lang="it" data-page="agent-runtime">
+  <a class="skip" href="#content">Vai al contenuto</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
+    <nav class="product-nav" aria-label="Documentazione">
+      <a class="active" href="./">Documentazione</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="en/agent-runtime.html" hreflang="en">English</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html" aria-current="page" class="active">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>Agenti, workflow, capability e AM</p>
+        <article class="prose"><h1 id="agenti-workflow-capability-e-am">Agenti, workflow, capability e AM</h1>
+<h2 id="deterministico-non-probabilistico">Deterministico, non probabilistico</h2>
+<p>Le primitive agentiche appartengono al linguaggio, ma il loro parsing e controllo sono deterministici. Modelli AI, ricerca, filesystem, rete e servizi sono capability runtime tipizzate.</p>
+<h2 id="agente">Agente</h2>
+<p>Un agente è un principal con nome, frame isolato, grants espliciti e corpo eseguibile.</p>
+<pre class="codehilite"><code class="language-axl">2;50|researcher|search;10|finding|&quot;AXL&quot;,!search/1;20|finding|$finding|90|-|researcher;12|$finding;99
+</code></pre>
+
+<ul>
+<li><code>50|researcher|search</code> apre l'agente e concede solo <code>search</code>;</li>
+<li><code>!search/1</code> consuma un argomento e invoca la capability;</li>
+<li><code>99</code> chiude il corpo.</li>
+</ul>
+<p>Un tool registrato dall'host ma non concesso viene negato.</p>
+<h2 id="workflow">Workflow</h2>
+<pre class="codehilite"><code class="language-axl">2;51|release;52|researcher;52|publisher;99;52|release
+</code></pre>
+
+<p><code>51</code> apre il workflow, <code>52</code> esegue un runnable, <code>99</code> chiude. Il runtime corrente è sequenziale e rifiuta cicli. DAG, parallelismo, retry e checkpoint sono roadmap.</p>
+<h2 id="capability-host">Capability host</h2>
+<p>Una capability dichiara nome, ABI, input/output, effetto, target e policy. Oggi il bridge Python usa <code>Tool</code>:</p>
+<pre class="codehilite"><code class="language-python">from axl import Tool
+
+
+def tools():
+    return [
+        Tool(&quot;search&quot;, search, effect=&quot;read&quot;),
+        Tool(&quot;publish&quot;, publish, effect=&quot;write&quot;, approval=True),
+    ]
+</code></pre>
+
+<p>I futuri bridge Rust/C/WASI/DOM/GPU implementeranno lo stesso modello. Le capability non diventano keyword vendor-specific nel sorgente.</p>
+<h2 id="approvazione-a-chiusura-sicura">Approvazione a chiusura sicura</h2>
+<p>Solo il booleano esatto <code>True</code> autorizza. Stringhe truthy, numeri, eccezioni o provider assente vengono negati.</p>
+<h2 id="audit">Audit</h2>
+<p>Eventi: <code>approval_required</code>, <code>approved</code>, <code>denied</code>, <code>executed</code>, <code>failed</code>. Segreti e credenziali devono essere risolti dentro il bridge e non apparire in source, IR, output o audit.</p>
+<h2 id="am-memoria">AM — memoria</h2>
+<p>AM è il modulo memoria, non il nome del linguaggio.</p>
+<pre class="codehilite"><code class="language-axl">2;20|finding|&quot;result&quot;|95|3600|researcher;12|@finding;21|finding
+</code></pre>
+
+<p>Proprietà:</p>
+<ul>
+<li>protocollo provider-agnostic;</li>
+<li>adapter in-memory e SQLite;</li>
+<li>scope controllato dall'host;</li>
+<li>valori tipizzati;</li>
+<li>confidence, source, versione, timestamp e TTL;</li>
+<li>cancellazione esplicita.</li>
+</ul>
+<p>Nessuna promozione automatica tra scope. Backend vector, graph o cloud devono preservare il contratto AM.</p>
+<h2 id="budget">Budget</h2>
+<p>Limiti su step/espressioni, profondità chiamate, valori, output, tool call e memoria. Capability bloccanti o non fidate richiedono isolamento, timeout e cancellazione host.</p></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/agent-runtime.md">Modifica questa pagina ↗</a></div>
+        <nav class="pager" aria-label="Paginazione"><a class="prev" href="language-guide.html"><small>← Precedente</small><b>Guida al linguaggio</b></a><a class="next" href="ax-ir.html"><small>Successivo →</small><b>AX-IR</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#deterministico-non-probabilistico">Deterministico, non probabilistico</a><a class="toc-l2" href="#agente">Agente</a><a class="toc-l2" href="#workflow">Workflow</a><a class="toc-l2" href="#capability-host">Capability host</a><a class="toc-l2" href="#approvazione-a-chiusura-sicura">Approvazione a chiusura sicura</a><a class="toc-l2" href="#audit">Audit</a><a class="toc-l2" href="#am-memoria">AM — memoria</a><a class="toc-l2" href="#budget">Budget</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>
+    <form method="dialog"><button aria-label="Chiudi">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca nella documentazione" placeholder="Cerca nella documentazione" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

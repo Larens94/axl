@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentazione: AXL Compact Source 2">
+  <title>AXL Compact Source 2 · AXL Documentazione</title>
+  <link rel="stylesheet" href="docs.css">
+  <script defer src="docs.js"></script>
+</head>
+<body data-lang="it" data-page="compact-syntax">
+  <a class="skip" href="#content">Vai al contenuto</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
+    <nav class="product-nav" aria-label="Documentazione">
+      <a class="active" href="./">Documentazione</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="en/compact-syntax.html" hreflang="en">English</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html" aria-current="page" class="active">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>AXL Compact Source 2</p>
+        <article class="prose"><h1 id="axl-compact-source-2">AXL Compact Source 2</h1>
+<p>AXL Compact Source 2 è la sintassi canonica del linguaggio. È progettata esclusivamente per agenti e sistemi automatici: minima quantità di token, parsing deterministico, nessuna indentazione e nessuna dipendenza dalle righe.</p>
+<h2 id="forma">Forma</h2>
+<pre class="codehilite"><code class="language-text">2;frame;frame;frame
+</code></pre>
+
+<ul>
+<li><code>2</code> è la versione del formato sorgente;</li>
+<li><code>;</code> separa i frame;</li>
+<li><code>|</code> separa i campi;</li>
+<li><code>,</code> separa i token di un'espressione RPN;</li>
+<li><code>99</code> chiude un blocco;</li>
+<li>spazi, indentazione e newline non hanno significato strutturale;</li>
+<li>le stringhe usano JSON escaping, quindi possono contenere separatori.</li>
+</ul>
+<p>Esempio completo su una riga:</p>
+<pre class="codehilite"><code class="language-axl">2;10|x|#2,#3,#4,*,+|i;12|$x
+</code></pre>
+
+<p>Equivale semanticamente a: calcola <code>2 + 3 * 4</code>, assegna a <code>x: int</code>, emette <code>x</code>.</p>
+<h2 id="espressioni-rpn">Espressioni RPN</h2>
+<p>Le espressioni usano Reverse Polish Notation. Non servono parentesi né regole di precedenza.</p>
+<table>
+<thead>
+<tr>
+<th>Token</th>
+<th>Significato</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>#42</code></td>
+<td>intero</td>
+</tr>
+<tr>
+<td><code>"AXL"</code></td>
+<td>stringa JSON</td>
+</tr>
+<tr>
+<td><code>?1</code>, <code>?0</code></td>
+<td>booleani true/false</td>
+</tr>
+<tr>
+<td><code>$x</code></td>
+<td>variabile locale</td>
+</tr>
+<tr>
+<td><code>@k</code></td>
+<td>recall memoria</td>
+</tr>
+<tr>
+<td><code>+ - * /</code></td>
+<td>aritmetica</td>
+</tr>
+<tr>
+<td><code>= ! &gt; &lt; G L</code></td>
+<td><code>== != &gt; &lt; &gt;= &lt;=</code></td>
+</tr>
+<tr>
+<td><code>^f/2</code></td>
+<td>chiama funzione <code>f</code> con 2 valori dallo stack</td>
+</tr>
+<tr>
+<td><code>!t/1</code></td>
+<td>chiama tool <code>t</code> con 1 valore dallo stack</td>
+</tr>
+<tr>
+<td><code>~3</code></td>
+<td>costruisce una lista con 3 valori dallo stack</td>
+</tr>
+<tr>
+<td><code>%2</code></td>
+<td>costruisce una mappa con 2 coppie chiave/valore dallo stack</td>
+</tr>
+</tbody>
+</table>
+<pre class="codehilite"><code class="language-text">#2,#3,#4,*,+      → 2 + (3 * 4)
+&quot;AX&quot;,&quot;L&quot;,+       → &quot;AXL&quot;
+#7,#8,^add/2      → add(7,8)
+&quot;AXL&quot;,!search/1  → tool search(&quot;AXL&quot;)
+#1,#2,#3,~3       → list&lt;int&gt;[1,2,3]
+&quot;a&quot;,#1,&quot;b&quot;,#2,%2 → map&lt;string,int&gt;{&quot;a&quot;:1,&quot;b&quot;:2}
+</code></pre>
+
+<h2 id="tipi">Tipi</h2>
+<table>
+<thead>
+<tr>
+<th>Codice</th>
+<th>Tipo</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>i</code></td>
+<td>int</td>
+</tr>
+<tr>
+<td><code>s</code></td>
+<td>string</td>
+</tr>
+<tr>
+<td><code>b</code></td>
+<td>bool</td>
+</tr>
+<tr>
+<td><code>li</code></td>
+<td>list&lt;int&gt;</td>
+</tr>
+<tr>
+<td><code>ls</code></td>
+<td>list&lt;string&gt;</td>
+</tr>
+<tr>
+<td><code>lb</code></td>
+<td>list&lt;bool&gt;</td>
+</tr>
+<tr>
+<td><code>msi</code></td>
+<td>map&lt;string,int&gt;</td>
+</tr>
+<tr>
+<td><code>msli</code></td>
+<td>map&lt;string,list&lt;int&gt;&gt;</td>
+</tr>
+</tbody>
+</table>
+<p>I codici collezione sono prefissi e auto-delimitanti: <code>lT</code> indica <code>list&lt;T&gt;</code>,
+mentre <code>mKV</code> indica <code>map&lt;K,V&gt;</code>. Le mappe sono immutabili, omogenee per chiavi
+e valori e richiedono chiavi scalari uniche. La CLI usa sempre il wrapper
+canonico non ambiguo <code>{\"$ax.map\":[[key,value],...]}</code>. In questa tranche il supporto
+mappe riguarda Compact Source e reference runtime; AX-IR e persistenza SQLite
+restano milestone successive.</p>
+<p>Il prefisso <code>l</code> è ricorsivo fino a 16 livelli: <code>lli</code> rappresenta <code>list&lt;list&lt;int&gt;&gt;</code>. Le liste sono immutabili e omogenee; <code>~0</code> crea una lista vuota il cui tipo elemento viene determinato dal contesto dichiarato.</p>
+<h2 id="opcode">Opcode</h2>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Opcode</th>
+<th>Frame</th>
+<th>Semantica</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;"><code>1</code></td>
+<td><code>1|alias|path</code></td>
+<td>import <code>.axl</code> relativo e top-level, confinato al module root</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>10</code></td>
+<td><code>10|name|expr[|type]</code></td>
+<td>binding locale</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>11</code></td>
+<td><code>11|expr</code></td>
+<td>return</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>12</code></td>
+<td><code>12|expr</code></td>
+<td>emit</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>20</code></td>
+<td><code>20|key|expr[|confidence|ttl|source]</code></td>
+<td>write memoria</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>21</code></td>
+<td><code>21|key</code></td>
+<td>forget</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>30</code></td>
+<td><code>30|condition</code></td>
+<td>apre if</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>31</code></td>
+<td><code>31</code></td>
+<td>else</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>32</code></td>
+<td><code>32|condition</code></td>
+<td>apre while</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>40</code></td>
+<td><code>40|name|a:i,b:i|i</code></td>
+<td>apre funzione tipizzata</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>50</code></td>
+<td><code>50|name[|tool,tool]</code></td>
+<td>apre agente con grants</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>51</code></td>
+<td><code>51|name</code></td>
+<td>apre workflow</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>52</code></td>
+<td><code>52|name</code></td>
+<td>run agente/workflow</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>99</code></td>
+<td><code>99</code></td>
+<td>chiude il blocco corrente</td>
+</tr>
+</tbody>
+</table>
+<h3 id="memoria-con-metadata">Memoria con metadata</h3>
+<pre class="codehilite"><code class="language-axl">2;20|finding|&quot;AXL&quot;|95|3600|researcher;12|@finding;21|finding
+</code></pre>
+
+<p>Per TTL assente si usa <code>-</code>:</p>
+<pre class="codehilite"><code class="language-axl">2;20|k|&quot;v&quot;|100|-|runtime
+</code></pre>
+
+<h3 id="funzione">Funzione</h3>
+<pre class="codehilite"><code class="language-axl">2;40|add|a:i,b:i|i;11|$a,$b,+;99;12|#20,#22,^add/2
+</code></pre>
+
+<h3 id="controllo-di-flusso">Controllo di flusso</h3>
+<pre class="codehilite"><code class="language-axl">2;10|n|#0;32|$n,#3,&lt;;30|$n,#1,=;12|&quot;one&quot;;31;12|$n;99;10|n|$n,#1,+;99
+</code></pre>
+
+<h3 id="agente-e-workflow">Agente e workflow</h3>
+<pre class="codehilite"><code class="language-axl">2;50|r|search;10|x|&quot;AXL&quot;,!search/1;12|$x;99;51|w;52|r;99;52|w
+</code></pre>
+
+<h2 id="canonicalizzazione">Canonicalizzazione</h2>
+<p>Il comando <code>pack</code> converte la sintassi legacy nella rappresentazione canonica:</p>
+<pre class="codehilite"><code class="language-bash">axl pack legacy.axl -o packed.axl
+</code></pre>
+
+<p>Il writer canonico garantisce una sola rappresentazione normale per il programma supportato. Questo facilita hashing, cache, deduplicazione, firma e confronto automatico.</p>
+<h2 id="formato-legacy">Formato legacy</h2>
+<p>Il parser testuale leggibile (<code>let</code>, <code>fn</code>, <code>agent</code>, indentazione visuale) resta temporaneamente disponibile come frontend di migrazione e debug. Non è la sintassi primaria e non definisce il design futuro di AXL.</p>
+<h2 id="evoluzione">Evoluzione</h2>
+<p>Nuovi opcode possono essere aggiunti senza rendere verbose il linguaggio. Le famiglie future includeranno collezioni, record, enum, task, eventi, concorrenza, capability standard e binding piattaforma. La versione iniziale impedisce interpretazioni ambigue; cambi incompatibili richiedono un nuovo header sorgente.</p></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/compact-syntax.md">Modifica questa pagina ↗</a></div>
+        <nav class="pager" aria-label="Paginazione"><a class="prev" href="architecture.html"><small>← Precedente</small><b>Architettura</b></a><a class="next" href="language-guide.html"><small>Successivo →</small><b>Guida al linguaggio</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#forma">Forma</a><a class="toc-l2" href="#espressioni-rpn">Espressioni RPN</a><a class="toc-l2" href="#tipi">Tipi</a><a class="toc-l2" href="#opcode">Opcode</a><a class="toc-l3" href="#memoria-con-metadata">Memoria con metadata</a><a class="toc-l3" href="#funzione">Funzione</a><a class="toc-l3" href="#controllo-di-flusso">Controllo di flusso</a><a class="toc-l3" href="#agente-e-workflow">Agente e workflow</a><a class="toc-l2" href="#canonicalizzazione">Canonicalizzazione</a><a class="toc-l2" href="#formato-legacy">Formato legacy</a><a class="toc-l2" href="#evoluzione">Evoluzione</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>
+    <form method="dialog"><button aria-label="Chiudi">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca nella documentazione" placeholder="Cerca nella documentazione" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

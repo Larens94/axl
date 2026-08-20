@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentazione: Toolchain e utilizzo">
+  <title>Toolchain e utilizzo · AXL Documentazione</title>
+  <link rel="stylesheet" href="docs.css">
+  <script defer src="docs.js"></script>
+</head>
+<body data-lang="it" data-page="toolchain">
+  <a class="skip" href="#content">Vai al contenuto</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
+    <nav class="product-nav" aria-label="Documentazione">
+      <a class="active" href="./">Documentazione</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="en/toolchain.html" hreflang="en">English</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html" aria-current="page" class="active">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>Toolchain e utilizzo</p>
+        <article class="prose"><h1 id="toolchain-e-utilizzo">Toolchain e utilizzo</h1>
+<h2 id="requisiti-correnti">Requisiti correnti</h2>
+<ul>
+<li>Python 3.11 o superiore;</li>
+<li>package <code>axl-lang</code> installabile con pip;</li>
+<li>SQLite incluso in Python per la memoria persistente.</li>
+</ul>
+<p>Rust/Cargo non sono ancora richiesti dalla reference implementation.</p>
+<h2 id="installazione">Installazione</h2>
+<pre class="codehilite"><code class="language-bash">python3 -m pip install .
+axl --help
+</code></pre>
+
+<p>Per sviluppo:</p>
+<pre class="codehilite"><code class="language-bash">python3 -m pip install --no-deps -e .
+</code></pre>
+
+<h2 id="esecuzione-sorgente-canonico">Esecuzione sorgente canonico</h2>
+<pre class="codehilite"><code class="language-bash">axl run examples/compact.axl
+</code></pre>
+
+<h2 id="canonicalizzazione">Canonicalizzazione</h2>
+<pre class="codehilite"><code class="language-bash">axl pack legacy.axl -o compact.axl
+</code></pre>
+
+<p><code>pack</code> accetta il frontend legacy o compact, esegue validazione e type-check e produce Compact Source 2 normalizzato su una riga.</p>
+<h2 id="esecuzione-sorgente-con-capability-host">Esecuzione sorgente con capability host</h2>
+<pre class="codehilite"><code class="language-bash">axl run examples/functions.axl
+</code></pre>
+
+<p>Con memoria e plugin:</p>
+<pre class="codehilite"><code class="language-bash">axl run examples/agent_workflow.axl \
+  --plugin examples.demo_tools \
+  --approve-tool publish \
+  --memory .axl-memory.sqlite \
+  --scope project:demo
+</code></pre>
+
+<h2 id="compilare-ed-eseguire-ax-ir">Compilare ed eseguire AX-IR</h2>
+<pre class="codehilite"><code class="language-bash">axl compile examples/functions.axl -o functions.axlir.json
+axl exec functions.axlir.json
+</code></pre>
+
+<p><code>compile</code> risolve moduli, valida e type-checka prima di produrre AX-IR. <code>exec</code> valida nuovamente il documento prima degli effetti.</p>
+<p>La CLI usa come <strong>module root</strong> la directory del file di ingresso. Gli import devono essere relativi, top-level, con estensione <code>.axl</code>, senza <code>..</code>, e restare entro tale root. L'API Python consente di restringere o definire esplicitamente il confine:</p>
+<pre class="codehilite"><code class="language-python">from axl import compile_file
+
+program = compile_file(&quot;src/app.axl&quot;, module_root=&quot;src&quot;)
+</code></pre>
+
+<p>Il resolver limita inoltre profondità, numero di moduli e byte sorgente aggregati.</p>
+<h2 id="budget-cli">Budget CLI</h2>
+<p>Sono disponibili:</p>
+<pre class="codehilite"><code class="language-text">--max-steps
+--max-output-bytes
+--max-value-bytes
+--max-value-nodes
+--max-value-depth
+--max-tool-calls
+--max-memory-ops
+--max-function-depth
+</code></pre>
+
+<h2 id="test-e-qualita">Test e qualità</h2>
+<pre class="codehilite"><code class="language-bash">python3 -m unittest discover -s tests -v
+python3 -m ruff check .
+python3 -m ruff format --check .
+python3 -m compileall -q axl tests examples
+python3 -m json.tool schema/axl-ir-1.0.schema.json &gt;/dev/null
+python3 -m json.tool schema/axl-ir-1.1.schema.json &gt;/dev/null
+python3 -m json.tool schema/axl-ir-1.2.schema.json &gt;/dev/null
+git diff --check
+</code></pre>
+
+<h2 id="toolchain-target">Toolchain target</h2>
+<p>La futura CLI unificata dovrà offrire comandi equivalenti a:</p>
+<pre class="codehilite"><code class="language-text">axl new
+axl check
+axl build
+axl run
+axl test
+axl fmt
+axl doc
+axl package
+axl lsp
+</code></pre>
+
+<p>Il compilatore Rust dovrà supportare inizialmente interprete/VM e WASM, poi native AOT. Il corpus di test corrente fungerà da base della suite di conformità cross-runtime.</p></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/toolchain.md">Modifica questa pagina ↗</a></div>
+        <nav class="pager" aria-label="Paginazione"><a class="prev" href="security.html"><small>← Precedente</small><b>Sicurezza</b></a><a class="next" href="roadmap.html"><small>Successivo →</small><b>Roadmap</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#requisiti-correnti">Requisiti correnti</a><a class="toc-l2" href="#installazione">Installazione</a><a class="toc-l2" href="#esecuzione-sorgente-canonico">Esecuzione sorgente canonico</a><a class="toc-l2" href="#canonicalizzazione">Canonicalizzazione</a><a class="toc-l2" href="#esecuzione-sorgente-con-capability-host">Esecuzione sorgente con capability host</a><a class="toc-l2" href="#compilare-ed-eseguire-ax-ir">Compilare ed eseguire AX-IR</a><a class="toc-l2" href="#budget-cli">Budget CLI</a><a class="toc-l2" href="#test-e-qualita">Test e qualità</a><a class="toc-l2" href="#toolchain-target">Toolchain target</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>
+    <form method="dialog"><button aria-label="Chiudi">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca nella documentazione" placeholder="Cerca nella documentazione" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentazione: AX-IR e compatibilità">
+  <title>AX-IR e compatibilità · AXL Documentazione</title>
+  <link rel="stylesheet" href="docs.css">
+  <script defer src="docs.js"></script>
+</head>
+<body data-lang="it" data-page="ax-ir">
+  <a class="skip" href="#content">Vai al contenuto</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
+    <nav class="product-nav" aria-label="Documentazione">
+      <a class="active" href="./">Documentazione</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="en/ax-ir.html" hreflang="en">English</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html" aria-current="page" class="active">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>AX-IR e compatibilità</p>
+        <article class="prose"><h1 id="ax-ir-e-compatibilita">AX-IR e compatibilità</h1>
+<h2 id="definizione">Definizione</h2>
+<p><strong>AX-IR</strong> è la rappresentazione intermedia tipizzata e versionata di AXL. Disaccoppia sintassi, analisi statica e runtime.</p>
+<h2 id="envelope-json">Envelope JSON</h2>
+<p>AX-IR 1.2 viene serializzata così:</p>
+<pre class="codehilite"><code class="language-json">{
+  &quot;ir_version&quot;: &quot;1.2&quot;,
+  &quot;program&quot;: {
+    &quot;type&quot;: &quot;Program&quot;,
+    &quot;instructions&quot;: []
+  }
+}
+</code></pre>
+
+<p>I nodi usano un discriminatore <code>type</code> e campi chiusi. Il decoder rifiuta:</p>
+<ul>
+<li>versioni sconosciute;</li>
+<li>nodi o campi sconosciuti;</li>
+<li>chiavi JSON duplicate;</li>
+<li>tipi literal non AXL;</li>
+<li>espressioni nella posizione di istruzioni;</li>
+<li>collezioni malformate;</li>
+<li>identificatori e operatori invalidi;</li>
+<li>riferimenti o grafi workflow non validi;</li>
+<li>payload oltre il limite configurato.</li>
+</ul>
+<h2 id="versioni-pubblicate">Versioni pubblicate</h2>
+<ul>
+<li><strong>1.0:</strong> agenti, workflow, memoria, tool e controllo di flusso base.</li>
+<li><strong>1.1:</strong> funzioni tipizzate, <code>return</code>, chiamate funzione e annotazioni sui binding.</li>
+<li><strong>1.2:</strong> <code>ListExpression</code> e tipi <code>list&lt;T&gt;</code> omogenei.</li>
+</ul>
+<p>Il decoder 1.2 legge documenti 1.0 e 1.1 e applica upgrade controllati dove necessari. Ogni schema pubblicato resta immutato e vive in un file separato.</p>
+<h2 id="moduli">Moduli</h2>
+<p>Gli import sono direttive del compilatore e non sopravvivono nell'IR. Il compilatore risolve i file, applica namespace qualificati e produce un singolo <code>Program</code> validato.</p>
+<h2 id="evoluzione-futura">Evoluzione futura</h2>
+<p>La IR JSON corrente è ad alto livello. Lo stack definitivo distinguerà:</p>
+<h3 id="ax-hir">AX-HIR</h3>
+<ul>
+<li>funzioni e tipi risolti;</li>
+<li>agenti, workflow, memoria e capability;</li>
+<li>semantica vicina al linguaggio;</li>
+<li>source mapping per diagnostica.</li>
+</ul>
+<h3 id="ax-mir">AX-MIR</h3>
+<ul>
+<li>blocchi di base e control-flow graph;</li>
+<li>chiamate e valori abbassati;</li>
+<li>layout, ownership e ABI;</li>
+<li>operazioni adatte a VM, native e WASM;</li>
+<li>ottimizzazioni verificabili.</li>
+</ul>
+<p>Ogni lowering dovrà preservare output, effetti, errori, audit e limiti osservabili rispetto al reference runtime.</p>
+<h2 id="schemi">Schemi</h2>
+<ul>
+<li><a href="../schema/axl-ir-1.0.schema.json"><code>../schema/axl-ir-1.0.schema.json</code></a></li>
+<li><a href="../schema/axl-ir-1.1.schema.json"><code>../schema/axl-ir-1.1.schema.json</code></a></li>
+<li><a href="../schema/axl-ir-1.2.schema.json"><code>../schema/axl-ir-1.2.schema.json</code></a></li>
+</ul></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/ax-ir.md">Modifica questa pagina ↗</a></div>
+        <nav class="pager" aria-label="Paginazione"><a class="prev" href="agent-runtime.html"><small>← Precedente</small><b>Agenti e runtime</b></a><a class="next" href="security.html"><small>Successivo →</small><b>Sicurezza</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#definizione">Definizione</a><a class="toc-l2" href="#envelope-json">Envelope JSON</a><a class="toc-l2" href="#versioni-pubblicate">Versioni pubblicate</a><a class="toc-l2" href="#moduli">Moduli</a><a class="toc-l2" href="#evoluzione-futura">Evoluzione futura</a><a class="toc-l3" href="#ax-hir">AX-HIR</a><a class="toc-l3" href="#ax-mir">AX-MIR</a><a class="toc-l2" href="#schemi">Schemi</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>
+    <form method="dialog"><button aria-label="Chiudi">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca nella documentazione" placeholder="Cerca nella documentazione" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

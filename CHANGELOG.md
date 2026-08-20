@@ -1,5 +1,7 @@
 # Registro delle modifiche
 
+[Italiano](CHANGELOG.md) · [English](CHANGELOG.en.md)
+
 ## 2.0.0 — in sviluppo
 
 - Aggiunto Compact Source 2 come sintassi canonica destinata esclusivamente agli agenti.
@@ -12,6 +14,7 @@
 - Pubblicato AX-IR 1.2 mantenendo la decodifica di AX-IR 1.0 e 1.1.
 - Aggiunto il trasporto delle liste attraverso funzioni, capability dei tool, AM SQLite e output JSON canonico della CLI.
 - Aggiunto il tracer `map<K,V>` tipizzato per Compact Source e runtime di riferimento.
+- Pubblicato un portale documentale statico bilingue, sempre light, con navigazione laterale, ricerca, indice pagina e collegamenti italiano/inglese.
 
 ## 1.1.0 — in sviluppo
 

@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentation: Compact Source Guide">
+  <title>Compact Source Guide · AXL Documentation</title>
+  <link rel="stylesheet" href="../docs.css">
+  <script defer src="../docs.js"></script>
+</head>
+<body data-lang="en" data-page="language-guide">
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
+    <nav class="product-nav" aria-label="Documentation">
+      <a class="active" href="./">Documentation</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="../language-guide.html" hreflang="it">Italiano</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html" aria-current="page" class="active">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>Compact Source Guide</p>
+        <article class="prose"><h1 id="compact-source-guide">Compact Source Guide</h1>
+<p>AXL Compact Source 2 is the canonical format. For the complete normative table, see <a href="compact-syntax.html"><code>compact-syntax.md</code></a>.</p>
+<h2 id="structure">Structure</h2>
+<pre class="codehilite"><code class="language-text">2;frame;frame;frame
+</code></pre>
+
+<ul>
+<li><code>2</code>: version;</li>
+<li><code>;</code>: frame separator;</li>
+<li><code>|</code>: field separator;</li>
+<li><code>,</code>: RPN token separator;</li>
+<li><code>99</code>: end of block.</li>
+</ul>
+<p>Newlines are optional and non-structural. The canonical form produced by <code>axl pack</code> is a single line.</p>
+<h2 id="atoms">Atoms</h2>
+<pre class="codehilite"><code class="language-text">#42       integer
+&quot;AXL&quot;     JSON string
+?1        true
+?0        false
+$x        variable
+@finding  memory
+</code></pre>
+
+<h2 id="rpn">RPN</h2>
+<pre class="codehilite"><code class="language-text">#2,#3,#4,*,+      2 + 3 * 4
+#8,#7,G           8 &gt;= 7
+&quot;AX&quot;,&quot;L&quot;,+       &quot;AXL&quot;
+#7,#8,^add/2      function add(7,8)
+&quot;AXL&quot;,!search/1  capability search(&quot;AXL&quot;)
+</code></pre>
+
+<p>Comparison codes: <code>=</code> (<code>==</code>), <code>!</code> (<code>!=</code>), <code>G</code> (<code>&gt;=</code>), <code>L</code> (<code>&lt;=</code>).</p>
+<h2 id="bindings-and-output">Bindings and output</h2>
+<pre class="codehilite"><code class="language-axl">2;10|count|#3|i;10|name|&quot;AXL&quot;|s;10|ready|?1|b;12|$name
+</code></pre>
+
+<p>Types: <code>i</code> integer, <code>s</code> string, <code>b</code> boolean.</p>
+<h2 id="if-and-while">If and while</h2>
+<pre class="codehilite"><code class="language-axl">2;10|n|#0;32|$n,#3,&lt;;30|$n,#1,=;12|&quot;one&quot;;31;12|$n;99;10|n|$n,#1,+;99
+</code></pre>
+
+<ul>
+<li><code>30</code> opens an if block;</li>
+<li><code>31</code> opens an else block;</li>
+<li><code>32</code> opens a while block;</li>
+<li><code>99</code> closes the block.</li>
+</ul>
+<h2 id="functions">Functions</h2>
+<pre class="codehilite"><code class="language-axl">2;40|add|a:i,b:i|i;11|$a,$b,+;99;10|n|#7,#8,^add/2|i;12|$n
+</code></pre>
+
+<p><code>40|add|a:i,b:i|i</code> declares the signature and opens the body; <code>11</code> returns; <code>^add/2</code> consumes two arguments from the RPN stack.</p>
+<h2 id="modules">Modules</h2>
+<p><code>m.axl</code>:</p>
+<pre class="codehilite"><code class="language-axl">2;40|add|a:i,b:i|i;11|$a,$b,+;99
+</code></pre>
+
+<p><code>app.axl</code>:</p>
+<pre class="codehilite"><code class="language-axl">2;1|m|m.axl;12|#20,#22,^m.add/2
+</code></pre>
+
+<p>Imports are relative, explicit, and namespaced. Only <code>.axl</code> files within the module root are allowed; absolute paths and <code>..</code> components are rejected. Cycles, depth beyond 256, more than 1,024 modules, more than 4 MiB in aggregate, and top-level effects in modules are rejected.</p>
+<h2 id="am-memory">AM memory</h2>
+<pre class="codehilite"><code class="language-axl">2;20|finding|&quot;AXL&quot;|95|3600|researcher;10|x|@finding;12|$x;21|finding
+</code></pre>
+
+<p>The scope is determined by the host. Metadata: confidence, TTL (<code>-</code> if absent), source.</p>
+<h2 id="agents-tools-and-workflows">Agents, tools, and workflows</h2>
+<pre class="codehilite"><code class="language-axl">2;50|r|search;10|x|&quot;AXL&quot;,!search/1;12|$x;99;51|w;52|r;99;52|w
+</code></pre>
+
+<ul>
+<li><code>50</code>: agent and grants;</li>
+<li><code>!search/1</code>: postfix tool call;</li>
+<li><code>51</code>: workflow;</li>
+<li><code>52</code>: run;</li>
+<li><code>99</code>: end of declaration.</li>
+</ul>
+<h2 id="legacy-conversion">Legacy conversion</h2>
+<pre class="codehilite"><code class="language-bash">axl pack readable.axl -o compact.axl
+</code></pre>
+
+<p>The keyword-based frontend remains only for migration and debugging. New features must have a canonical compact encoding before they are considered part of the language.</p></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/language-guide.md">Edit this page ↗</a></div>
+        <nav class="pager" aria-label="Pagination"><a class="prev" href="compact-syntax.html"><small>← Previous</small><b>Compact Source 2</b></a><a class="next" href="agent-runtime.html"><small>Next →</small><b>Agents and runtime</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#structure">Structure</a><a class="toc-l2" href="#atoms">Atoms</a><a class="toc-l2" href="#rpn">RPN</a><a class="toc-l2" href="#bindings-and-output">Bindings and output</a><a class="toc-l2" href="#if-and-while">If and while</a><a class="toc-l2" href="#functions">Functions</a><a class="toc-l2" href="#modules">Modules</a><a class="toc-l2" href="#am-memory">AM memory</a><a class="toc-l2" href="#agents-tools-and-workflows">Agents, tools, and workflows</a><a class="toc-l2" href="#legacy-conversion">Legacy conversion</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>
+    <form method="dialog"><button aria-label="Close">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Search documentation" placeholder="Search documentation" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

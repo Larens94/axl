@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentation: AXL Vision">
+  <title>AXL Vision · AXL Documentation</title>
+  <link rel="stylesheet" href="../docs.css">
+  <script defer src="../docs.js"></script>
+</head>
+<body data-lang="en" data-page="overview">
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
+    <nav class="product-nav" aria-label="Documentation">
+      <a class="active" href="./">Documentation</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="../overview.html" hreflang="it">Italiano</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html" aria-current="page" class="active">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>AXL Vision</p>
+        <article class="prose"><h1 id="axl-vision">AXL Vision</h1>
+<h2 id="for-agents-only">For agents only</h2>
+<p>AXL — <strong>Agent eXecution Language</strong> — is a general-purpose language designed exclusively for software agents. It does not seek familiarity with Python, Rust, or JavaScript. Its priority is to reduce tokens, ambiguity, and generation cost.</p>
+<p>The canonical source is a versioned stream:</p>
+<pre class="codehilite"><code class="language-axl">2;10|x|#2,#3,#4,*,+|i;12|$x
+</code></pre>
+
+<p>It requires no newlines, indentation, or long keywords. Numeric opcodes describe instructions; RPN expressions eliminate parentheses and syntactic precedence.</p>
+<h2 id="general-purpose-goal">General-purpose goal</h2>
+<p>Compact does not mean limited. AXL must be able to express:</p>
+<ul>
+<li>backends, APIs, services, and distributed applications;</li>
+<li>browsers and frontends through WASM/DOM;</li>
+<li>native desktop and mobile applications;</li>
+<li>CLIs, automation, and system software;</li>
+<li>GPU, graphics, audio, and games;</li>
+<li>agents, workflows, memory, tasks, events, and models;</li>
+<li>reusable libraries and components.</li>
+</ul>
+<h2 id="backends-and-bridges">Backends and bridges</h2>
+<p>Rust is the first low-level runtime/compiler, chosen for security, performance, and portability. AXL is not tied to Rust: AX-HIR/AX-MIR and a versioned ABI will enable multiple backends and bridges.</p>
+<pre class="codehilite"><code class="language-text">AXL → AX-HIR → AX-MIR → Rust/native
+                       → VM
+                       → WASM/WASI
+                       → C ABI
+                       → DOM/WebGPU
+                       → mobile/desktop/OS bridge
+                       → future backends
+</code></pre>
+
+<p>The AXL source does not change when the target changes.</p>
+<h2 id="principles">Principles</h2>
+<ol>
+<li><strong>Agent-only:</strong> token efficiency before human readability.</li>
+<li><strong>General-purpose:</strong> no category of software is excluded from the architecture.</li>
+<li><strong>Determinism:</strong> parsing and compilation do not depend on LLMs.</li>
+<li><strong>Canonical form:</strong> a normal representation facilitates hashing, caching, and signing.</li>
+<li><strong>Capability security:</strong> external effects are denied by default.</li>
+<li><strong>Versioned IR:</strong> source, HIR, MIR, and ABI evolve through explicit contracts.</li>
+<li><strong>Portability:</strong> the same results, effects, and errors across different backends.</li>
+<li><strong>Machine diagnostics:</strong> stable, localizable, and automatically correctable errors.</li>
+</ol>
+<h2 id="actual-status">Actual status</h2>
+<h3 id="available">Available</h3>
+<ul>
+<li>single-line Compact Source 2;</li>
+<li>canonical writer and <code>axl pack</code>;</li>
+<li>deterministic parser and RPN;</li>
+<li>basic types, functions, and modules;</li>
+<li>control flow;</li>
+<li>agents, workflows, and tools;</li>
+<li>scoped AM with SQLite, TTL, and metadata;</li>
+<li>policy, approval, audit, and budgets;</li>
+<li>versioned AX-IR JSON;</li>
+<li>Python reference runtime and CLI.</li>
+</ul>
+<h3 id="to-be-built">To be built</h3>
+<ul>
+<li>collections, records, enums, option/result, and pattern matching;</li>
+<li>tasks, events, async, and structured concurrency;</li>
+<li>AX-HIR/AX-MIR and capability ABI;</li>
+<li>Rust runtime/compiler;</li>
+<li>VM, native, WASM/WASI;</li>
+<li>filesystem, network, HTTP, database, DOM, GPU, and desktop/mobile bridges;</li>
+<li>package manager, LSP, debugger, and profiler;</li>
+<li>application frameworks.</li>
+</ul>
+<p>The Python reference implementation establishes semantics and conformance; it is not the final runtime.</p></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/overview.md">Edit this page ↗</a></div>
+        <nav class="pager" aria-label="Pagination"><a class="prev" href="ax-ecosystem.html"><small>← Previous</small><b>AX ecosystem</b></a><a class="next" href="architecture.html"><small>Next →</small><b>Architecture</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#for-agents-only">For agents only</a><a class="toc-l2" href="#general-purpose-goal">General-purpose goal</a><a class="toc-l2" href="#backends-and-bridges">Backends and bridges</a><a class="toc-l2" href="#principles">Principles</a><a class="toc-l2" href="#actual-status">Actual status</a><a class="toc-l3" href="#available">Available</a><a class="toc-l3" href="#to-be-built">To be built</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>
+    <form method="dialog"><button aria-label="Close">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Search documentation" placeholder="Search documentation" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

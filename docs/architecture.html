@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentazione: Architettura dello stack">
+  <title>Architettura dello stack · AXL Documentazione</title>
+  <link rel="stylesheet" href="docs.css">
+  <script defer src="docs.js"></script>
+</head>
+<body data-lang="it" data-page="architecture">
+  <a class="skip" href="#content">Vai al contenuto</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
+    <nav class="product-nav" aria-label="Documentazione">
+      <a class="active" href="./">Documentazione</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="en/architecture.html" hreflang="en">English</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html" aria-current="page" class="active">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>Architettura dello stack</p>
+        <article class="prose"><h1 id="architettura-dello-stack">Architettura dello stack</h1>
+<h2 id="pipeline-stabile">Pipeline stabile</h2>
+<p>La tassonomia completa AA/AM/AW/AP/AT/AE/AS/AD/AI è definita in <a href="ax-ecosystem.html">AX — Agent eXecution</a>. Tutte le superfici convergono su AX-IR prima dell'esecuzione.</p>
+<pre class="codehilite"><code class="language-text">Compact Source 2
+      │
+      ▼
+parser deterministico
+      │
+      ▼
+AST + resolver + type-checker
+      │
+      ▼
+AX-HIR ── primitive general-purpose + agentiche
+      │
+      ▼
+AX-MIR ── CFG, tipi abbassati, effetti, capability ABI
+      │
+      ├── VM
+      ├── Rust/native
+      ├── WASM/WASI
+      └── bridge piattaforma
+             ├── filesystem/network/HTTP/database
+             ├── DOM/browser/WebGPU
+             ├── desktop/mobile/OS
+             └── futuri backend
+</code></pre>
+
+<h2 id="livello-sorgente">Livello sorgente</h2>
+<p>Il sorgente canonico è ottimizzato per agenti: opcode numerici, frame delimitati, espressioni RPN, nessuna indentazione. È compatto ma versionato e completamente deterministico.</p>
+<p>Il frontend verbose esistente serve soltanto a migrazione, debug e conversione con <code>axl pack</code>.</p>
+<h2 id="analisi-del-sorgente">Analisi del sorgente</h2>
+<p>Responsabilità:</p>
+<ul>
+<li>framing e parsing strict;</li>
+<li>diagnostica per frame/token;</li>
+<li>risoluzione moduli e namespace;</li>
+<li>type-check statico;</li>
+<li>costruzione di HIR valida;</li>
+<li>nessun effetto runtime.</li>
+</ul>
+<p>Oggi il frontend/reference runtime è Python. Il corpus di test ne rende la semantica trasferibile.</p>
+<h2 id="ax-ir-hir-e-mir">AX-IR, HIR e MIR</h2>
+<ul>
+<li><strong>AX-IR JSON 1.x:</strong> contratto interoperabile corrente.</li>
+<li><strong>AX-HIR:</strong> funzioni, tipi, agenti, workflow, memoria ed effetti di alto livello.</li>
+<li><strong>AX-MIR:</strong> basic block, controllo di flusso, layout valori, chiamate e capability abbassate.</li>
+</ul>
+<p>Separare i livelli consente ottimizzazione e target multipli senza contaminare il sorgente.</p>
+<h2 id="motore-di-esecuzione">Motore di esecuzione</h2>
+<p>Il runtime governa:</p>
+<ul>
+<li>esecuzione, scheduling e cancellazione;</li>
+<li>memoria AM e scope;</li>
+<li>capability, policy e approval;</li>
+<li>audit e budget;</li>
+<li>bridge con host e piattaforme.</li>
+</ul>
+<p>Rust è la prima implementazione definitiva prevista per safety e performance. Non è parte della sintassi né l'unico backend ammesso.</p>
+<h2 id="capability-abi-e-bridge">Capability ABI e bridge</h2>
+<p>Ogni bridge espone contratti tipizzati e versionati:</p>
+<pre class="codehilite"><code class="language-text">capability id + ABI version + input/output types + effects + target + cancellation
+</code></pre>
+
+<p>Questo permette a uno stesso programma AXL di usare implementazioni diverse per Linux, Windows, macOS, browser, Android, iOS, GPU o cloud.</p>
+<p>Il disegno applicativo concreto, inclusi AX-UI, networking moderno, renderer e demo verticali, è descritto in <a href="platform-demo-analysis.html">Analisi demo applicative e piattaforme</a>.</p>
+<h2 id="componenti-correnti">Componenti correnti</h2>
+<pre class="codehilite"><code class="language-text">axl/compact.py        parser/writer Compact Source 2
+axl/parser.py         dispatcher + frontend legacy
+axl/compiler.py       moduli e namespace
+axl/ir.py             IR tipizzata corrente
+axl/typechecker.py    type-checker
+axl/validation.py     validazione semantica
+axl/serialization.py  AX-IR JSON
+axl/interpreter.py    reference runtime
+axl/memory.py         AM
+axl/policy.py         capability policy/audit
+axl/__main__.py       CLI
+</code></pre>
+
+<h2 id="compatibilita">Compatibilità</h2>
+<ul>
+<li>source versionata;</li>
+<li>output canonico stabile;</li>
+<li>schema IR pubblicato immutabile;</li>
+<li>decoder legacy testato;</li>
+<li>equivalenza osservazionale tra reference, VM, native e WASM;</li>
+<li>bridge sostituibili senza cambiare il programma.</li>
+</ul></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/architecture.md">Modifica questa pagina ↗</a></div>
+        <nav class="pager" aria-label="Paginazione"><a class="prev" href="overview.html"><small>← Precedente</small><b>Visione e obiettivi</b></a><a class="next" href="compact-syntax.html"><small>Successivo →</small><b>Compact Source 2</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#pipeline-stabile">Pipeline stabile</a><a class="toc-l2" href="#livello-sorgente">Livello sorgente</a><a class="toc-l2" href="#analisi-del-sorgente">Analisi del sorgente</a><a class="toc-l2" href="#ax-ir-hir-e-mir">AX-IR, HIR e MIR</a><a class="toc-l2" href="#motore-di-esecuzione">Motore di esecuzione</a><a class="toc-l2" href="#capability-abi-e-bridge">Capability ABI e bridge</a><a class="toc-l2" href="#componenti-correnti">Componenti correnti</a><a class="toc-l2" href="#compatibilita">Compatibilità</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>
+    <form method="dialog"><button aria-label="Chiudi">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca nella documentazione" placeholder="Cerca nella documentazione" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

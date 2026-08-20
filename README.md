@@ -1,5 +1,7 @@
 # AX / AXL — Agent eXecution
 
+[Italiano](README.md) · [English](README.en.md)
+
 **AX** è l'ecosistema Agent eXecution. **AXL** è il core eseguibile agent-native corrente: il sorgente canonico usa stream a singola riga, opcode numerici ed espressioni RPN, senza indentazione e con minimo overhead di token.
 
 **Sito:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Documentazione:** [`docs/`](docs/README.md) · **Specifica:** [`SPEC.md`](SPEC.md)

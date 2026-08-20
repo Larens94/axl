@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentation: AXL Roadmap">
+  <title>AXL Roadmap · AXL Documentation</title>
+  <link rel="stylesheet" href="../docs.css">
+  <script defer src="../docs.js"></script>
+</head>
+<body data-lang="en" data-page="roadmap">
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
+    <nav class="product-nav" aria-label="Documentation">
+      <a class="active" href="./">Documentation</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="../roadmap.html" hreflang="it">Italiano</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html" aria-current="page" class="active">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>AXL Roadmap</p>
+        <article class="prose"><h1 id="axl-roadmap">AXL Roadmap</h1>
+<p>AXL progresses through vertical slices: compact source → HIR/MIR → runtime → observable result.</p>
+<p>The complete strategy for web, desktop, mobile, AX-UI, backend, and networking is defined in <a href="platform-demo-analysis.html">Application Demo and Platform Analysis</a>. The shared demonstration product is Syncboard, supported by Network Lab and UI Gallery: not six independent codebases or mockups.</p>
+<h2 id="status">Status</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Compact Source 2 + RPN</td>
+<td>working</td>
+</tr>
+<tr>
+<td>Canonical writer + <code>axl pack</code></td>
+<td>working</td>
+</tr>
+<tr>
+<td>Python reference runtime</td>
+<td>working</td>
+</tr>
+<tr>
+<td>AX-IR JSON 1.0/1.1/1.2</td>
+<td>working</td>
+</tr>
+<tr>
+<td>Functions, modules, AM, agents</td>
+<td>working, initial core</td>
+</tr>
+<tr>
+<td>Homogeneous <code>list&lt;T&gt;</code></td>
+<td>working, first collection</td>
+</tr>
+<tr>
+<td><code>map&lt;K,V&gt;</code> Compact/runtime slice</td>
+<td>working locally; IR/persistence next</td>
+</tr>
+<tr>
+<td>Records, option/result, and user-defined types</td>
+<td>next</td>
+</tr>
+<tr>
+<td>AX-HIR/AX-MIR</td>
+<td>planned</td>
+</tr>
+<tr>
+<td>Rust runtime/compiler</td>
+<td>planned</td>
+</tr>
+<tr>
+<td>Native/VM/WASM</td>
+<td>planned</td>
+</tr>
+<tr>
+<td>Platform bridge</td>
+<td>planned</td>
+</tr>
+</tbody>
+</table>
+<h2 id="m1-compact-core">M1 — Compact Core</h2>
+<ul>
+<li>stabilize Source 2 opcodes;</li>
+<li>source spans for frames/tokens;</li>
+<li>lists, maps, tuples;</li>
+<li>records/structs, enums;</li>
+<li>option/result, pattern matching;</li>
+<li>defined iteration and mutability.</li>
+</ul>
+<p><strong>Gate:</strong> non-trivial general-purpose programs exclusively in compact format.</p>
+<h2 id="m2-modules-and-packages">M2 — Modules and Packages</h2>
+<ul>
+<li>compact export/import;</li>
+<li>machine-first manifest and lockfile;</li>
+<li>deterministic resolver;</li>
+<li>signed packages and content-addressed cache.</li>
+</ul>
+<p><strong>Gate:</strong> reproducible offline multi-package application.</p>
+<h2 id="m3-ax-hir-ax-mir-and-abi">M3 — AX-HIR, AX-MIR, and ABI</h2>
+<ul>
+<li>typed HIR;</li>
+<li>lowering to CFG MIR;</li>
+<li>ABI for values, effects, and capabilities;</li>
+<li>source mapping to compact frames;</li>
+<li>equivalence with the reference runtime.</li>
+</ul>
+<p><strong>Gate:</strong> same corpus on tree-walk and MIR.</p>
+<h2 id="m4-rust-runtime-and-vm">M4 — Rust Runtime and VM</h2>
+<ul>
+<li>Rust workspace;</li>
+<li>decoder/validator;</li>
+<li>budgeted, cancellable VM;</li>
+<li>compatible AM, policy, approval, and audit;</li>
+<li>isolated capability adapters.</li>
+</ul>
+<p><strong>Gate:</strong> Python/Rust suite without divergences.</p>
+<h2 id="m5-backend-and-base-bridge">M5 — Backend and Base Bridge</h2>
+<ul>
+<li>native and WASM/WASI;</li>
+<li>Rust/C ABI;</li>
+<li>filesystem, processes, clock, random, and networking;</li>
+<li>versioned bridge system and target discovery.</li>
+</ul>
+<p><strong>Gate:</strong> same CLI on VM, native, and WASM.</p>
+<h2 id="m6-application-backend">M6 — Application Backend</h2>
+<ul>
+<li>HTTP client/server;</li>
+<li>routing and middleware;</li>
+<li>databases and transactions;</li>
+<li>serialization, config, and observability.</li>
+<li>Network Lab demo: HTTP/1.1-2, SSE, WebSocket, timeouts, cancellation, and backpressure;</li>
+<li>Syncboard backend demo: PostgreSQL, auth, OpenAPI, and OpenTelemetry.</li>
+</ul>
+<p><strong>Gate:</strong> deployable backend service written in AXL.</p>
+<h2 id="m7-web">M7 — Web</h2>
+<ul>
+<li>DOM/Web APIs bridge;</li>
+<li>component model and state;</li>
+<li>WASM/browser build;</li>
+<li>storage, workers, and WebGPU.</li>
+<li>AX-UI semantic IR with DOM renderer;</li>
+<li>accessible, real-time UI Gallery and Syncboard Web demos.</li>
+</ul>
+<p><strong>Gate:</strong> full-stack web app primarily in AXL.</p>
+<h2 id="m8-native-mobile-and-graphics">M8 — Native, Mobile, and Graphics</h2>
+<ul>
+<li>windowing, input, audio;</li>
+<li>GPU/rendering;</li>
+<li>desktop packaging;</li>
+<li>Android/iOS bridge;</li>
+<li>asset pipeline.</li>
+<li>Tauri 2 desktop bootstrap, explicitly declared as WebView;</li>
+<li>native SwiftUI and Jetpack Compose mobile renderers;</li>
+<li>builds/smoke tests on Windows, macOS, iOS, and Android runners.</li>
+</ul>
+<p><strong>Gate:</strong> cross-platform graphical app.</p>
+<h2 id="m9-agentic-platform">M9 — Agentic Platform</h2>
+<ul>
+<li>tasks, events, and DAG scheduler;</li>
+<li>structured concurrency;</li>
+<li>checkpoint/suspend/resume;</li>
+<li>model provider capability;</li>
+<li>semantic/vector/graph memory;</li>
+<li>distributed policies.</li>
+</ul>
+<p><strong>Gate:</strong> durable, auditable workflow.</p>
+<h2 id="m10-ecosystem">M10 — Ecosystem</h2>
+<ul>
+<li>token/source and MIR optimizer;</li>
+<li>machine-oriented LSP;</li>
+<li>debugger, profiler, and tracing;</li>
+<li>package/bridge registry;</li>
+<li>progressive self-hosting.</li>
+</ul>
+<h2 id="rule">Rule</h2>
+<p>Every feature requires a canonical opcode, RED→GREEN tests, specification, source/IR round trip, a real example, and backend compatibility.</p></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/roadmap.md">Edit this page ↗</a></div>
+        <nav class="pager" aria-label="Pagination"><a class="prev" href="toolchain.html"><small>← Previous</small><b>Toolchain</b></a><a class="next" href="platform-demo-analysis.html"><small>Next →</small><b>Demos and platforms</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#status">Status</a><a class="toc-l2" href="#m1-compact-core">M1 — Compact Core</a><a class="toc-l2" href="#m2-modules-and-packages">M2 — Modules and Packages</a><a class="toc-l2" href="#m3-ax-hir-ax-mir-and-abi">M3 — AX-HIR, AX-MIR, and ABI</a><a class="toc-l2" href="#m4-rust-runtime-and-vm">M4 — Rust Runtime and VM</a><a class="toc-l2" href="#m5-backend-and-base-bridge">M5 — Backend and Base Bridge</a><a class="toc-l2" href="#m6-application-backend">M6 — Application Backend</a><a class="toc-l2" href="#m7-web">M7 — Web</a><a class="toc-l2" href="#m8-native-mobile-and-graphics">M8 — Native, Mobile, and Graphics</a><a class="toc-l2" href="#m9-agentic-platform">M9 — Agentic Platform</a><a class="toc-l2" href="#m10-ecosystem">M10 — Ecosystem</a><a class="toc-l2" href="#rule">Rule</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>
+    <form method="dialog"><button aria-label="Close">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Search documentation" placeholder="Search documentation" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentation: Security and Capabilities">
+  <title>Security and Capabilities · AXL Documentation</title>
+  <link rel="stylesheet" href="../docs.css">
+  <script defer src="../docs.js"></script>
+</head>
+<body data-lang="en" data-page="security">
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
+    <nav class="product-nav" aria-label="Documentation">
+      <a class="active" href="./">Documentation</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="../security.html" hreflang="it">Italiano</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html" aria-current="page" class="active">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>Security and Capabilities</p>
+        <article class="prose"><h1 id="security-and-capabilities">Security and Capabilities</h1>
+<h2 id="threat-model">Threat model</h2>
+<p>The following are considered untrusted:</p>
+<ul>
+<li>AXL source;</li>
+<li>AX-IR JSON documents;</li>
+<li>model and tool output;</li>
+<li>content retrieved from memory;</li>
+<li>input from networks or users.</li>
+</ul>
+<p>The following are considered trusted infrastructure in the reference implementation:</p>
+<ul>
+<li>the host process;</li>
+<li>explicitly loaded Python plugins;</li>
+<li>approval callbacks;</li>
+<li>memory adapters configured by the host.</li>
+</ul>
+<h2 id="fundamental-rules">Fundamental rules</h2>
+<ol>
+<li><strong>Deny by default:</strong> an unregistered tool cannot be executed.</li>
+<li><strong>Least privilege:</strong> an agent may use only the tools listed in <code>uses</code>.</li>
+<li><strong>Pre-effect approval:</strong> approval occurs before the handler runs.</li>
+<li><strong>Fail closed:</strong> only <code>approved is True</code> authorizes an action.</li>
+<li><strong>Validation before effects:</strong> AX-IR is validated before execution.</li>
+<li><strong>Host-owned scopes:</strong> the source cannot arbitrarily select a memory scope.</li>
+<li><strong>Budgets:</strong> loops, output, values, tools, and memory are limited.</li>
+<li><strong>Secrets outside the language:</strong> credentials must never appear in source, IR, output, or audit logs.</li>
+<li><strong>Module root:</strong> imports accept only top-level, relative <code>.axl</code> paths confined to the authorized directory; absolute paths and <code>..</code> are rejected.</li>
+<li><strong>Import budgets:</strong> depth, module count, and aggregate source bytes have fail-closed limits.</li>
+<li><strong>Value budgets:</strong> bytes, nodes, and collection depth are also checked for tool results and memory; SQLite performs a preflight check on persisted JSON before materialization.</li>
+<li><strong>Canonical output:</strong> the budget uses the value serialization emitted by the CLI; the transport line delimiter is excluded.</li>
+</ol>
+<h2 id="boundaries-not-covered">Boundaries not covered</h2>
+<p>The reference implementation does not yet provide:</p>
+<ul>
+<li>sandboxing of Python plugin code;</li>
+<li>preemption of blocking handlers;</li>
+<li>OS/container isolation;</li>
+<li>kernel-enforced CPU/RAM limits;</li>
+<li>package signing;</li>
+<li>build attestation;</li>
+<li>OS-level capability-filtered networking.</li>
+</ul>
+<p>These controls must be added by the deployment host and, later, by the Rust runtime.</p>
+<h2 id="target-model">Target model</h2>
+<p>The Rust runtime must associate every effect with an unforgeable capability:</p>
+<pre class="codehilite"><code class="language-text">agent principal
+  + capability
+  + resource scope
+  + policy/version
+  + budget/expiration
+  + optional approval
+  = authorized effect
+</code></pre>
+
+<p>Files, networks, databases, shells, GPUs, models, and memory will be distinct capabilities. Capabilities must not be represented as strings that programs can construct freely.</p>
+<h2 id="errors-and-audit">Errors and audit</h2>
+<p>Errors must remain explicit and machine-readable. Audit logs record decisions, not secrets. In production, every approval should be tied to a run, principal, argument hash, policy, timestamp, and expiration.</p></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/security.md">Edit this page ↗</a></div>
+        <nav class="pager" aria-label="Pagination"><a class="prev" href="ax-ir.html"><small>← Previous</small><b>AX-IR</b></a><a class="next" href="toolchain.html"><small>Next →</small><b>Toolchain</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#threat-model">Threat model</a><a class="toc-l2" href="#fundamental-rules">Fundamental rules</a><a class="toc-l2" href="#boundaries-not-covered">Boundaries not covered</a><a class="toc-l2" href="#target-model">Target model</a><a class="toc-l2" href="#errors-and-audit">Errors and audit</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>
+    <form method="dialog"><button aria-label="Close">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Search documentation" placeholder="Search documentation" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

@@ -1,0 +1,490 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentation: Application Demo and Platform Analysis">
+  <title>Application Demo and Platform Analysis · AXL Documentation</title>
+  <link rel="stylesheet" href="../docs.css">
+  <script defer src="../docs.js"></script>
+</head>
+<body data-lang="en" data-page="platform-demo-analysis">
+  <a class="skip" href="#content">Skip to content</a>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
+    <nav class="product-nav" aria-label="Documentation">
+      <a class="active" href="./">Documentation</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+    <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="../platform-demo-analysis.html" hreflang="it">Italiano</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
+  </header>
+  <div class="docs-shell">
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html" aria-current="page" class="active">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
+    </aside>
+    <main id="content" class="content-wrap">
+      <div class="article-column">
+        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>Application Demo and Platform Analysis</p>
+        <article class="prose"><h1 id="application-demo-and-platform-analysis">Application Demo and Platform Analysis</h1>
+<blockquote>
+<p>Analysis status: August 20, 2026. This document distinguishes implemented capabilities, prerequisites, and demonstrable targets. It does not claim that backends or bridges that do not yet exist are available.</p>
+</blockquote>
+<h2 id="1-decision">1. Decision</h2>
+<p>AXL must not create six disconnected demos or delegate all logic to host wrappers. It must build a <strong>shared vertical slice</strong>:</p>
+<pre class="codehilite"><code class="language-text">AXL Compact Source
+→ frontend + types
+→ application AX-HIR
+→ AX-MIR/effect IR
+→ Rust runtime
+→ capability ABI
+   ├─ HTTP/database backend
+   ├─ browser DOM/WASM
+   ├─ desktop WebView/native host
+   └─ iOS SwiftUI / Android Compose
+</code></pre>
+
+<p>The first demonstration product will be <strong>AXL Syncboard</strong>: a collaborative board with local accounts, projects, tasks, real-time updates, offline cache, audit, and notifications. The same domain logic and API contract power all clients.</p>
+<p>Two supporting demos ensure that the product does not conceal gaps:</p>
+<ol>
+<li><strong>AXL UI Gallery</strong> — components, tokens, adaptive layout, input, focus, accessibility, themes, and visual snapshots;</li>
+<li><strong>AXL Network Lab</strong> — HTTP client/server, streaming, SSE, WebSocket, timeouts, cancellation, backpressure, and reconnection.</li>
+</ol>
+<h2 id="2-actual-baseline">2. Actual Baseline</h2>
+<table>
+<thead>
+<tr>
+<th>Area</th>
+<th>Available today</th>
+<th>Blocking gap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Source</td>
+<td>Compact Source 2, canonical writer, legacy pack</td>
+<td>new types and opcodes/compatible version</td>
+</tr>
+<tr>
+<td>Core</td>
+<td><code>string</code>, <code>integer</code>, <code>boolean</code>, <code>list&lt;T&gt;</code>, bindings, flow, functions</td>
+<td>bytes, float/decimal, option/result, map/record/enum</td>
+</tr>
+<tr>
+<td>Modules</td>
+<td>confined imports and namespaces</td>
+<td>packages, manifest, lockfile, public exports</td>
+</tr>
+<tr>
+<td>Runtime</td>
+<td>synchronous, budgeted Python interpreter</td>
+<td>async, tasks, streams, cancellation, Rust runtime</td>
+</tr>
+<tr>
+<td>IR</td>
+<td>AX-IR JSON 1.0/1.1/1.2</td>
+<td>HIR/MIR, effect IR, value/resource ABI</td>
+</tr>
+<tr>
+<td>Capability</td>
+<td>deny-by-default host tools, policy/audit</td>
+<td>typed capabilities, resource handles, async lifecycle</td>
+</tr>
+<tr>
+<td>Backend</td>
+<td>none</td>
+<td>sockets, HTTP, routing, DB, config, observability</td>
+</tr>
+<tr>
+<td>UI</td>
+<td>none</td>
+<td>UI IR, state, events, layout, accessibility, renderer</td>
+</tr>
+<tr>
+<td>Packaging</td>
+<td>Python wheel/CLI</td>
+<td>WASM, executable/app bundle, APK/AAB, Xcode app</td>
+</tr>
+</tbody>
+</table>
+<p>Conclusion: host adapters can be prototyped today, but they cannot yet be called “apps written in AXL.” A demo passes the gate only when structure, state, events, and application logic are represented in AXL/HIR; the host implements only the ABI and platform integration.</p>
+<h2 id="3-language-prerequisites">3. Language Prerequisites</h2>
+<h3 id="p0-general-purpose-value-algebra">P0 — General-Purpose Value Algebra</h3>
+<p>Before UI and networking, the following are needed:</p>
+<ul>
+<li><code>bytes</code>, <code>float</code>, or an explicit decimal type;</li>
+<li><code>list&lt;T&gt;</code>, <code>map&lt;K,V&gt;</code>, tuples, and records;</li>
+<li>enums, <code>option&lt;T&gt;</code>, <code>result&lt;T,E&gt;</code>;</li>
+<li>structured errors;</li>
+<li>ownership/lifetimes for resource handles;</li>
+<li>deterministic JSON and byte serialization.</li>
+</ul>
+<p>Without collections, there can be no request headers, task lists, UI trees, or typed database rows.</p>
+<h3 id="p1-asynchronous-effects">P1 — Asynchronous Effects</h3>
+<p>The model must be semantic, not copied from Tokio, JavaScript, or Swift:</p>
+<ul>
+<li><code>future&lt;T&gt;</code> and <code>stream&lt;T&gt;</code>;</li>
+<li>structured task groups;</li>
+<li>cancellation tokens and deadlines;</li>
+<li>bounded channels;</li>
+<li>backpressure;</li>
+<li>deterministic <code>select</code> where applicable;</li>
+<li>guaranteed resource cleanup;</li>
+<li>distinct timeout/cancel errors.</li>
+</ul>
+<p>Tokio may implement the first Rust backend, but it must not appear in the grammar or public ABI.</p>
+<h3 id="p2-hir-mir-and-capability-abi">P2 — HIR, MIR, and Capability ABI</h3>
+<p>Minimum contract:</p>
+<pre class="codehilite"><code class="language-text">capability-id
+abi-version
+input/output type-id
+resource handles
+future/stream result
+required effects
+limits + deadline + cancellation
+platform targets
+stable error code
+</code></pre>
+
+<p>Capabilities must be granular: <code>net.client</code>, <code>net.listen</code>, <code>db.query</code>, <code>ui.window</code>, <code>ui.notify</code>; not a global <code>network</code> or <code>system</code> grant.</p>
+<h2 id="4-axl-uiux-framework">4. AXL UI/UX Framework</h2>
+<h3 id="41-recommended-model">4.1 Recommended Model</h3>
+<p>Create <strong>AX-UI</strong>, a renderer-independent declarative model:</p>
+<pre class="codehilite"><code class="language-text">state + reducer/event
+→ immutable semantic UI tree
+→ keyed diff
+→ renderer adapter
+</code></pre>
+
+<p>AX-UI owns:</p>
+<ul>
+<li>component trees and stable identity;</li>
+<li>state binding and one-way data flow;</li>
+<li>event dispatch;</li>
+<li>layout constraints/adaptive breakpoints;</li>
+<li>semantic design tokens;</li>
+<li>navigation and deep links;</li>
+<li>forms/validation;</li>
+<li>animation timelines;</li>
+<li>accessibility semantics;</li>
+<li>focus, keyboard, pointer, and touch;</li>
+<li>localization, RTL, dynamic type;</li>
+<li>test trees and semantic snapshots.</li>
+</ul>
+<p>It must not own DOM, CSS, SwiftUI, Compose, WinUI, or GPU APIs. Those are renderers/bridges.</p>
+<h3 id="42-renderers-and-order">4.2 Renderers and Order</h3>
+<table>
+<thead>
+<tr>
+<th>Target</th>
+<th>First renderer</th>
+<th>Actual nature</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Browser</td>
+<td>DOM + CSS + Web APIs</td>
+<td>native web</td>
+<td>first UI target</td>
+</tr>
+<tr>
+<td>Windows/macOS</td>
+<td>Tauri 2 + system WebView</td>
+<td>native binary, web UI</td>
+<td>rapid desktop bootstrap</td>
+</tr>
+<tr>
+<td>iOS</td>
+<td>SwiftUI/UIKit adapter</td>
+<td>native app and controls</td>
+<td>canonical mobile target</td>
+</tr>
+<tr>
+<td>Android</td>
+<td>Jetpack Compose adapter</td>
+<td>native app and UI</td>
+<td>canonical mobile target</td>
+</tr>
+<tr>
+<td>Advanced desktop</td>
+<td>WinUI/AppKit/SwiftUI adapter</td>
+<td>native controls</td>
+<td>after AX-UI conformance</td>
+</tr>
+<tr>
+<td>Graphics/games</td>
+<td><code>wgpu</code>/WebGPU renderer</td>
+<td>custom GPU UI</td>
+<td>not for the first app framework</td>
+</tr>
+</tbody>
+</table>
+<p>Tauri 2 declares support for Windows, macOS, Linux, Android, and iOS with Rust logic and a WebView frontend. It is suitable for quickly validating packaging and bridges, but <strong>is not equivalent to native UI controls</strong>. Therefore, it does not replace the SwiftUI and Compose renderers required by the mobile gate.</p>
+<p>Compose Multiplatform is production-ready for mobile and desktop, while web is still described as beta. It may be an optional adapter or accelerator, not the semantic foundation of AX-UI: that would make Kotlin/Compose an architectural dependency of AXL.</p>
+<h3 id="43-v1-components">4.3 V1 Components</h3>
+<p><code>App</code>, <code>Window</code>, <code>Screen</code>, <code>Nav</code>, <code>Stack</code>, <code>Grid</code>, <code>Scroll</code>, <code>Text</code>, <code>Image</code>, <code>Button</code>, <code>TextField</code>, <code>Toggle</code>, <code>List</code>, <code>Dialog</code>, <code>Progress</code>, <code>Canvas</code>.</p>
+<p>Each component exposes semantic and accessibility properties. Free-form CSS-like styling, SwiftUI APIs, or Compose modifiers do not enter canonical source; they are normalized into HIR tokens/layout.</p>
+<h2 id="5-complete-backend">5. Complete Backend</h2>
+<h3 id="51-bootstrap-stack">5.1 Bootstrap Stack</h3>
+<ul>
+<li>Rust runtime: Tokio;</li>
+<li>HTTP/routing: Hyper + Axum + Tower;</li>
+<li>TLS: rustls or declared reverse-proxy termination;</li>
+<li>database: PostgreSQL in production, SQLite for local/test;</li>
+<li>pools and typed queries behind the <code>db.*</code> ABI;</li>
+<li>versioned migrations;</li>
+<li>structured logging, metrics, and OpenTelemetry traces;</li>
+<li>OpenAPI generated from the route/type model;</li>
+<li>graceful shutdown, health/readiness, and typed config;</li>
+<li>secrets resolved by the host, never in source/IR/audit.</li>
+</ul>
+<p>These libraries are replaceable implementations. AXL defines HTTP semantics, requests/responses, routes, middleware, transactions, and streams.</p>
+<h3 id="52-complete-backend-gate">5.2 “Complete Backend” Gate</h3>
+<p>The Syncboard backend must demonstrate:</p>
+<ul>
+<li>CRUD with PostgreSQL and migrations;</li>
+<li>transactions and constraints;</li>
+<li>session auth/OIDC-ready, with password hashing only through a host capability;</li>
+<li>RBAC per workspace;</li>
+<li>OpenAPI-documented JSON REST;</li>
+<li>SSE for the activity feed;</li>
+<li>WebSocket for bidirectional collaboration;</li>
+<li>bounded uploads and a content-type allowlist;</li>
+<li>pagination, idempotency keys, and rate limits;</li>
+<li>timeouts, cancellation, and graceful shutdown;</li>
+<li>correlated logs/metrics/traces;</li>
+<li>unit tests, DB integration tests, and end-to-end protocol tests;</li>
+<li>a reproducible Linux container.</li>
+</ul>
+<h2 id="6-modern-networking">6. Modern Networking</h2>
+<h3 id="required-v1">Required V1</h3>
+<table>
+<thead>
+<tr>
+<th>Capability</th>
+<th>Reason</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>DNS + TCP</td>
+<td>portable foundation</td>
+</tr>
+<tr>
+<td>TLS 1.3 and host trust store</td>
+<td>secure transport</td>
+</tr>
+<tr>
+<td>HTTP semantics</td>
+<td>common contract for HTTP/1.1, 2, and 3</td>
+</tr>
+<tr>
+<td>HTTP/1.1 + HTTP/2</td>
+<td>immediate server/client interoperability</td>
+</tr>
+<tr>
+<td>UTF-8 JSON</td>
+<td>API and debugging baseline</td>
+</tr>
+<tr>
+<td>WebSocket</td>
+<td>widespread bidirectional real-time communication</td>
+</tr>
+<tr>
+<td>SSE</td>
+<td>simple server push, standard reconnection</td>
+</tr>
+<tr>
+<td>streaming bodies</td>
+<td>files/events without full buffering</td>
+</tr>
+<tr>
+<td>timeouts/deadlines/cancellation</td>
+<td>operational safety</td>
+</tr>
+<tr>
+<td>backpressure and limits</td>
+<td>prevent unbounded memory/queues</td>
+</tr>
+<tr>
+<td>proxy, CORS, cookie, and redirect policy</td>
+<td>real-world web operation</td>
+</tr>
+</tbody>
+</table>
+<h3 id="v2">V2</h3>
+<ul>
+<li>HTTP/3 over QUIC;</li>
+<li>Connect RPC and gRPC/Protobuf;</li>
+<li>CBOR for compact payloads;</li>
+<li>mTLS and service identity;</li>
+<li>controlled retry/circuit breaking/load balancing;</li>
+<li>WebTransport after an experimental adapter and with a fallback.</li>
+</ul>
+<h3 id="not-baseline">Not Baseline</h3>
+<ul>
+<li>MessagePack: useful but not an Internet standard; CBOR is an IETF standard and covers the same initial need;</li>
+<li>raw UDP exposed to apps: only as a specialized capability;</li>
+<li>GraphQL integrated into the grammar: a library/bridge, not core semantics;</li>
+<li>a proprietary real-time protocol when SSE/WebSocket suffice.</li>
+</ul>
+<p>HTTP/3 is an IETF standard; as of August 20, 2026, WebTransport is still a W3C Candidate Recommendation, and the specification itself warns that APIs/protocols may change. It must therefore be isolated behind the ABI and not used as a requirement for the first demo.</p>
+<h2 id="7-canonical-demos">7. Canonical Demos</h2>
+<h3 id="d1-network-lab">D1 — Network Lab</h3>
+<p><strong>Objective:</strong> validate the async runtime and Capability ABI before the UI.</p>
+<ul>
+<li>server <code>/health</code>, <code>/echo</code>, <code>/stream</code>, <code>/events</code>, <code>/socket</code>;</li>
+<li>concurrent AXL client;</li>
+<li>HTTP JSON, streaming, SSE, and WebSocket;</li>
+<li>cancellation, deadlines, body limits, and reconnection;</li>
+<li>tests against the reference host and Rust runtime.</li>
+</ul>
+<p><strong>Gate:</strong> no route or state machine encoded in the Rust/Python wrapper; the wrapper only registers capabilities.</p>
+<h3 id="d2-syncboard-web">D2 — Syncboard Web</h3>
+<ul>
+<li>D1 backend extended with PostgreSQL;</li>
+<li>AX-UI → DOM web app;</li>
+<li>local development login;</li>
+<li>board CRUD and real-time updates;</li>
+<li>responsive/accessible, keyboard and screen reader support;</li>
+<li>PWA/offline cache;</li>
+<li>WASM/browser build when the runtime is ready.</li>
+</ul>
+<p><strong>Gate:</strong> Playwright end-to-end tests across two browser sessions; an update appears in real time and survives reload.</p>
+<h3 id="d3-syncboard-desktop">D3 — Syncboard Desktop</h3>
+<ul>
+<li>same domain and AX-UI;</li>
+<li>Tauri 2 host for Windows/macOS;</li>
+<li>file picker, secure storage, notifications, and deep links through capabilities;</li>
+<li>signable installer: MSIX/MSI and <code>.app</code>/DMG;</li>
+<li>updates disabled until signing and the supply chain are defined.</li>
+</ul>
+<p><strong>Gate:</strong> builds and smoke tests on Windows and macOS runners. Linux cannot certify bundles, signing, or OS behavior for both.</p>
+<h3 id="d4-syncboard-mobile-native">D4 — Syncboard Mobile Native</h3>
+<ul>
+<li>Rust runtime library with a stable ABI;</li>
+<li>Xcode + SwiftUI host on iOS;</li>
+<li>Gradle + Jetpack Compose host on Android;</li>
+<li>AX-UI semantic tree translated into native components;</li>
+<li>keychain/keystore, notifications, lifecycle, background policy, deep links;</li>
+<li>offline SQLite and incremental synchronization.</li>
+</ul>
+<p><strong>Gate:</strong> tests on an iOS simulator and Android emulator, plus at least one real device per platform; <code>.ipa</code> requires macOS/Xcode and Apple signing, AAB requires the Android SDK/Gradle and configured signing.</p>
+<h3 id="d5-ui-gallery">D5 — UI Gallery</h3>
+<ul>
+<li>component and design-token catalog;</li>
+<li>light/dark, locale, RTL, dynamic text;</li>
+<li>keyboard/focus/touch;</li>
+<li>accessibility tree assertions;</li>
+<li>golden screenshots per renderer.</li>
+</ul>
+<p><strong>Gate:</strong> same semantic corpus on DOM, SwiftUI, and Compose; differences allowed only if declared in the platform profile.</p>
+<h2 id="8-target-repository-structure">8. Target Repository Structure</h2>
+<pre class="codehilite"><code class="language-text">runtime/
+  axl-core-rs/
+  axl-vm/
+  axl-component/
+bridges/
+  net-rust/
+  db-sql/
+  ui-dom/
+  ui-tauri/
+  ui-swiftui/
+  ui-compose/
+frameworks/
+  ax-ui/
+demos/
+  network-lab/
+  syncboard/shared/
+  syncboard/backend/
+  syncboard/web/
+  syncboard/desktop/
+  syncboard/ios/
+  syncboard/android/
+  ui-gallery/
+conformance/
+  source-ir-runtime/
+  capability-abi/
+  ax-ui/
+</code></pre>
+
+<h2 id="9-recommended-sequence">9. Recommended Sequence</h2>
+<ol>
+<li><strong>Core types:</strong> collections, records, option/result, bytes, errors.</li>
+<li><strong>Async semantics:</strong> future/stream/task/cancel/backpressure.</li>
+<li><strong>HIR/MIR + ABI:</strong> resource handles and typed effects.</li>
+<li><strong>Rust tracer:</strong> same Python/Rust corpus.</li>
+<li><strong>Network Lab:</strong> HTTP/1.1-2, JSON, SSE, WebSocket.</li>
+<li><strong>Syncboard backend:</strong> DB, auth, OpenAPI, observability.</li>
+<li><strong>AX-UI + DOM:</strong> UI Gallery and Syncboard Web.</li>
+<li><strong>Tauri desktop:</strong> Windows/macOS packaging and OS bridge.</li>
+<li><strong>SwiftUI/Compose:</strong> truly native mobile.</li>
+<li><strong>WASM Component/WASI and HTTP/3:</strong> conformance and optimization.</li>
+<li><strong>WebTransport/gRPC/Connect/GPU:</strong> later adapters, driven by real cases.</li>
+</ol>
+<p>Do not start with all five targets simultaneously: that would multiply unstable adapters before values, async, ABI, and UI semantics are fixed.</p>
+<h2 id="10-cross-cutting-criteria">10. Cross-Cutting Criteria</h2>
+<p>Every demo must have:</p>
+<ul>
+<li>canonical AXL source as its primary logic;</li>
+<li>reproducible build and a single command;</li>
+<li>zero credentials in the repository;</li>
+<li>deny-by-default capabilities;</li>
+<li>equivalent reference/Rust tests;</li>
+<li>end-to-end tests on the actual target;</li>
+<li>input/output/connection/queue limits;</li>
+<li>verified cancellation and cleanup;</li>
+<li>accessibility and keyboard/touch support where applicable;</li>
+<li>SBOM, lockfile, and artifact hash;</li>
+<li>documentation distinguishing “native binary,” “native UI,” and “WebView.”</li>
+</ul>
+<h2 id="11-final-choice">11. Final Choice</h2>
+<p>The recommended strategy is hybrid and progressive:</p>
+<ul>
+<li><strong>Rust</strong> under the hood for the runtime, async, networking, and bridges;</li>
+<li><strong>WASM/Component Model</strong> for portability and sandboxing, without depending entirely on WASI;</li>
+<li><strong>AX-UI semantic IR</strong> as the language's UI/UX framework;</li>
+<li><strong>DOM</strong> as the first renderer;</li>
+<li><strong>Tauri 2</strong> for desktop bootstrap;</li>
+<li><strong>SwiftUI and Jetpack Compose</strong> as native mobile renderers;</li>
+<li><strong>wgpu/WebGPU</strong> only for canvas, graphics, and a future custom renderer;</li>
+<li><strong>HTTP + SSE + WebSocket</strong> as the baseline; HTTP/3, Connect/gRPC, CBOR, and WebTransport later.</li>
+</ul>
+<p>This architecture produces real demos early without turning a temporary choice—WebView, Kotlin, Swift, Tokio, or Axum—into the AXL language.</p>
+<h2 id="primary-sources">Primary Sources</h2>
+<ul>
+<li><a href="https://www.rfc-editor.org/rfc/rfc9110">RFC 9110 — HTTP Semantics</a></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc9114">RFC 9114 — HTTP/3</a></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc6455">RFC 6455 — WebSocket</a></li>
+<li><a href="https://html.spec.whatwg.org/multipage/server-sent-events.html">WHATWG — Server-sent events</a></li>
+<li><a href="https://www.w3.org/TR/webtransport/">W3C — WebTransport</a></li>
+<li><a href="https://wasi.dev/">WASI and WebAssembly Component Model</a></li>
+<li><a href="https://v2.tauri.app/concept/architecture/">Tauri 2 and architecture</a></li>
+<li><a href="https://developer.apple.com/documentation/swiftui">Apple — SwiftUI</a></li>
+<li><a href="https://developer.android.com/compose">Android — Jetpack Compose</a></li>
+<li><a href="https://learn.microsoft.com/en-us/windows/apps/winui/winui3/">Microsoft — WinUI 3</a></li>
+<li><a href="https://kotlinlang.org/compose-multiplatform/">Compose Multiplatform</a></li>
+<li><a href="https://tokio.rs/">Tokio</a> and <a href="https://docs.rs/axum/latest/axum/">Axum</a></li>
+<li><a href="https://spec.openapis.org/oas/latest.html">OpenAPI 3.2</a></li>
+<li><a href="https://opentelemetry.io/docs/specs/otel/">OpenTelemetry</a></li>
+<li><a href="https://www.rfc-editor.org/rfc/rfc8949">RFC 8949 — CBOR</a></li>
+</ul></article>
+        
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/platform-demo-analysis.md">Edit this page ↗</a></div>
+        <nav class="pager" aria-label="Pagination"><a class="prev" href="roadmap.html"><small>← Previous</small><b>Roadmap</b></a><a class="next" href="development.html"><small>Next →</small><b>Development</b></a></nav>
+      </div>
+      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#1-decision">1. Decision</a><a class="toc-l2" href="#2-actual-baseline">2. Actual Baseline</a><a class="toc-l2" href="#3-language-prerequisites">3. Language Prerequisites</a><a class="toc-l3" href="#p0-general-purpose-value-algebra">P0 — General-Purpose Value Algebra</a><a class="toc-l3" href="#p1-asynchronous-effects">P1 — Asynchronous Effects</a><a class="toc-l3" href="#p2-hir-mir-and-capability-abi">P2 — HIR, MIR, and Capability ABI</a><a class="toc-l2" href="#4-axl-uiux-framework">4. AXL UI/UX Framework</a><a class="toc-l3" href="#41-recommended-model">4.1 Recommended Model</a><a class="toc-l3" href="#42-renderers-and-order">4.2 Renderers and Order</a><a class="toc-l3" href="#43-v1-components">4.3 V1 Components</a><a class="toc-l2" href="#5-complete-backend">5. Complete Backend</a><a class="toc-l3" href="#51-bootstrap-stack">5.1 Bootstrap Stack</a><a class="toc-l3" href="#52-complete-backend-gate">5.2 “Complete Backend” Gate</a><a class="toc-l2" href="#6-modern-networking">6. Modern Networking</a></aside>
+    </main>
+  </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>
+    <form method="dialog"><button aria-label="Close">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Search documentation" placeholder="Search documentation" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
+</body>
+</html>

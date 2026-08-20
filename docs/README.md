@@ -1,5 +1,7 @@
 # Documentazione AXL
 
+[Italiano](README.md) · [English](en/README.md)
+
 **AX — Agent eXecution** è l'ecosistema agent-native. AXL è il core eseguibile corrente, con sorgente canonico compatto e deterministico.
 
 Questa documentazione distingue sempre:
