@@ -1,129 +1,51 @@
-# Roadmap AXL
+# Roadmap
 
-AXL procede per vertical slice: sorgente compatto → HIR/MIR → runtime → risultato osservabile.
+## Completato
 
-La strategia completa per web, desktop, mobile, AX-UI, backend e networking è definita in [Analisi demo applicative e piattaforme](platform-demo-analysis.md). Il prodotto dimostrativo condiviso è Syncboard, affiancato da Network Lab e UI Gallery: non sei codebase o mockup indipendenti.
+### v3.0 — Agent-Native (attuale)
+- [x] Parser compact (Source 2/3)
+- [x] IR con primitive LLM definite
+- [x] Validation + type-checking
+- [x] Interpreter con tool policy, memory, budget
+- [x] 90+ primitiva native Rust
+- [x] LLM backend trait + MockBackend
+- [x] Memory store (in-memory, SQLite)
+- [x] CLI completo (run, compile, exec, pack, build, serve)
+- [x] Serializzazione JSON IR 1.0/1.1/1.2
+- [x] Renderer HTML/CSS/JS
+- [x] 28 test passanti
+- [x] Netflix demo applicazione
+- [x] AI Content Platform demo
+- [x] SPEC-3.0.md completa
+- [x] PRIMITIVES.md (500+ primitiva taxonomy)
 
-## Stato
+## In Lavorazione
 
-| Area | Stato |
-|---|---|
-| Compact Source 2 + RPN | funzionante |
-| Writer canonico + `axl pack` | funzionante |
-| Reference runtime Python | funzionante |
-| AX-IR JSON 1.0/1.1/1.2 | funzionante |
-| Funzioni, moduli, AM, agenti | funzionante, nucleo iniziale |
-| `list<T>` omogenee | funzionante, prima collezione |
-| tracer `map<K,V>` Compact/runtime | funzionante localmente; IR/persistenza prossimi |
-| record, option/result e tipi utente | prossimo |
-| AX-HIR/AX-MIR | pianificato |
-| Runtime/compiler Rust | pianificato |
-| Native/VM/WASM | pianificato |
-| Bridge piattaforma | pianificato |
+### v3.1 — Runtime Completo
+- [ ] Integrazione primitiva native nell'interpreter (in corso)
+- [ ] Compiler con supporto moduli/import
+- [ ] LLM backend reali (OpenAI, Anthropic)
+- [ ] Streaming output LLM
 
-## M1 — Core compatto
+### v3.2 — Agent Avanzati
+- [ ] Comunicazione inter-agenti completa
+- [ ] Event-driven execution
+- [ ] Semantic memory con embedding
+- [ ] Tool discovery dinamico
+- [ ] Observability (trace, metric)
 
-- stabilizzare opcode Source 2;
-- source span per frame/token;
-- liste, mappe, tuple;
-- record/struct, enum;
-- option/result, pattern matching;
-- iterazione e mutabilità definite.
+## Futuro
 
-**Gate:** programmi general-purpose non banali in formato esclusivamente compatto.
+### v4.0 — Backend Multipli
+- [ ] WASM target
+- [ ] Native binary target
+- [ ] VM interpreter
+- [ ] C ABI bridge
+- [ ] Mobile/Desktop bridge
 
-## M2 — Moduli e package
-
-- export/import compact;
-- manifest e lockfile machine-first;
-- resolver deterministico;
-- package firmati e cache content-addressed.
-
-**Gate:** applicazione multi-package riproducibile offline.
-
-## M3 — AX-HIR, AX-MIR e ABI
-
-- HIR tipizzata;
-- lowering verso CFG MIR;
-- ABI valori, effetti e capability;
-- source mapping ai frame compact;
-- equivalenza con reference runtime.
-
-**Gate:** stesso corpus su tree-walk e MIR.
-
-## M4 — Runtime Rust e VM
-
-- workspace Rust;
-- decoder/validator;
-- VM budgeted e cancellabile;
-- AM, policy, approval e audit compatibili;
-- adapter capability isolati.
-
-**Gate:** suite Python/Rust senza divergenze.
-
-## M5 — Backend e bridge base
-
-- native e WASM/WASI;
-- Rust/C ABI;
-- filesystem, processi, clock, random e networking;
-- sistema bridge versionato e discovery target.
-
-**Gate:** stessa CLI su VM, native e WASM.
-
-## M6 — Backend applicativo
-
-- HTTP client/server;
-- routing e middleware;
-- database e transazioni;
-- serialization, config e observability.
-- demo Network Lab: HTTP/1.1-2, SSE, WebSocket, timeout, cancellazione e backpressure;
-- demo Syncboard backend: PostgreSQL, auth, OpenAPI e OpenTelemetry.
-
-**Gate:** servizio backend deployabile scritto in AXL.
-
-## M7 — Web
-
-- DOM/Web APIs bridge;
-- component model e stato;
-- WASM/browser build;
-- storage, worker e WebGPU.
-- AX-UI semantic IR con renderer DOM;
-- demo UI Gallery e Syncboard Web accessibili e realtime.
-
-**Gate:** web app full-stack principalmente AXL.
-
-## M8 — Native, mobile e grafica
-
-- windowing, input, audio;
-- GPU/rendering;
-- packaging desktop;
-- bridge Android/iOS;
-- asset pipeline.
-- bootstrap desktop Tauri 2, dichiarato esplicitamente WebView;
-- renderer mobile nativi SwiftUI e Jetpack Compose;
-- build/smoke su runner Windows, macOS, iOS e Android.
-
-**Gate:** app grafica multipiattaforma.
-
-## M9 — Piattaforma agentica
-
-- task, eventi e scheduler DAG;
-- concorrenza strutturata;
-- checkpoint/suspend/resume;
-- model provider capability;
-- memoria semantic/vector/graph;
-- policy distribuite.
-
-**Gate:** workflow durevole e auditabile.
-
-## M10 — Ecosistema
-
-- optimizer token/source e MIR;
-- LSP machine-oriented;
-- debugger, profiler e trace;
-- registry package/bridge;
-- self-hosting progressivo.
-
-## Regola
-
-Ogni feature richiede opcode canonico, test RED→GREEN, specifica, round-trip source/IR, esempio reale e compatibilità backend.
+### v4.1 — Ecosistema
+- [ ] Package manager (AXL packages)
+- [ ] LSP server
+- [ ] Debugger
+- [ ] Profiler
+- [ ] Framework applicativi

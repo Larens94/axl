@@ -1,80 +1,49 @@
 # Visione AXL
 
-## Solo per agenti
+## Linguaggio Agent-Native
 
-AXL — **Agent eXecution Language** — è un linguaggio general-purpose progettato esclusivamente per agenti software. Non cerca familiarità con Python, Rust o JavaScript. La priorità è ridurre token, ambiguità e costo di generazione.
+AXL — **Agent eXecution Language** — è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare. Il focus è sul linguaggio, non su app demo.
 
-Il sorgente canonico è un flusso versionato:
+AXL 3.0 è **agent-native**: l'agente è la prima classe, non la funzione. Il reasoning LLM è nativo, gli agenti sono event-driven, la memoria è semantica.
 
-```axl
-2;10|x|#2,#3,#4,*,+|i;12|$x
-```
+## Obiettivo
 
-Non richiede newline, indentazione o parole chiave lunghe. Opcode numerici descrivono le istruzioni; le espressioni RPN eliminano parentesi e precedenza sintattica.
+AXL deve permettere agli agenti di costruire **qualsiasi software**:
 
-## Obiettivo general-purpose
+- backend, API, servizi e database
+- frontend web e WebAssembly
+- app desktop e mobile native
+- CLI, sistemi e automazioni
+- grafica, GPU, audio e giochi
+- agenti, workflow, task ed eventi
 
-Compatto non significa limitato. AXL deve esprimere:
+Rust è il runtime nativo. Ogni capability di Rust è esponibile come primitiva AXL.
 
-- backend, API, servizi e applicazioni distribuite;
-- browser e frontend tramite WASM/DOM;
-- desktop e mobile native;
-- CLI, automazione e software di sistema;
-- GPU, grafica, audio e giochi;
-- agenti, workflow, memoria, task, eventi e modelli;
-- librerie e componenti riutilizzabili.
+## Stato Attuale (v3.0)
 
-## Backend e bridge
+### Funzionante
 
-Rust è il primo runtime/compiler di basso livello per sicurezza, performance e portabilità. AXL non è legato a Rust: AX-HIR/AX-MIR e un ABI versionato permetteranno backend e bridge multipli.
+- Parser compact (Source 2/3)
+- 90+ primitiva native Rust (io, text, collections, math, crypto, json, network, system)
+- Interpreter con tool policy, memory, budget
+- LLM backend trait + MockBackend
+- CLI: run, compile, exec, pack, build, serve
+- 28 test passanti
 
-```text
-AXL → AX-HIR → AX-MIR → Rust/native
-                       → VM
-                       → WASM/WASI
-                       → C ABI
-                       → DOM/WebGPU
-                       → mobile/desktop/OS bridge
-                       → backend futuri
-```
+### In costruito
 
-Il sorgente AXL non cambia quando cambia il target.
+- Keyword parser (sorgente leggibile)
+- Compiler con moduli/import
+- LLM backend reali (OpenAI, Anthropic)
+- Comunicazione inter-agenti completa
+- Event-driven execution
+- Semantic memory
 
 ## Principi
 
-1. **Agent-only:** token-efficiency prima della leggibilità umana.
-2. **General-purpose:** nessuna categoria di software esclusa dall'architettura.
-3. **Determinismo:** parsing e compilazione non dipendono da LLM.
-4. **Canonicalità:** una rappresentazione normale facilita hash, cache e firma.
-5. **Capability security:** effetti esterni negati per default.
-6. **IR versionata:** sorgente, HIR, MIR e ABI evolvono con contratti espliciti.
-7. **Portabilità:** stessi risultati, effetti ed errori su backend diversi.
-8. **Diagnostica macchina:** errori stabili, localizzabili e correggibili automaticamente.
-
-## Stato reale
-
-### Disponibile
-
-- Compact Source 2 a singola riga;
-- writer canonico e `axl pack`;
-- parser deterministico e RPN;
-- tipi base, funzioni e moduli;
-- controllo di flusso;
-- agenti, workflow e tool;
-- AM scoped con SQLite, TTL e metadata;
-- policy, approval, audit e budget;
-- AX-IR JSON versionata;
-- reference runtime Python e CLI.
-
-### Da costruire
-
-- collezioni, record, enum, option/result e pattern matching;
-- task, eventi, async e concorrenza strutturata;
-- AX-HIR/AX-MIR e ABI capability;
-- runtime/compiler Rust;
-- VM, native, WASM/WASI;
-- bridge filesystem, rete, HTTP, database, DOM, GPU, desktop/mobile;
-- package manager, LSP, debugger e profiler;
-- framework applicativi.
-
-La reference Python fissa semantica e conformità; non è il runtime finale.
+1. **Agent-native:** l'agente è la prima classe, non la funzione
+2. **Rust-backed:** ogni primitiva mappa a codice Rust safe
+3. **Componibile:** primitiva ritornano valori che altre consumano
+4. **Determinismo:** parsing e compilazione non dipendono da LLM
+5. **Sicurezza:** permission system, approval, audit
+6. **Completo:** 500+ primitiva mappano ogni capability di Rust

@@ -1,106 +1,67 @@
-# Architettura dello stack
+# Architettura
 
-## Pipeline stabile
-
-La tassonomia completa AA/AM/AW/AP/AT/AE/AS/AD/AI è definita in [AX — Agent eXecution](ax-ecosystem.md). Tutte le superfici convergono su AX-IR prima dell'esecuzione.
+## Stack AXL 3.0
 
 ```text
-Compact Source 2
-      │
-      ▼
-parser deterministico
-      │
-      ▼
-AST + resolver + type-checker
-      │
-      ▼
-AX-HIR ── primitive general-purpose + agentiche
-      │
-      ▼
-AX-MIR ── CFG, tipi abbassati, effetti, capability ABI
-      │
-      ├── VM
-      ├── Rust/native
-      ├── WASM/WASI
-      └── bridge piattaforma
-             ├── filesystem/network/HTTP/database
-             ├── DOM/browser/WebGPU
-             ├── desktop/mobile/OS
-             └── futuri backend
+AXL Compact Source 3
+→ parser deterministico
+→ AX-IR 2.0 (agent-centric)
+→ type-check
+→ interpreter
+  ├─ primitive native (90+)
+  ├─ LLM backend (reason, classify, extract)
+  ├─ tool system (policy, approval, audit)
+  ├─ memory (in-memory, SQLite, semantic)
+  └─ bridge (native, WASM, VM)
 ```
 
-## Livello sorgente
-
-Il sorgente canonico è ottimizzato per agenti: opcode numerici, frame delimitati, espressioni RPN, nessuna indentazione. È compatto ma versionato e completamente deterministico.
-
-Il frontend verbose esistente serve soltanto a migrazione, debug e conversione con `axl pack`.
-
-## Analisi del sorgente
-
-Responsabilità:
-
-- framing e parsing strict;
-- diagnostica per frame/token;
-- risoluzione moduli e namespace;
-- type-check statico;
-- costruzione di HIR valida;
-- nessun effetto runtime.
-
-Oggi il frontend/reference runtime è Python. Il corpus di test ne rende la semantica trasferibile.
-
-## AX-IR, HIR e MIR
-
-- **AX-IR JSON 1.x:** contratto interoperabile corrente.
-- **AX-HIR:** funzioni, tipi, agenti, workflow, memoria ed effetti di alto livello.
-- **AX-MIR:** basic block, controllo di flusso, layout valori, chiamate e capability abbassate.
-
-Separare i livelli consente ottimizzazione e target multipli senza contaminare il sorgente.
-
-## Motore di esecuzione
-
-Il runtime governa:
-
-- esecuzione, scheduling e cancellazione;
-- memoria AM e scope;
-- capability, policy e approval;
-- audit e budget;
-- bridge con host e piattaforme.
-
-Rust è la prima implementazione definitiva prevista per safety e performance. Non è parte della sintassi né l'unico backend ammesso.
-
-## Capability ABI e bridge
-
-Ogni bridge espone contratti tipizzati e versionati:
+## Rust Workspace
 
 ```text
-capability id + ABI version + input/output types + effects + target + cancellation
+runtime/
+├── axl-core-rs/          # Libreria principale
+│   ├── ir.rs             # Tipi IR
+│   ├── compact.rs        # Parser compatto
+│   ├── interpreter.rs    # Esecuzione
+│   ├── primitives/       # 90+ primitiva native
+│   │   ├── io.rs         # File I/O
+│   │   ├── text.rs       # Elaborazione testo
+│   │   ├── collections.rs # List/Map/Set
+│   │   ├── math.rs       # Operazioni matematiche
+│   │   ├── crypto.rs     # Hash, encoding, random
+│   │   ├── system.rs     # Env, time, path, process
+│   │   ├── serialize.rs  # JSON parsing
+│   │   └── net.rs        # HTTP client
+│   ├── llm.rs            # LLM backend trait
+│   ├── memory.rs         # Memory stores
+│   ├── policy.rs         # Tool policy
+│   ├── validation.rs     # Validazione programma
+│   ├── typechecker.rs    # Type-checking
+│   ├── serialization.rs  # JSON IR
+│   └── render_web.rs     # Renderer HTML
+├── axl-cli/              # CLI binario
+├── netflix-server/       # Netflix demo
+└── ai-platform/          # AI Platform demo
 ```
 
-Questo permette a uno stesso programma AXL di usare implementazioni diverse per Linux, Windows, macOS, browser, Android, iOS, GPU o cloud.
+## Pipeline di Esecuzione
 
-Il disegno applicativo concreto, inclusi AX-UI, networking moderno, renderer e demo verticali, è descritto in [Analisi demo applicative e piattaforme](platform-demo-analysis.md).
+1. **Parser** — converte sorgente compact in AST
+2. **Validation** — verifica struttura programma
+3. **Type-check** — verifica tipi
+4. **Interpreter** — esegue con:
+   - Primitive native (chiamate dirette Rust)
+   - Tool utente (handler custom)
+   - Memory store (scoped, TTL)
+   - Policy system (approval, audit)
+   - Budget limits (steps, bytes, depth)
 
-## Componenti correnti
+## Primitive vs Tools
 
-```text
-axl/compact.py        parser/writer Compact Source 2
-axl/parser.py         dispatcher + frontend legacy
-axl/compiler.py       moduli e namespace
-axl/ir.py             IR tipizzata corrente
-axl/typechecker.py    type-checker
-axl/validation.py     validazione semantica
-axl/serialization.py  AX-IR JSON
-axl/interpreter.py    reference runtime
-axl/memory.py         AM
-axl/policy.py         capability policy/audit
-axl/__main__.py       CLI
-```
-
-## Compatibilità
-
-- source versionata;
-- output canonico stabile;
-- schema IR pubblicato immutabile;
-- decoder legacy testato;
-- equivalenza osservazionale tra reference, VM, native e WASM;
-- bridge sostituibili senza cambiare il programma.
+| Aspetto | Primitive Native | Tool Utente |
+|---|---|---|
+| Implementazione | Rust statically linked | Closure dinamica |
+| Performance | Ottimale | Overhead chiamata |
+| Sicurezza | Safe Rust | Sandbox necessario |
+| Numero | 90+ | Illimitato |
+| Esempio | `!file_read/1` | `!search_catalog/1` |

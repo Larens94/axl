@@ -4,66 +4,111 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="AXL Documentazione: Documentazione AXL">
-  <title>Documentazione AXL · AXL Documentazione</title>
+  <meta name="description" content="AXL: Linguaggio di programmazione agent-native che wrappa Rust">
+  <title>AXL — Linguaggio Agent-Native</title>
   <link rel="stylesheet" href="docs.css">
   <script defer src="docs.js"></script>
 </head>
 <body data-lang="it" data-page="welcome">
   <a class="skip" href="#content">Vai al contenuto</a>
   <header class="docs-header">
-    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>3.0</i></a>
     <nav class="product-nav" aria-label="Documentazione">
-      <a class="active" href="./">Documentazione</a>
+      <a class="active" href="./">Docs</a>
+      <a href="primitives.html">Primitiva</a>
+      <a href="llm-integration.html">LLM</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
-    <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
+    <button class="search-trigger" type="button" aria-label="Cerca" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca</span><kbd>⌘ K</kbd></button>
     <a class="language" href="en/" hreflang="en">English</a>
     <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./" aria-current="page" class="active">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <div class="sidebar-scroll">
+        <div class="nav-group">
+          <p>Introduzione</p>
+          <a href="./" aria-current="page" class="active">Benvenuto</a>
+          <a href="overview.html">Visione</a>
+          <a href="architecture.html">Architettura</a>
+        </div>
+        <div class="nav-group">
+          <p>Linguaggio</p>
+          <a href="compact-syntax.html">Compact Source</a>
+          <a href="ax-ir.html">AX-IR</a>
+          <a href="primitives.html">Primitiva Native</a>
+        </div>
+        <div class="nav-group">
+          <p>Agenti</p>
+          <a href="agent-runtime.html">Runtime Agenti</a>
+          <a href="llm-integration.html">Integrazione LLM</a>
+          <a href="security.html">Sicurezza</a>
+        </div>
+        <div class="nav-group">
+          <p>Toolchain</p>
+          <a href="toolchain.html">CLI e Build</a>
+          <a href="development.html">Sviluppo</a>
+          <a href="roadmap.html">Roadmap</a>
+        </div>
+      </div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
       <div class="article-column">
-        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>Documentazione AXL</p>
-        <article class="prose"><h1 id="documentazione-axl">Documentazione AXL</h1>
-<p><strong>AX — Agent eXecution</strong> è l'ecosistema agent-native. AXL è il core eseguibile corrente, con sorgente canonico compatto e deterministico.</p>
-<p>Questa documentazione distingue sempre:</p>
-<ul>
-<li><strong>stato attuale</strong>: Compact Source 2 e runtime di riferimento Python, versione <code>2.0.0.dev0</code>;</li>
-<li><strong>architettura target</strong>: AX-HIR/AX-MIR, runtime Rust e backend/bridge native, VM, WASM e piattaforma;</li>
-<li><strong>piattaforme future</strong>: backend, browser, desktop/mobile e grafica.</li>
-</ul>
-<h2 id="indice">Indice</h2>
-<ol>
-<li><a href="ax-ecosystem.html">AX: ecosistema e tassonomia</a></li>
-<li><a href="overview.html">Visione e obiettivi</a></li>
-<li><a href="architecture.html">Architettura dello stack</a></li>
-<li><a href="compact-syntax.html">Compact Source 2</a></li>
-<li><a href="language-guide.html">Guida al linguaggio</a></li>
-<li><a href="agent-runtime.html">Agenti, workflow, tool e memoria</a></li>
-<li><a href="ax-ir.html">AX-IR e compatibilità</a></li>
-<li><a href="security.html">Sicurezza e modello delle capability</a></li>
-<li><a href="toolchain.html">Toolchain e utilizzo</a></li>
-<li><a href="roadmap.html">Roadmap</a></li>
-<li><a href="platform-demo-analysis.html">Demo applicative e piattaforme</a></li>
-<li><a href="development.html">Sviluppo e contribuzione</a></li>
-<li><a href="glossary.html">Glossario</a></li>
-</ol>
-<p>La specifica normativa corrente rimane in <a href="https://github.com/Larens94/axl/blob/main/SPEC.md"><code>../SPEC.md</code></a>. Questa cartella descrive il progetto e il suo disegno complessivo in modo leggibile; in caso di conflitto sul comportamento implementato prevalgono specifica, schema AX-IR e test.</p></article>
-        <section class="start-grid"><h2>Da dove iniziare</h2><div><a class="start-card" href="compact-syntax.html"><span>01</span><b>Sintassi compatta</b><p>Opcode, frame e formule RPN.</p><em>→</em></a><a class="start-card" href="architecture.html"><span>02</span><b>Architettura</b><p>Dal sorgente ai runtime e ai bridge.</p><em>→</em></a><a class="start-card" href="agent-runtime.html"><span>03</span><b>Agenti e memoria</b><p>Capability, workflow, policy e AM.</p><em>→</em></a><a class="start-card" href="roadmap.html"><span>04</span><b>Roadmap</b><p>Il percorso verso Rust, WASM e app native.</p><em>→</em></a></div></section>
+        <p class="breadcrumb"><a href="./">Docs</a><span>/</span>Benvenuto</p>
+        <article class="prose">
+          <h1 id="axl-3-0">AXL 3.0 — Linguaggio Agent-Native</h1>
+
+          <p><strong>AXL</strong> è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare. Gli agenti combinano primitiva native per costruire qualsiasi software.</p>
+
+          <h2 id="cos-e">Cos'è AXL</h2>
+          <ul>
+            <li><strong>Linguaggio agent-native</strong> — l'agente è la prima classe, non la funzione</li>
+            <li><strong>90+ primitiva native</strong> — ogni capability di Rust è esponibile</li>
+            <li><strong>LLM integrato</strong> — reason, classify, extract, generate, embed sono native</li>
+            <li><strong>Rust-backed</strong> — performance, sicurezza, portabilità</li>
+          </ul>
+
+          <h2 id="esempio">Esempio</h2>
+          <pre><code>2;10|result|"hello world",!text_upper/1|s;12|$result</code></pre>
+          <p>→ <code>"HELLO WORLD"</code></p>
+
+          <h2 id="primitiva">Primitiva Disponibili</h2>
+          <ul>
+            <li><strong>I/O:</strong> file_read, file_write, file_exists, dir_list...</li>
+            <li><strong>Text:</strong> text_upper, text_lower, text_split, text_find...</li>
+            <li><strong>Collections:</strong> list_push, list_sort, map_get, map_set...</li>
+            <li><strong>Math:</strong> math_add, math_mul, math_random...</li>
+            <li><strong>Crypto:</strong> hash_sha256, encode_base64, crypto_random_bytes...</li>
+            <li><strong>JSON:</strong> json_parse, json_stringify, json_validate...</li>
+            <li><strong>Network:</strong> http_get, http_post...</li>
+            <li><strong>System:</strong> env_get, time_now, path_join, process_run...</li>
+          </ul>
+
+          <h2 id="avvio">Avvio Rapido</h2>
+          <pre><code>cargo build --workspace
+cargo run -p axl-cli -- run examples/compact.axl
+cargo run -p netflix-server     # Netflix demo
+cargo run -p ai-platform        # AI Platform demo</code></pre>
+        </article>
+        <section class="start-grid">
+          <h2>Da dove iniziare</h2>
+          <div>
+            <a class="start-card" href="primitives.html"><span>01</span><b>Primitiva</b><p>90+ primitiva native Rust.</p><em>→</em></a>
+            <a class="start-card" href="llm-integration.html"><span>02</span><b>LLM</b><p>Integrazione LLM nativa.</p><em>→</em></a>
+            <a class="start-card" href="agent-runtime.html"><span>03</span><b>Agenti</b><p>Runtime agent-native.</p><em>→</em></a>
+            <a class="start-card" href="architecture.html"><span>04</span><b>Architettura</b><p>Stack Rust completo.</p><em>→</em></a>
+          </div>
+        </section>
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/README.md">Modifica questa pagina ↗</a></div>
-        <nav class="pager" aria-label="Paginazione"><a class="next" href="ax-ecosystem.html"><small>Successivo →</small><b>Ecosistema AX</b></a></nav>
+        <nav class="pager" aria-label="Paginazione"><a class="next" href="overview.html"><small>Successivo →</small><b>Visione</b></a></nav>
       </div>
-      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#indice">Indice</a></aside>
+      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#cos-e">Cos'è AXL</a><a class="toc-l2" href="#esempio">Esempio</a><a class="toc-l2" href="#primitiva">Primitiva</a><a class="toc-l2" href="#avvio">Avvio Rapido</a></aside>
     </main>
   </div>
-  <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>
+  <dialog id="docs-search" class="search-dialog" aria-label="Cerca" data-search-dialog>
     <form method="dialog"><button aria-label="Chiudi">×</button></form>
-    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca nella documentazione" placeholder="Cerca nella documentazione" autocomplete="off" data-search-input></div>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca" placeholder="Cerca..." autocomplete="off" data-search-input></div>
     <div class="search-results" data-search-results></div>
   </dialog>
 </body>
