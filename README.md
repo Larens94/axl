@@ -73,31 +73,34 @@ Rust è il primo runtime/backend di basso livello, **non un vincolo**. Bridge ve
 ## Installazione e uso
 
 ```bash
-python3 -m pip install .
-axl run examples/compact.axl
-axl compile examples/compact.axl -o program.axlir.json
-axl exec program.axlir.json
+cargo build --workspace
+cargo run -p axl-cli -- run examples/compact.axl
+cargo run -p axl-cli -- compile examples/compact.axl -o program.axlir.json
+cargo run -p axl-cli -- exec program.axlir.json
 ```
 
 Conversione del vecchio frontend leggibile:
 
 ```bash
-axl pack legacy.axl -o canonical.axl
+cargo run -p axl-cli -- pack legacy.axl -o canonical.axl
 ```
 
 Il formato keyword-based resta temporaneamente supportato per migrazione/debug. Non è più la sintassi primaria.
 
 ## Tool host
 
-```python
-from axl import Tool
+```rust
+use axl_core::{Tool, Value};
 
-
-def tools():
-    return [
-        Tool("search", search, effect="read"),
-        Tool("publish", publish, effect="write", approval=True),
+fn tools() -> Vec<Tool> {
+    vec![
+        Tool::new("search", Box::new(|args| Ok(Value::String("result".into()))))
+            .with_effect("read"),
+        Tool::new("publish", Box::new(|args| Ok(Value::Bool(true))))
+            .with_effect("write")
+            .with_approval(true),
     ]
+}
 ```
 
 I plugin sono infrastruttura host fidata. AXL limita capability, scope, policy, approvazioni e budget; il codice plugin arbitrario richiede sandbox esterna.
@@ -105,18 +108,21 @@ I plugin sono infrastruttura host fidata. AXL limita capability, scope, policy, 
 ## Qualità
 
 ```bash
-python3 -m unittest discover -s tests -v
-python3 -m ruff check .
-python3 -m ruff format --check .
+cargo test --workspace
+cargo clippy --workspace
 ```
 
 AXL è distribuito con licenza [Apache-2.0](LICENSE).
 
-## Toolchain Rust canonica (sperimentale)
+## Toolchain Rust
 
-Il workspace Rust contiene la prima vertical slice della toolchain canonica:
-Source 3 numerico, AST AX-UI, validazione del registry, renderer web e server
-locale. Il flusso AX-UI corrente usa esclusivamente Rust.
+Il workspace Rust contiene l'intero runtime AXL:
+
+- Parser compatto (Source 2 e 3) e legacy keyword-based
+- Type-checker con supporto `int`, `string`, `bool`, `list<T>`, `map<K,V>`
+- Interpreter con memory store, policy, tool grants e budget
+- Serializzazione AX-IR JSON 1.0/1.1/1.2
+- Renderer web con hot-reload server
 
 ```bash
 source "$HOME/.cargo/env"
