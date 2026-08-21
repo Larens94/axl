@@ -172,6 +172,7 @@ fn encode_instruction(inst: &Instruction) -> Json {
             Json::Object(m)
         }
         Instruction::Annotation(_) | Instruction::UiView(_) => Json::Null,
+        _ => Json::Null,
     }
 }
 
@@ -226,6 +227,7 @@ fn encode_expression(expr: &Expression) -> Json {
             m.insert("right".into(), encode_expression(right));
             Json::Object(m)
         }
+        _ => Json::Null,
     }
 }
 
@@ -236,6 +238,7 @@ fn encode_value(val: &Value) -> Json {
         Value::Bool(b) => json!(b),
         Value::List(items) => Json::Array(items.iter().map(encode_value).collect()),
         Value::Map(entries) => Json::Array(entries.iter().map(|(k, v)| Json::Array(vec![encode_value(k), encode_value(v)])).collect()),
+        _ => Json::Null,
     }
 }
 
@@ -264,6 +267,7 @@ fn decode_instruction(val: &Json) -> Result<Instruction, String> {
             confidence: obj.get("confidence").and_then(|v| v.as_i64()).unwrap_or(100) as i32,
             ttl_seconds: obj.get("ttl_seconds").and_then(|v| v.as_i64()),
             source: obj.get("source").and_then(|v| v.as_str()).unwrap_or("program").into(),
+            tags: vec![],
         })),
         "Forget" => Ok(Instruction::Forget(obj.get("key").and_then(|v| v.as_str()).unwrap_or("").into())),
         "If" => Ok(Instruction::If(If {
@@ -281,10 +285,13 @@ fn decode_instruction(val: &Json) -> Result<Instruction, String> {
                 .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
                 .unwrap_or_default(),
             body: decode_instructions_array(obj.get("body"))?,
+            goal: obj.get("goal").and_then(|v| v.as_str()).map(|s| s.into()),
+            tool_defs: vec![], memory_defs: vec![], handlers: vec![],
         })),
         "Workflow" => Ok(Instruction::Workflow(Workflow {
             name: obj.get("name").and_then(|v| v.as_str()).unwrap_or("").into(),
             body: decode_instructions_array(obj.get("body"))?,
+            handlers: vec![],
         })),
         "Run" => Ok(Instruction::Run(obj.get("name").and_then(|v| v.as_str()).unwrap_or("").into())),
         "Function" => {

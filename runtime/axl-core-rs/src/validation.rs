@@ -212,6 +212,7 @@ fn validate_instruction(
             }
             validate_ui_tree(&view.root)?;
         }
+        _ => {}
     }
     Ok(())
 }
@@ -257,6 +258,7 @@ fn validate_expression(expr: &Expression) -> Result<(), ValidationError> {
         }
         Expression::Variable(name) => check_identifier(name, "variable")?,
         Expression::Recall(key) => check_identifier(key, "memory")?,
+        _ => {}
     }
     Ok(())
 }

@@ -9,6 +9,7 @@ pub mod policy;
 pub mod interpreter;
 pub mod serialization;
 pub mod render_web;
+pub mod llm;
 
 pub use compact::{parse_compact, is_compact_source, program_to_compact, split_compact_frames};
 pub use validation::validate;
@@ -19,6 +20,7 @@ pub use render_web::build_web;
 pub use memory::{InMemoryStore, SQLiteMemoryStore, MemoryStore};
 pub use policy::Tool;
 pub use ir::{Program, Value, Expression, Instruction};
+pub use llm::{LlmBackend, MockBackend, reason, classify, extract, generate, generate_json, embed, similarity};
 
 use std::sync::{Arc, Mutex};
 
@@ -89,5 +91,69 @@ mod tests {
         let restored = program_from_json(&json).unwrap();
         let result = run(&restored).unwrap();
         assert_eq!(result.output[0], Value::String("test".into()));
+    }
+
+    #[test]
+    fn llm_mock_reason() {
+        let backend = MockBackend::new(vec!["Step 1: analyze\nStep 2: conclude\nAnswer: 42".into()]);
+        let result = llm::reason(&backend, "solve this", "what is 6*7").unwrap();
+        assert!(result.contains("42"));
+    }
+
+    #[test]
+    fn llm_mock_classify() {
+        let backend = MockBackend::new(vec!["news".into()]);
+        let labels = vec!["news".into(), "opinion".into()];
+        let result = llm::classify(&backend, "classify this", "breaking: something happened", &labels).unwrap();
+        assert_eq!(result, "news");
+    }
+
+    #[test]
+    fn llm_mock_extract() {
+        let backend = MockBackend::new(vec!["Alice\nAcme Corp\nNew York".into()]);
+        let result = llm::extract(&backend, "person, organization, location", "Alice from Acme Corp in New York").unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0], "Alice");
+    }
+
+    #[test]
+    fn llm_mock_embed() {
+        let backend = MockBackend::with_default();
+        let embedding = backend.embed("hello world").unwrap();
+        assert_eq!(embedding.len(), 128);
+    }
+
+    #[test]
+    fn llm_similarity() {
+        let a = vec![1000i64, 0, 0, 1000];
+        let b = vec![1000i64, 0, 0, 1000];
+        let c = vec![0i64, 1000, 1000, 0];
+        assert!((llm::similarity(&a, &b) - 1.0).abs() < 0.001);
+        assert!((llm::similarity(&a, &c)).abs() < 0.001);
+    }
+
+    #[test]
+    fn value_json_roundtrip_embedding() {
+        let val = Value::Embedding(vec![100, 200, 300]);
+        let json = val.to_json_value();
+        let restored = Value::from_json_value(&json).unwrap();
+        assert_eq!(val, restored);
+    }
+
+    #[test]
+    fn value_json_roundtrip_agent_ref() {
+        let val = Value::AgentRef("search_agent".into());
+        let json = val.to_json_value();
+        let restored = Value::from_json_value(&json).unwrap();
+        assert_eq!(val, restored);
+    }
+
+    #[test]
+    fn value_json_roundtrip_null() {
+        let val = Value::Null;
+        let json = val.to_json_value();
+        assert_eq!(json, serde_json::Value::Null);
+        let restored = Value::from_json_value(&json).unwrap();
+        assert_eq!(val, restored);
     }
 }

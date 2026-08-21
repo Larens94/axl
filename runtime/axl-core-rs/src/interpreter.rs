@@ -77,6 +77,7 @@ pub fn render_value(value: &Value) -> Result<String, RuntimeError> {
             serde_json::to_string(&value.to_json_value())
                 .map_err(|_| RuntimeError("output value cannot be rendered".into()))
         }
+        _ => Ok(String::new()),
     }
 }
 
@@ -208,6 +209,7 @@ fn execute_block(state: &mut InterpreterState, instructions: &[Instruction], mem
                 result?;
             }
             Instruction::Agent(_) | Instruction::Workflow(_) | Instruction::Function(_) | Instruction::UiView(_) | Instruction::Annotation(_) => {}
+            _ => {}
         }
     }
     Ok(())
@@ -331,6 +333,7 @@ fn evaluate(state: &mut InterpreterState, expr: &Expression, memory: Arc<Mutex<d
             let rv = evaluate(state, right, memory.clone())?;
             binary_op(&lv, operator, &rv)
         }
+        _ => Err(RuntimeError("unsupported expression".into())),
     }
 }
 

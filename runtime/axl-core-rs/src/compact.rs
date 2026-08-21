@@ -189,6 +189,8 @@ fn instruction_frames(instruction: &Instruction, frames: &mut Vec<String>) -> Re
             frames.push(format!("60|{}", view.view_id));
             ui_node_frames(&view.root, frames);
         }
+        // New 3.0 instructions — not yet supported in compact format
+        _ => {}
     }
     Ok(())
 }
@@ -250,6 +252,8 @@ fn expression_source(expr: &Expression) -> Result<String, CompactParseError> {
             parts.push(format!("%{}", entries.len()));
             Ok(parts.join(","))
         }
+        // New 3.0 expressions — not yet supported in compact format
+        _ => Err(CompactParseError("cannot encode agent-native expression in compact format".into())),
     }
 }
 
@@ -320,7 +324,7 @@ fn parse_block(
                 instructions.push(Instruction::MemoryWrite(MemoryWrite {
                     key: fields[1].clone(),
                     value: parse_expression(&fields[2], index)?,
-                    confidence, ttl_seconds, source,
+                    confidence, ttl_seconds, source, tags: vec![],
                 }));
             }
             "21" if fields.len() == 2 => {
@@ -391,7 +395,10 @@ fn parse_block(
                     return Err(CompactParseError(format!("frame {index}: agent missing end opcode 99")));
                 }
                 position = pos;
-                instructions.push(Instruction::Agent(Agent { name: fields[1].clone(), tools, body }));
+                instructions.push(Instruction::Agent(Agent {
+                    name: fields[1].clone(), tools, body,
+                    goal: None, tool_defs: vec![], memory_defs: vec![], handlers: vec![],
+                }));
             }
             "51" if fields.len() == 2 => {
                 let (body, pos, term) = parse_block(frames, position, false, version)?;
@@ -399,7 +406,7 @@ fn parse_block(
                     return Err(CompactParseError(format!("frame {index}: workflow missing end opcode 99")));
                 }
                 position = pos;
-                instructions.push(Instruction::Workflow(Workflow { name: fields[1].clone(), body }));
+                instructions.push(Instruction::Workflow(Workflow { name: fields[1].clone(), body, handlers: vec![] }));
             }
             "52" if fields.len() == 2 => {
                 instructions.push(Instruction::Run(fields[1].clone()));

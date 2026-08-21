@@ -194,6 +194,7 @@ fn expression_type(
                 }
             }
         }
+        _ => Ok(ANY.to_string()),
     }
 }
 
