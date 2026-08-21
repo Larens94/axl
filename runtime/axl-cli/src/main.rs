@@ -78,7 +78,7 @@ fn parse_runtime_args(args: &[String]) -> Result<(RuntimeArgs, Vec<String>), Box
 fn load_program_from_source(path: &Path) -> Result<axl_core::Program, Box<dyn std::error::Error>> {
     let source = fs::read_to_string(path)?;
     if axl_core::is_compact_source(&source) {
-        Ok(axl_core::parse_compact(&source)?)
+        Ok(axl_core::compiler::compile_file(path)?)
     } else {
         Err(format!("only compact source is supported in Rust runtime; use 'axl pack' to convert").into())
     }
