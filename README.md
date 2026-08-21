@@ -1,135 +1,89 @@
 # AX / AXL — Agent eXecution
 
-[Italiano](README.md) · [English](README.en.md)
+**AXL** è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare.
 
-**AX** è l'ecosistema Agent eXecution. **AXL** è il core eseguibile agent-native corrente: il sorgente canonico usa stream a singola riga, opcode numerici ed espressioni RPN, senza indentazione e con minimo overhead di token.
-
-**Sito:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Documentazione:** [`docs/`](docs/README.md) · **Specifica:** [`SPEC.md`](SPEC.md)
+**Sito:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Docs:** [`docs/`](docs/) · **Specifica:** [`SPEC.md`](SPEC.md)
 
 ```text
-AXL Compact Source 2 → parser/type-checker → AX-IR/HIR/MIR
-                                           → Rust/native
-                                           → VM
-                                           → WASM
-                                           → bridge piattaforma
+AXL Compact Source 3.0
+→ parser deterministico
+→ AX-IR 2.0 (agent-centric)
+→ type-check
+→ interpreter
+  ├─ 90+ primitive native (Rust)
+  ├─ LLM backend (reason, classify, extract)
+  ├─ tool system (policy, approval, audit)
+  ├─ memory (in-memory, SQLite)
+  └─ web server (HTTP, static, API)
 ```
 
-## Sorgente canonico
+## Esempio
 
 ```axl
-2;10|x|#2,#3,#4,*,+|i;12|$x
+2;10|result|"hello world",!text_upper/1|s;12|$result
 ```
 
-Il programma calcola `2 + 3 * 4`, assegna il risultato a `x: int` ed emette `14`.
+→ `"HELLO WORLD"`
 
-- `2` — versione sorgente;
-- `;` — frame;
-- `|` — campi;
-- `,` — token espressione RPN;
-- `10` — binding;
-- `12` — emit;
-- `#` — integer;
-- `$` — variabile;
-- `99` — chiusura blocco.
-
-Nessuna riga o indentazione è necessaria.
-
-## Agente compatto
+## Primitiva Native (90+)
 
 ```axl
-2;50|r|search;10|x|"AXL",!search/1;20|finding|$x|95|3600|r;12|$x;99;51|w;52|r;99;52|w
+# I/O
+!file_read/1       !file_write/2      !file_exists/1
+
+# Text
+!text_upper/1      !text_split/2      !text_find/2
+
+# Collections
+!list_push/2       !list_sort/1       !map_get/2
+
+# Math
+!math_add/2        !math_mul/2        !math_random/0
+
+# Crypto
+!hash_sha256/1     !encode_base64/1   !crypto_random_bytes/1
+
+# JSON
+!json_parse/1      !json_stringify/1
+
+# Network
+!http_get/1        !http_post/2
+
+# System
+!env_get/1         !time_now/0        !path_join/1
+
+# LLM
+!reason/2          !classify/3        !extract/2
 ```
 
-Questo dichiara un agente `r` con grant `search`, chiama la capability, salva il risultato in AM, emette l'output, crea il workflow `w` e lo esegue.
-
-## Obiettivo
-
-AXL dovrà permettere agli agenti di costruire qualsiasi software:
-
-- backend, API, servizi e database;
-- frontend web e WebAssembly;
-- app desktop e mobile native;
-- CLI, sistemi e automazioni;
-- grafica, GPU, audio e giochi;
-- agenti, workflow, task ed eventi.
-
-Rust è il primo runtime/backend di basso livello, **non un vincolo**. Bridge versionati consentiranno Rust/C ABI, WASI, DOM, GPU, mobile, OS e futuri target mantenendo invariata la semantica AXL.
-
-## Disponibile
-
-- Compact Source 2 e writer canonico;
-- parser deterministico ed espressioni RPN;
-- `axl pack` per migrare il frontend legacy;
-- tipi `int`, `string`, `bool` e `list<T>` omogenee;
-- funzioni, parametri, ritorni, moduli e namespace;
-- condizioni e cicli limitati;
-- agenti, workflow e tool grants;
-- AM con scope, in memoria/SQLite, metadati e TTL;
-- policy con negazione predefinita, approvazione a chiusura sicura e audit;
-- budget multidimensionali;
-- AX-IR JSON 1.0/1.1/1.2;
-- CLI `run`, `pack`, `compile`, `exec`.
-
-## Installazione e uso
+## Avvio Rapido
 
 ```bash
 cargo build --workspace
+cargo test --workspace
 cargo run -p axl-cli -- run examples/compact.axl
-cargo run -p axl-cli -- compile examples/compact.axl -o program.axlir.json
-cargo run -p axl-cli -- exec program.axlir.json
+cargo run -p netflix-server
+cargo run -p ai-platform
 ```
 
-Conversione del vecchio frontend leggibile:
+## Workspace
 
-```bash
-cargo run -p axl-cli -- pack legacy.axl -o canonical.axl
+```text
+runtime/
+├── axl-core-rs/    # Libreria principale (3500 LOC)
+├── axl-cli/        # CLI binario
+├── netflix-server/ # Netflix demo
+└── ai-platform/    # AI Platform demo
 ```
 
-Il formato keyword-based resta temporaneamente supportato per migrazione/debug. Non è più la sintassi primaria.
+## Esempi
 
-## Tool host
+- **Netflix** — Streaming platform con 20 titoli
+- **AI Platform** — Analisi contenuti con 6 API LLM
+- **API Server** — REST CRUD con auth e caching
+- **Data Pipeline** — ETL con parsing e trasformazione
+- **Multi-Agent** — Agenti collaborativi con reasoning
 
-```rust
-use axl_core::{Tool, Value};
+## Licenza
 
-fn tools() -> Vec<Tool> {
-    vec![
-        Tool::new("search", Box::new(|args| Ok(Value::String("result".into()))))
-            .with_effect("read"),
-        Tool::new("publish", Box::new(|args| Ok(Value::Bool(true))))
-            .with_effect("write")
-            .with_approval(true),
-    ]
-}
-```
-
-I plugin sono infrastruttura host fidata. AXL limita capability, scope, policy, approvazioni e budget; il codice plugin arbitrario richiede sandbox esterna.
-
-## Qualità
-
-```bash
-cargo test --workspace
-cargo clippy --workspace
-```
-
-AXL è distribuito con licenza [Apache-2.0](LICENSE).
-
-## Toolchain Rust
-
-Il workspace Rust contiene l'intero runtime AXL:
-
-- Parser compatto (Source 2 e 3) e legacy keyword-based
-- Type-checker con supporto `int`, `string`, `bool`, `list<T>`, `map<K,V>`
-- Interpreter con memory store, policy, tool grants e budget
-- Serializzazione AX-IR JSON 1.0/1.1/1.2
-- Renderer web con hot-reload server
-
-```bash
-source "$HOME/.cargo/env"
-cargo test --workspace
-cargo run -p axl-cli -- serve examples/streaming_home.axl
-```
-
-Aprire quindi `http://localhost:8000`. Il comando compila, serve e ricompila il
-sorgente quando cambia. Il solo sorgente applicativo è
-`examples/streaming_home.axl`; HTML, CSS e JavaScript sono generati da Rust.
+Apache-2.0
