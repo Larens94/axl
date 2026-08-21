@@ -4,6 +4,7 @@ use std::sync::{Arc, Mutex};
 use crate::ir::*;
 use crate::memory::MemoryStore;
 use crate::policy::{ApprovalRequest, AuditEvent, Tool};
+use crate::primitives;
 use crate::validation;
 
 #[derive(Debug, Clone)]
@@ -246,10 +247,15 @@ fn evaluate(state: &mut InterpreterState, expr: &Expression, memory: Arc<Mutex<d
                 return Err(RuntimeError(format!("tool call budget exceeded ({})", state.config.max_tool_calls)));
             }
 
-            // Check tool exists
-            let tool_effect = state.tools.get(name).map(|t| t.effect.clone());
-            let tool_approval = state.tools.get(name).map(|t| t.approval);
-            let tool_exists = state.tools.contains_key(name);
+            // Check tool exists — first check native primitives, then user tools
+            let is_native_primitive = primitives::call_primitive(name, &[]).is_ok() || primitives::available_primitives().contains(&name.as_str());
+            let tool_effect = if is_native_primitive {
+                Some("native".to_string())
+            } else {
+                state.tools.get(name).map(|t| t.effect.clone())
+            };
+            let tool_approval = if is_native_primitive { Some(false) } else { state.tools.get(name).map(|t| t.approval) };
+            let tool_exists = is_native_primitive || state.tools.contains_key(name);
 
             if !tool_exists {
                 let request = ApprovalRequest { tool: name.clone(), arguments: vec![], effect: "unknown".into() };
@@ -292,12 +298,21 @@ fn evaluate(state: &mut InterpreterState, expr: &Expression, memory: Arc<Mutex<d
                 }
             }
 
-            let handler = state.tools.get(name).map(|t| &t.handler);
-            let result = handler.unwrap()(&args).map_err(|e| {
-                let req = ApprovalRequest { tool: name.clone(), arguments: args.clone(), effect: tool_effect.unwrap_or_default() };
-                state.audit.push(AuditEvent::create(&req, "failed"));
-                RuntimeError(format!("tool '{name}' failed: {e}"))
-            })?;
+            // Execute: native primitive or user tool
+            let result = if is_native_primitive {
+                primitives::call_primitive(name, &args).map_err(|e| {
+                    let req = ApprovalRequest { tool: name.clone(), arguments: args.clone(), effect: tool_effect.unwrap_or_default() };
+                    state.audit.push(AuditEvent::create(&req, "failed"));
+                    RuntimeError(format!("primitive '{name}' failed: {e}"))
+                })?
+            } else {
+                let handler = state.tools.get(name).map(|t| &t.handler);
+                handler.unwrap()(&args).map_err(|e| {
+                    let req = ApprovalRequest { tool: name.clone(), arguments: args.clone(), effect: tool_effect.unwrap_or_default() };
+                    state.audit.push(AuditEvent::create(&req, "failed"));
+                    RuntimeError(format!("tool '{name}' failed: {e}"))
+                })?
+            };
             Ok(result)
         }
         Expression::FunctionCall { name, arguments } => {

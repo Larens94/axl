@@ -246,4 +246,42 @@ mod tests {
 
         let _ = std::fs::remove_file(test_path);
     }
+
+    #[test]
+    fn native_primitive_called_from_axl() {
+        // AXL source: 2;10|result|"hello world",!text_upper/1|s;12|$result
+        // This calls the native text_upper primitive
+        let program = parse_compact("2;10|result|\"hello world\",!text_upper/1|s;12|$result").unwrap();
+        let result = run(&program).unwrap();
+        assert_eq!(result.output.len(), 1);
+        assert_eq!(result.output[0], Value::String("HELLO WORLD".into()));
+    }
+
+    #[test]
+    fn native_primitive_json_from_axl() {
+        // AXL source: 2;10|data|"{\"x\":42}",!json_parse/1|s;12|$data
+        // This calls json_parse native primitive
+        let program = parse_compact("2;10|data|\"{\\\"x\\\":42}\",!json_parse/1|s;12|$data").unwrap();
+        let result = run(&program).unwrap();
+        assert_eq!(result.output.len(), 1);
+        // The output should be a map with x=42
+        match &result.output[0] {
+            Value::Map(entries) => {
+                assert!(entries.iter().any(|(k, v)| matches!(k, Value::String(s) if s == "x") && matches!(v, Value::Int(42))));
+            }
+            other => panic!("expected map, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn native_primitive_hash_from_axl() {
+        // AXL source: 2;10|hash|"test",!hash_sha256/1|s;12|$hash
+        let program = parse_compact("2;10|hash|\"test\",!hash_sha256/1|s;12|$hash").unwrap();
+        let result = run(&program).unwrap();
+        assert_eq!(result.output.len(), 1);
+        match &result.output[0] {
+            Value::String(s) => assert_eq!(s.len(), 64), // SHA256 hex is 64 chars
+            other => panic!("expected string hash, got {:?}", other),
+        }
+    }
 }
