@@ -154,6 +154,40 @@ class Function:
     body: tuple["Instruction", ...]
 
 
+@dataclass(frozen=True)
+class Annotation:
+    kind: int
+    target: int
+    value: str
+
+
+@dataclass(frozen=True)
+class UiProperty:
+    property_id: int
+    value: Expression
+
+
+@dataclass(frozen=True)
+class UiEvent:
+    event_id: int
+    action_id: int
+
+
+@dataclass(frozen=True)
+class UiNode:
+    node_id: int
+    component_id: int
+    properties: tuple[UiProperty, ...]
+    events: tuple[UiEvent, ...]
+    children: tuple["UiNode", ...]
+
+
+@dataclass(frozen=True)
+class UiView:
+    view_id: int
+    root: UiNode
+
+
 Instruction: TypeAlias = (
     MemoryWrite
     | Forget
@@ -166,6 +200,8 @@ Instruction: TypeAlias = (
     | Workflow
     | Run
     | Function
+    | Annotation
+    | UiView
 )
 
 

@@ -15,6 +15,7 @@ from .ir import (
     Recall,
     Return,
     ToolCall,
+    UiView,
     Variable,
     While,
 )
@@ -90,7 +91,7 @@ def _check_block(
     function_name: str | None,
 ) -> None:
     for instruction in instructions:
-        if isinstance(instruction, Function):
+        if isinstance(instruction, (Function, UiView)):
             continue
         if isinstance(instruction, Let):
             if instruction.type_name is not None:

@@ -111,3 +111,24 @@ python3 -m ruff format --check .
 ```
 
 AXL è distribuito con licenza [Apache-2.0](LICENSE).
+
+## Toolchain Rust canonica (sperimentale)
+
+Il workspace Rust contiene la prima vertical slice della toolchain canonica:
+Source 3 numerico, AST AX-UI, validazione del registry e renderer web. Python
+rimane la reference implementation della semantica precedente durante la
+migrazione.
+
+```bash
+source "$HOME/.cargo/env"
+cargo test --workspace
+cargo run -p axl-cli -- \
+  build examples/streaming_home.axl \
+  --target web \
+  -o build/streaming_home-rs
+python3 -m http.server 8000 --directory build/streaming_home-rs
+```
+
+Aprire quindi `http://localhost:8000`. Il solo sorgente applicativo è
+`examples/streaming_home.axl`; HTML, CSS e JavaScript sono generati dal renderer
+Rust.

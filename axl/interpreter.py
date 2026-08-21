@@ -23,6 +23,7 @@ from .ir import (
     Return,
     Run,
     ToolCall,
+    UiView,
     Value,
     Variable,
     While,
@@ -252,7 +253,7 @@ class Interpreter:
                         break
                     self._step()
                     self._execute(instruction.body)
-            elif isinstance(instruction, (Agent, Workflow, Function)):
+            elif isinstance(instruction, (Agent, Workflow, Function, UiView)):
                 continue
             elif isinstance(instruction, Run):
                 runnable = self.runnables.get(instruction.name)

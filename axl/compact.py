@@ -3,6 +3,7 @@ import re
 
 from .ir import (
     Agent,
+    Annotation,
     Binary,
     Emit,
     Forget,
@@ -20,6 +21,10 @@ from .ir import (
     Return,
     Run,
     ToolCall,
+    UiEvent,
+    UiNode,
+    UiProperty,
+    UiView,
     Variable,
     While,
     Workflow,
@@ -44,7 +49,7 @@ _MAX_SOURCE_BYTES = 1_000_000
 
 
 def is_compact_source(source: str) -> bool:
-    return re.match(r"^\s*2\s*(?:;|$)", source) is not None
+    return re.match(r"^\s*[23]\s*(?:;|$)", source) is not None
 
 
 def program_to_compact(program: Program) -> str:
@@ -54,7 +59,8 @@ def program_to_compact(program: Program) -> str:
         validate(program)
     except ValidationError as error:
         raise CompactParseError(str(error)) from error
-    frames = ["2"]
+    version = "3" if any(isinstance(item, (Annotation, UiView)) for item in program.instructions) else "2"
+    frames = [version]
     for instruction in program.instructions:
         frames.extend(_instruction_frames(instruction))
     source = ";".join(frames)
@@ -179,7 +185,24 @@ def _instruction_frames(instruction) -> list[str]:
         return [*frames, "99"]
     if isinstance(instruction, Run):
         return [f"52|{instruction.name}"]
+    if isinstance(instruction, Annotation):
+        value = json.dumps(instruction.value, ensure_ascii=False, separators=(",", ":"))
+        return [f"80|{instruction.kind}|{instruction.target}|{value}"]
+    if isinstance(instruction, UiView):
+        return [f"60|{instruction.view_id}", *_ui_node_frames(instruction.root)]
     raise CompactParseError(f"cannot encode instruction '{type(instruction).__name__}'")
+
+
+def _ui_node_frames(node: UiNode) -> list[str]:
+    frames = [f"61|{node.node_id}|{node.component_id}"]
+    frames.extend(
+        f"62|{item.property_id}|{_expression_source(item.value)}"
+        for item in node.properties
+    )
+    frames.extend(f"63|{item.event_id}|{item.action_id}" for item in node.events)
+    for child in node.children:
+        frames.extend(_ui_node_frames(child))
+    return [*frames, "99"]
 
 
 def _expression_source(expression) -> str:
@@ -226,9 +249,10 @@ def _expression_source(expression) -> str:
 
 def parse_compact(source: str) -> Program:
     frames = split_compact_frames(source)
-    if not frames or frames[0] != "2":
-        raise CompactParseError("compact source requires version header '2'")
-    instructions, position, terminator = _block(frames, 1, False)
+    if not frames or frames[0] not in {"2", "3"}:
+        raise CompactParseError("compact source requires version header '2' or '3'")
+    version = frames[0]
+    instructions, position, terminator = _block(frames, 1, False, version)
     if terminator is not None:
         raise CompactParseError(f"frame {position}: unexpected opcode '{terminator}'")
     return Program(tuple(instructions))
@@ -250,7 +274,7 @@ def _require_unicode_scalar_string(value: str) -> None:
         raise CompactParseError("invalid Unicode string") from error
 
 
-def _block(frames: list[str], position: int, allow_else: bool):
+def _block(frames: list[str], position: int, allow_else: bool, version: str = "2"):
     instructions = []
     while position < len(frames):
         index = position
@@ -299,19 +323,19 @@ def _block(frames: list[str], position: int, allow_else: bool):
         elif opcode == "21" and len(fields) == 2:
             instructions.append(Forget(fields[1]))
         elif opcode == "30" and len(fields) == 2:
-            body, position, terminator = _block(frames, position, True)
+            body, position, terminator = _block(frames, position, True, version)
             if terminator is None:
                 raise CompactParseError(f"frame {index}: if missing end opcode 99")
             else_body = []
             if terminator == "31":
-                else_body, position, terminator = _block(frames, position, False)
+                else_body, position, terminator = _block(frames, position, False, version)
                 if terminator != "99":
                     raise CompactParseError(f"frame {index}: if missing end opcode 99")
             instructions.append(
                 If(_expression(fields[1], index), tuple(body), tuple(else_body))
             )
         elif opcode == "32" and len(fields) == 2:
-            body, position, terminator = _block(frames, position, False)
+            body, position, terminator = _block(frames, position, False, version)
             if terminator != "99":
                 raise CompactParseError(f"frame {index}: while missing end opcode 99")
             instructions.append(While(_expression(fields[1], index), tuple(body)))
@@ -337,7 +361,7 @@ def _block(frames: list[str], position: int, allow_else: bool):
                 raise CompactParseError(
                     f"frame {index}: invalid return type '{fields[3]}'"
                 ) from error
-            body, position, terminator = _block(frames, position, False)
+            body, position, terminator = _block(frames, position, False, version)
             if terminator != "99":
                 raise CompactParseError(
                     f"frame {index}: function missing end opcode 99"
@@ -353,12 +377,12 @@ def _block(frames: list[str], position: int, allow_else: bool):
                 if len(fields) == 3
                 else ()
             )
-            body, position, terminator = _block(frames, position, False)
+            body, position, terminator = _block(frames, position, False, version)
             if terminator != "99":
                 raise CompactParseError(f"frame {index}: agent missing end opcode 99")
             instructions.append(Agent(fields[1], grants, tuple(body)))
         elif opcode == "51" and len(fields) == 2:
-            body, position, terminator = _block(frames, position, False)
+            body, position, terminator = _block(frames, position, False, version)
             if terminator != "99":
                 raise CompactParseError(
                     f"frame {index}: workflow missing end opcode 99"
@@ -366,11 +390,71 @@ def _block(frames: list[str], position: int, allow_else: bool):
             instructions.append(Workflow(fields[1], tuple(body)))
         elif opcode == "52" and len(fields) == 2:
             instructions.append(Run(fields[1]))
+        elif version == "3" and opcode == "80" and len(fields) == 4:
+            try:
+                kind, target = int(fields[1]), int(fields[2])
+                value = json.loads(fields[3])
+            except (ValueError, json.JSONDecodeError) as error:
+                raise CompactParseError(f"frame {index}: invalid annotation") from error
+            if not isinstance(value, str):
+                raise CompactParseError(f"frame {index}: annotation value must be string")
+            instructions.append(Annotation(kind, target, value))
+        elif version == "3" and opcode == "60" and len(fields) == 2:
+            try:
+                view_id = int(fields[1])
+            except ValueError as error:
+                raise CompactParseError(f"frame {index}: invalid view id") from error
+            root, position = _ui_node(frames, position)
+            instructions.append(UiView(view_id, root))
         else:
             raise CompactParseError(
                 f"frame {index}: invalid opcode or arity '{opcode}'"
             )
     return instructions, position, None
+
+
+def _ui_node(frames: list[str], position: int) -> tuple[UiNode, int]:
+    if position >= len(frames):
+        raise CompactParseError("UI view missing root node")
+    index = position
+    fields = _split(frames[position], "|")
+    position += 1
+    if len(fields) != 3 or fields[0] != "61":
+        raise CompactParseError(f"frame {index}: UI view requires node opcode 61")
+    try:
+        node_id, component_id = int(fields[1]), int(fields[2])
+    except ValueError as error:
+        raise CompactParseError(f"frame {index}: invalid UI node") from error
+    properties = []
+    events = []
+    children = []
+    while position < len(frames):
+        child_index = position
+        child_fields = _split(frames[position], "|")
+        opcode = child_fields[0]
+        if opcode == "99":
+            return UiNode(node_id, component_id, tuple(properties), tuple(events), tuple(children)), position + 1
+        if opcode == "62" and len(child_fields) == 3:
+            try:
+                property_id = int(child_fields[1])
+            except ValueError as error:
+                raise CompactParseError(f"frame {child_index}: invalid UI property") from error
+            properties.append(UiProperty(property_id, _expression(child_fields[2], child_index)))
+            position += 1
+            continue
+        if opcode == "63" and len(child_fields) == 3:
+            try:
+                events.append(UiEvent(int(child_fields[1]), int(child_fields[2])))
+            except ValueError as error:
+                raise CompactParseError(f"frame {child_index}: invalid UI event") from error
+            position += 1
+            continue
+        if opcode == "61":
+            child, position = _ui_node(frames, position)
+            children.append(child)
+            continue
+        raise CompactParseError(f"frame {child_index}: invalid UI opcode or arity '{opcode}'")
+    raise CompactParseError(f"frame {index}: UI node missing end opcode 99")
 
 
 def _expression(source: str, frame: int):

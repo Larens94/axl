@@ -71,6 +71,8 @@ def _decode(value: Any) -> Any:
 
 def program_to_document(program: Program) -> dict[str, Any]:
     validate(program)
+    if any(isinstance(item, ir.UiView | ir.Annotation) for item in program.instructions):
+        raise ValueError("AX-UI experimental nodes are not available in AX-IR 1.2")
     return {"ir_version": IR_VERSION, "program": _encode(program)}
 
 

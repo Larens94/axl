@@ -2,6 +2,7 @@ import re
 
 from .ir import (
     Agent,
+    Annotation,
     Binary,
     Emit,
     Expression,
@@ -20,11 +21,14 @@ from .ir import (
     Return,
     Run,
     ToolCall,
+    UiNode,
+    UiView,
     Variable,
     While,
     Workflow,
 )
 from .type_names import validate_type_name
+from .ui_registry import ANNOTATION_KINDS, COMPONENTS
 
 
 class ValidationError(ValueError):
@@ -43,6 +47,8 @@ INSTRUCTION_TYPES = (
     Workflow,
     Run,
     Function,
+    Annotation,
+    UiView,
 )
 EXPRESSION_TYPES = (
     Literal,
@@ -114,6 +120,7 @@ def validate(program: Program) -> None:
     _validate_nesting(program.instructions)
 
     names: set[str] = set()
+    view_ids: set[int] = set()
     runnables: dict[str, Agent | Workflow] = {}
     for instruction in program.instructions:
         _require_instruction(instruction)
@@ -125,6 +132,12 @@ def validate(program: Program) -> None:
             runnables[instruction.name] = instruction
         elif isinstance(instruction, Function):
             _qualified_identifier(instruction.name, "function")
+        elif isinstance(instruction, UiView):
+            if type(instruction.view_id) is not int or instruction.view_id < 1:
+                raise ValidationError("UI view id must be a positive integer")
+            if instruction.view_id in view_ids:
+                raise ValidationError(f"duplicate UI view id '{instruction.view_id}'")
+            view_ids.add(instruction.view_id)
 
     for instruction in program.instructions:
         _validate_instruction(instruction, names, top_level=True)
@@ -157,6 +170,11 @@ def _validate_nesting(instructions) -> None:
             stack.extend((item, depth + 1) for item in node.items)
         elif isinstance(node, MapExpression):
             stack.extend((item, depth + 1) for entry in node.entries for item in entry)
+        elif isinstance(node, UiView):
+            stack.append((node.root, depth + 1))
+        elif isinstance(node, UiNode):
+            stack.extend((child, depth + 1) for child in node.children)
+            stack.extend((item.value, depth + 1) for item in node.properties)
 
 
 def _require_instruction(instruction) -> None:
@@ -230,6 +248,68 @@ def _validate_instruction(
         _validate_expression(instruction.value)
     elif isinstance(instruction, Forget):
         _identifier(instruction.key, "memory")
+    elif isinstance(instruction, Annotation):
+        if not top_level:
+            raise ValidationError("annotations must be top-level")
+        if instruction.kind not in ANNOTATION_KINDS:
+            raise ValidationError(f"unknown annotation kind '{instruction.kind}'")
+        if type(instruction.target) is not int or instruction.target < 1:
+            raise ValidationError("annotation target must be a positive integer")
+        if not isinstance(instruction.value, str) or not instruction.value:
+            raise ValidationError("annotation value must be a non-empty string")
+    elif isinstance(instruction, UiView):
+        if not top_level:
+            raise ValidationError("UI views must be top-level")
+        _validate_ui_tree(instruction.root)
+
+
+def _validate_ui_tree(root: UiNode) -> None:
+    node_ids: set[int] = set()
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        if not isinstance(node, UiNode):
+            raise ValidationError("invalid UI node")
+        if type(node.node_id) is not int or node.node_id < 1:
+            raise ValidationError("UI node id must be a positive integer")
+        if node.node_id in node_ids:
+            raise ValidationError(f"duplicate UI node id '{node.node_id}'")
+        node_ids.add(node.node_id)
+        contract = COMPONENTS.get(node.component_id)
+        if contract is None:
+            raise ValidationError(f"unknown UI component '{node.component_id}'")
+        if not all(isinstance(item, tuple) for item in (node.properties, node.events, node.children)):
+            raise ValidationError("UI node collections must be arrays")
+        property_ids = [item.property_id for item in node.properties]
+        if len(property_ids) != len(set(property_ids)):
+            raise ValidationError(f"duplicate UI property on node '{node.node_id}'")
+        for item in node.properties:
+            expected = contract.properties.get(item.property_id)
+            if expected is None:
+                raise ValidationError(
+                    f"property '{item.property_id}' is not valid for component '{node.component_id}'"
+                )
+            if not isinstance(item.value, Literal):
+                raise ValidationError("experimental UI properties must be literal")
+            _validate_expression(item.value)
+            actual = {str: "string", int: "int", bool: "bool"}[type(item.value.value)]
+            if actual != expected:
+                raise ValidationError(
+                    f"property '{item.property_id}' requires {expected}, got {actual}"
+                )
+        event_ids = [item.event_id for item in node.events]
+        if len(event_ids) != len(set(event_ids)):
+            raise ValidationError(f"duplicate UI event on node '{node.node_id}'")
+        for item in node.events:
+            if item.event_id not in contract.events:
+                raise ValidationError(
+                    f"event '{item.event_id}' is not valid for component '{node.component_id}'"
+                )
+            if type(item.action_id) is not int or item.action_id < 1:
+                raise ValidationError("UI action id must be a positive integer")
+        if node.children and not contract.children:
+            raise ValidationError(f"component '{node.component_id}' cannot have children")
+        stack.extend(node.children)
 
 
 def _validate_expression(expression: Expression) -> None:

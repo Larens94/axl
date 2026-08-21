@@ -10,6 +10,7 @@ from .interpreter import Interpreter, RuntimeError, render_value
 from .memory import SQLiteMemoryStore
 from .parser import ParseError
 from .policy import ApprovalRequired, Tool
+from .render_web import WebRenderError, render_web
 from .serialization import program_from_json, program_to_json
 from .typechecker import typecheck
 from .validation import validate
@@ -106,6 +107,11 @@ def main(argv: list[str] | None = None) -> int:
     execute.add_argument("file", type=Path)
     _runtime_options(execute)
 
+    build = commands.add_parser("build", help="build an AXL application target")
+    build.add_argument("file", type=Path)
+    build.add_argument("--target", choices=("web",), required=True)
+    build.add_argument("-o", "--output", type=Path, required=True)
+
     args = parser.parse_args(argv)
     try:
         if args.command == "compile":
@@ -119,6 +125,12 @@ def main(argv: list[str] | None = None) -> int:
             validate(program)
             typecheck(program)
             args.output.write_text(program_to_compact(program) + "\n", encoding="utf-8")
+            return 0
+        if args.command == "build":
+            program = compile_file(args.file)
+            validate(program)
+            typecheck(program)
+            render_web(program, args.output)
             return 0
         if args.command == "run":
             return _execute(compile_file(args.file), args)
@@ -135,6 +147,7 @@ def main(argv: list[str] | None = None) -> int:
         ApprovalRequired,
         ParseError,
         RuntimeError,
+        WebRenderError,
         ValueError,
     ) as error:
         print(f"axl: {error}", file=sys.stderr)

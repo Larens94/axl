@@ -1,0 +1,15 @@
+[package]
+name = "axl-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "axl-rs"
+path = "src/main.rs"
+
+[dependencies]
+axl-core = { path = "../axl-core-rs" }
+
+[lints]
+workspace = true

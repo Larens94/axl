@@ -125,9 +125,10 @@ def _compact_imports(
     aliases: set[str],
     module_root: Path,
 ) -> str:
-    local_frames = ["2"]
+    frames = split_compact_frames(source)
+    local_frames = [frames[0]]
     depth = 0
-    for index, frame in enumerate(split_compact_frames(source)[1:], 1):
+    for index, frame in enumerate(frames[1:], 1):
         opcode = frame.split("|", 1)[0].strip()
         if opcode == "1":
             if depth:
@@ -143,7 +144,7 @@ def _compact_imports(
             )
             continue
         local_frames.append(frame)
-        if opcode in {"30", "32", "40", "50", "51"}:
+        if opcode in {"30", "32", "40", "50", "51", "61"}:
             depth += 1
         elif opcode == "99" and depth:
             depth -= 1
