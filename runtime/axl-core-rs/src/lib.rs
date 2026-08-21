@@ -11,6 +11,7 @@ pub mod serialization;
 pub mod render_web;
 pub mod llm;
 pub mod primitives;
+pub mod web;
 
 pub use compact::{parse_compact, is_compact_source, program_to_compact, split_compact_frames};
 pub use validation::validate;
