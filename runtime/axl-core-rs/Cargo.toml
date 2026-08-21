@@ -11,6 +11,14 @@ path = "src/lib.rs"
 serde_json = "1"
 rusqlite = { version = "0.31", features = ["bundled"] }
 lazy_static = "1"
+sha2 = "0.10"
+blake3 = "1"
+md5 = "0.7"
+base64 = "0.22"
+getrandom = "0.2"
+ureq = "2"
+regex = "1"
+hostname = "0.4"
 
 [lints]
 workspace = true

@@ -10,6 +10,7 @@ pub mod interpreter;
 pub mod serialization;
 pub mod render_web;
 pub mod llm;
+pub mod primitives;
 
 pub use compact::{parse_compact, is_compact_source, program_to_compact, split_compact_frames};
 pub use validation::validate;
@@ -155,5 +156,94 @@ mod tests {
         assert_eq!(json, serde_json::Value::Null);
         let restored = Value::from_json_value(&json).unwrap();
         assert_eq!(val, restored);
+    }
+
+    // ========================================================================
+    // Primitive tests
+    // ========================================================================
+
+    #[test]
+    fn primitive_text_operations() {
+        use primitives::call_primitive;
+        assert_eq!(call_primitive("text_upper", &[Value::String("hello".into())]).unwrap(), Value::String("HELLO".into()));
+        assert_eq!(call_primitive("text_lower", &[Value::String("HELLO".into())]).unwrap(), Value::String("hello".into()));
+        assert_eq!(call_primitive("text_trim", &[Value::String("  hi  ".into())]).unwrap(), Value::String("hi".into()));
+        assert_eq!(call_primitive("text_length", &[Value::String("abc".into())]).unwrap(), Value::Int(3));
+        assert_eq!(call_primitive("text_contains", &[Value::String("hello world".into()), Value::String("world".into())]).unwrap(), Value::Bool(true));
+    }
+
+    #[test]
+    fn primitive_list_operations() {
+        use primitives::call_primitive;
+        let list = Value::List(vec![Value::Int(3), Value::Int(1), Value::Int(2)]);
+        let sorted = call_primitive("list_sort", &[list]).unwrap();
+        assert_eq!(sorted, Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]));
+
+        let list2 = Value::List(vec![Value::Int(1), Value::Int(2), Value::Int(3)]);
+        assert_eq!(call_primitive("list_length", &[list2.clone()]).unwrap(), Value::Int(3));
+        assert_eq!(call_primitive("list_sum", &[list2]).unwrap(), Value::Int(6));
+    }
+
+    #[test]
+    fn primitive_map_operations() {
+        use primitives::call_primitive;
+        let map = Value::Map(vec![
+            (Value::String("a".into()), Value::Int(1)),
+            (Value::String("b".into()), Value::Int(2)),
+        ]);
+        assert_eq!(call_primitive("map_get", &[map.clone(), Value::String("a".into())]).unwrap(), Value::Int(1));
+        assert_eq!(call_primitive("map_keys", &[map]).unwrap(), Value::List(vec![Value::String("a".into()), Value::String("b".into())]));
+    }
+
+    #[test]
+    fn primitive_math_operations() {
+        use primitives::call_primitive;
+        assert_eq!(call_primitive("math_add", &[Value::Int(2), Value::Int(3)]).unwrap(), Value::Int(5));
+        assert_eq!(call_primitive("math_mul", &[Value::Int(4), Value::Int(5)]).unwrap(), Value::Int(20));
+        assert_eq!(call_primitive("math_max", &[Value::Int(3), Value::Int(7)]).unwrap(), Value::Int(7));
+    }
+
+    #[test]
+    fn primitive_crypto_operations() {
+        use primitives::call_primitive;
+        let hash = call_primitive("hash_sha256", &[Value::String("hello".into())]).unwrap();
+        assert!(matches!(hash, Value::String(_)));
+
+        let b64 = call_primitive("encode_base64", &[Value::String("hello".into())]).unwrap();
+        assert_eq!(b64, Value::String("aGVsbG8=".into()));
+
+        let decoded = call_primitive("decode_base64", &[Value::String("aGVsbG8=".into())]).unwrap();
+        assert_eq!(decoded, Value::String("hello".into()));
+    }
+
+    #[test]
+    fn primitive_json_operations() {
+        use primitives::call_primitive;
+        let parsed = call_primitive("json_parse", &[Value::String(r#"{"a":1,"b":"hello"}"#.into())]).unwrap();
+        assert!(matches!(parsed, Value::Map(_)));
+
+        let stringified = call_primitive("json_stringify", &[Value::Map(vec![
+            (Value::String("x".into()), Value::Int(42)),
+        ])]).unwrap();
+        assert!(matches!(stringified, Value::String(_)));
+
+        assert_eq!(call_primitive("json_validate", &[Value::String(r#"{"valid":true}"#.into())]).unwrap(), Value::Bool(true));
+        assert_eq!(call_primitive("json_validate", &[Value::String("not json".into())]).unwrap(), Value::Bool(false));
+    }
+
+    #[test]
+    fn primitive_file_operations() {
+        use primitives::call_primitive;
+        let test_path = "/tmp/axl_test_file.txt";
+        let _ = std::fs::remove_file(test_path);
+
+        assert_eq!(call_primitive("file_exists", &[Value::String(test_path.into())]).unwrap(), Value::Bool(false));
+        assert_eq!(call_primitive("file_write", &[Value::String(test_path.into()), Value::String("test content".into())]).unwrap(), Value::Bool(true));
+        assert_eq!(call_primitive("file_exists", &[Value::String(test_path.into())]).unwrap(), Value::Bool(true));
+
+        let content = call_primitive("file_read", &[Value::String(test_path.into())]).unwrap();
+        assert_eq!(content, Value::String("test content".into()));
+
+        let _ = std::fs::remove_file(test_path);
     }
 }
