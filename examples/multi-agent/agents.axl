@@ -1,0 +1,138 @@
+3
+80|1|1|"AXL Multi-Agent System"
+80|2|2|"Collaborative agents with reasoning"
+
+60|1
+61|1|1
+62|1|"Multi-Agent System"
+
+61|2|2
+62|1|"Collaborative AI Agents"
+62|2|"Multiple agents working together"
+62|3|"Research, analyze, and summarize with specialized agents"
+62|4|"Powered by AXL 3.0"
+62|5|"https://image.tmdb.org/t/p/original/56v2KjBlYjXnFMzVjSBfMvN4e0Q.jpg"
+63|1|100
+63|2|101
+99
+
+61|3|3
+62|1|"Agents"
+
+61|10|4
+62|1|"Research Agent"
+62|2|"Searches and gathers information"
+62|3|#10
+62|4|#1
+63|1|110
+99
+
+61|11|4
+62|1|"Analysis Agent"
+62|2|"Analyzes and classifies data"
+62|3|#9
+62|4|#1
+63|1|111
+99
+
+61|12|4
+62|1|"Summary Agent"
+62|2|"Creates concise summaries"
+62|3|#8
+62|4|#2
+63|1|112
+99
+
+61|13|4
+62|1|"Memory Agent"
+62|2|"Stores and retrieves knowledge"
+62|3|#9
+62|4|#1
+63|1|113
+99
+
+99
+
+61|4|3
+62|1|"Workflow"
+
+61|14|4
+62|1|"Input Query"
+62|2|"User submits question"
+62|3|#8
+62|4|#1
+63|1|120
+99
+
+61|15|4
+62|1|"Research"
+62|2|"Gather relevant information"
+62|3|#9
+62|4|#1
+63|1|121
+99
+
+61|16|4
+62|1|"Analyze"
+62|2|"Process and classify"
+62|3|#10
+62|4|#2
+63|1|122
+99
+
+61|17|4
+62|1|"Summarize"
+62|2|"Create final answer"
+62|3|#9
+62|4|#1
+63|1|123
+99
+
+61|18|4
+62|1|"Output"
+62|2|"Return structured response"
+62|3|#8
+62|4|#2
+63|1|124
+99
+
+99
+
+61|5|3
+62|1|"Capabilities"
+
+61|20|4
+62|1|"LLM Reasoning"
+62|2|"Chain-of-thought analysis"
+62|3|#10
+62|4|#1
+63|1|130
+99
+
+61|21|4
+62|1|"Semantic Memory"
+62|2|"Recall by meaning"
+62|3|#9
+62|4|#1
+63|1|131
+99
+
+61|22|4
+62|1|"Inter-Agent Comms"
+62|2|"Delegate and broadcast"
+62|3|#8
+62|4|#2
+63|1|132
+99
+
+61|23|4
+62|1|"Tool Integration"
+62|2|"90+ native primitives"
+62|3|#9
+62|4|#1
+63|1|133
+99
+
+99
+
+99
