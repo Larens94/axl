@@ -4,422 +4,137 @@ use std::net::{TcpListener, TcpStream};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use axl_core::{Value, InterpreterConfig, Tool, LlmBackend, MockBackend};
+use axl_core::{Value, InterpreterConfig, Tool, LlmBackend, mimo::MiMoBackend};
+
+const MIMO_API_KEY: &str = "sk-ejmpfhhrc5eyh9n1bwp2yn0dt1vtghqclesto54fnju5my9c";
 
 fn main() {
     let port: u16 = std::env::args().nth(1).and_then(|p| p.parse().ok()).unwrap_or(8000);
-    let source_path = std::env::args().nth(2)
-        .unwrap_or_else(|| "examples/ai-platform/platform.axl".into());
+    let out_dir = std::path::PathBuf::from("build/ai-platform");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    std::fs::write(out_dir.join("index.html"), HTML).unwrap();
 
-    // Build frontend
-    let source = std::fs::read_to_string(&source_path).expect("cannot read source");
-    let program = axl_core::parse_compact(&source).expect("parse error");
-    axl_core::validate(&program).expect("validation error");
-    let output_dir = std::path::PathBuf::from("build/ai-platform");
-    axl_core::build_web(&program, &output_dir).expect("build error");
-
-    // Initialize LLM backend (mock for demo)
-    let llm = Arc::new(MockBackend::new(vec![
-        "Category: Technology | Sentiment: Positive | Entities: AXL, AI, Agents".into(),
-        "The article discusses advances in AI agent programming languages. Key entities: AXL (language), OpenAI (company), Anthropic (company). Sentiment is predominantly positive.".into(),
-        "Based on the analysis, this content is a technical tutorial about agent-native programming. It covers LLM primitives, semantic memory, and inter-agent communication.".into(),
-    ]));
-
-    // Create agent tools
-    let search_tool = Tool::new("search_catalog", Box::new(move |args: &[Value]| {
-        let query = match &args[0] {
-            Value::String(s) => s.clone(),
-            _ => return Err("query must be string".into()),
-        };
-        let catalog = build_content_catalog();
-        let results: Vec<&(String, String, String, i32)> = catalog.iter()
-            .filter(|(title, cat, desc, _)| 
-                title.to_lowercase().contains(&query.to_lowercase()) ||
-                cat.to_lowercase().contains(&query.to_lowercase()) ||
-                desc.to_lowercase().contains(&query.to_lowercase())
-            )
-            .collect();
-        if results.is_empty() {
-            Ok(Value::String(format!("No results for '{query}'")))
-        } else {
-            let items: Vec<String> = results.iter().map(|(t, c, _, _)| format!("\"{t}\" [{c}]")).collect();
-            Ok(Value::String(format!("Found {} items: {}", results.len(), items.join(", "))))
-        }
-    }));
-
-    let llm_for_classify = llm.clone();
-    let classify_tool = Tool::new("classify_content", Box::new(move |args: &[Value]| {
-        let text = match &args[0] {
-            Value::String(s) => s.clone(),
-            _ => return Err("text must be string".into()),
-        };
-        let system = "Classify the following text into one of: news, opinion, review, tutorial. Reply with ONLY the category.";
-        let messages = vec![("user".to_string(), text)];
-        let result = llm_for_classify.generate(system, &messages).map_err(|e| e.to_string())?;
-        Ok(Value::String(result))
-    }));
-
-    let llm_for_sentiment = llm.clone();
-    let sentiment_tool = Tool::new("analyze_sentiment", Box::new(move |args: &[Value]| {
-        let text = match &args[0] {
-            Value::String(s) => s.clone(),
-            _ => return Err("text must be string".into()),
-        };
-        let system = "Analyze the sentiment of the following text. Reply with: positive, negative, or neutral.";
-        let messages = vec![("user".to_string(), text)];
-        let result = llm_for_sentiment.generate(system, &messages).map_err(|e| e.to_string())?;
-        Ok(Value::String(result))
-    }));
-
-    let llm_for_extract = llm.clone();
-    let extract_tool = Tool::new("extract_entities", Box::new(move |args: &[Value]| {
-        let text = match &args[0] {
-            Value::String(s) => s.clone(),
-            _ => return Err("text must be string".into()),
-        };
-        let system = "Extract person names, organizations, and key topics from the text. One per line.";
-        let messages = vec![("user".to_string(), text)];
-        let result = llm_for_extract.generate(system, &messages).map_err(|e| e.to_string())?;
-        let entities: Vec<String> = result.lines().map(String::from).filter(|l| !l.is_empty()).collect();
-        Ok(Value::List(entities.into_iter().map(Value::String).collect()))
-    }));
-
-    let llm_for_reason = llm.clone();
-    let reason_tool = Tool::new("reason_content", Box::new(move |args: &[Value]| {
-        let query = match &args[0] {
-            Value::String(s) => s.clone(),
-            _ => return Err("query must be string".into()),
-        };
-        let system = "You are a thoughtful AI assistant. Think step by step and provide a clear, reasoned response.";
-        let messages = vec![("user".to_string(), query)];
-        let result = llm_for_reason.generate(system, &messages).map_err(|e| e.to_string())?;
-        Ok(Value::String(result))
-    }));
-
-    let llm_for_embed = llm.clone();
-    let embed_tool = Tool::new("embed_text", Box::new(move |args: &[Value]| {
-        let text = match &args[0] {
-            Value::String(s) => s.clone(),
-            _ => return Err("text must be string".into()),
-        };
-        let embedding = llm_for_embed.embed(&text).map_err(|e| e.to_string())?;
-        Ok(Value::Embedding(embedding))
-    }));
-
-    // Initialize agents
-    let memory_store: Arc<Mutex<dyn axl_core::MemoryStore>> = Arc::new(Mutex::new(axl_core::InMemoryStore::new()));
-    let config = InterpreterConfig {
-        max_steps: 5000,
-        scope: "ai-platform:session".into(),
-        ..Default::default()
-    };
-    let _ = axl_core::run_program(
-        &program,
-        vec![search_tool, classify_tool, sentiment_tool, extract_tool, reason_tool, embed_tool],
-        memory_store,
-        config,
-        None,
-    );
-
-    let listener = TcpListener::bind(("127.0.0.1", port)).expect("cannot bind");
-    println!("=== AI Content Platform (AXL 3.0) ===");
+    let llm: Arc<dyn LlmBackend> = Arc::new(MiMoBackend::new(MIMO_API_KEY.to_string()));
+    println!("=== AI Content Platform (MiMo Backend) ===");
     println!("Frontend: http://localhost:{port}");
-    println!("API endpoints:");
-    println!("  POST /api/analyze      - Full content analysis");
-    println!("  POST /api/classify     - Classify content");
-    println!("  POST /api/sentiment    - Analyze sentiment");
-    println!("  POST /api/extract      - Extract entities");
-    println!("  POST /api/reason       - Chain-of-thought reasoning");
-    println!("  POST /api/embed        - Generate embedding");
-    println!("  GET  /api/search?q=... - Search content catalog");
-    println!("  GET  /api/catalog      - Full catalog");
-    println!("  GET  /api/agents       - List available agents");
+    println!("LLM: MiMo mimo-v2.5-pro");
 
+    let root = out_dir;
+    let listener = TcpListener::bind(("127.0.0.1", port)).unwrap();
     for stream in listener.incoming() {
-        if let Ok(mut stream) = stream {
-            handle_request(&mut stream, &output_dir, &llm);
-        }
+        if let Ok(mut stream) = stream { handle(&mut stream, &root, &llm); }
     }
 }
 
-fn handle_request(stream: &mut TcpStream, root: &Path, llm: &Arc<MockBackend>) {
-    let mut request = [0u8; 8192];
-    let size = stream.read(&mut request).unwrap_or(0);
-    let first_line = String::from_utf8_lossy(&request[..size]);
-    let request_line = first_line.lines().next().unwrap_or("");
-    let parts: Vec<&str> = request_line.split_whitespace().collect();
-    let method = parts.first().copied().unwrap_or("");
+fn handle(stream: &mut TcpStream, root: &Path, llm: &Arc<dyn LlmBackend>) {
+    let mut req = [0u8; 8192];
+    let size = stream.read(&mut req).unwrap_or(0);
+    let first = String::from_utf8_lossy(&req[..size]);
+    let parts: Vec<&str> = first.lines().next().unwrap_or("").split_whitespace().collect();
+    let method = parts.first().copied().unwrap_or("GET");
     let target = parts.get(1).copied().unwrap_or("/");
-
-    let body_start = first_line.find("\r\n\r\n").map(|i| i + 4).unwrap_or(0);
-    let body = String::from_utf8_lossy(&request[body_start..size]).to_string();
-
     let (path, query) = parse_url(target);
+    let body_start = first.find("\r\n\r\n").map(|i| i+4).unwrap_or(0);
+    let body = String::from_utf8_lossy(&req[body_start..size]).to_string();
 
-    match (method, path.as_str()) {
-        ("GET", "/" | "/index.html") => serve_file(stream, root, "index.html", "text/html; charset=utf-8"),
-        ("GET", "/ax-ui.css") => serve_file(stream, root, "ax-ui.css", "text/css; charset=utf-8"),
-        ("GET", "/ax-ui.js") => serve_file(stream, root, "ax-ui.js", "text/javascript; charset=utf-8"),
+    if method == "GET" && (path == "/" || path == "/index.html") {
+        if let Ok(content) = std::fs::read(root.join("index.html")) {
+            return send(stream, 200, "text/html; charset=utf-8", &content);
+        }
+    }
+
+    let resp = match (method, path.as_str()) {
         ("GET", "/api/search") => {
             let q = query.get("q").map(|s| s.as_str()).unwrap_or("");
-            serve_json(stream, &api_search(q));
+            let catalog = build_catalog();
+            let results: Vec<serde_json::Value> = catalog.iter()
+                .filter(|(t,c,d,_)| q.is_empty() || t.to_lowercase().contains(q) || c.to_lowercase().contains(q) || d.to_lowercase().contains(q))
+                .map(|(t,c,d,r)| serde_json::json!({"title":t,"category":c,"description":d,"rating":r}))
+                .collect();
+            (200, serde_json::json!({"query":q,"count":results.len(),"results":results}))
         }
-        ("GET", "/api/catalog") => serve_json(stream, &api_catalog()),
-        ("GET", "/api/agents") => serve_json(stream, &api_agents()),
-        ("POST", "/api/analyze") => {
-            let input = parse_json_body(&body);
-            serve_json(stream, &api_analyze(llm, &input));
+        ("GET", "/api/catalog") => {
+            let catalog = build_catalog();
+            let items: Vec<serde_json::Value> = catalog.iter().map(|(t,c,d,r)| serde_json::json!({"title":t,"category":c,"description":d,"rating":r})).collect();
+            (200, serde_json::json!({"total":items.len(),"catalog":items}))
         }
+        ("GET", "/api/agents") => (200, serde_json::json!({"agents":[{"name":"content_agent","capabilities":["search","classify","sentiment","extract"]},{"name":"reasoning_agent","capabilities":["reason","explain"]},{"name":"memory_agent","capabilities":["remember","recall"]}] })),
         ("POST", "/api/classify") => {
-            let input = parse_json_body(&body);
-            serve_json(stream, &api_classify(llm, &input));
+            let p: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
+            let text = p.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            match llm.generate("Classify into: news, opinion, review, tutorial. Reply ONLY the category.", &[("user".into(), text.to_string())]) {
+                Ok(r) => (200, serde_json::json!({"input":text,"category":r.trim(),"llm":"mimo-v2.5-pro"})),
+                Err(e) => (500, serde_json::json!({"error":e.to_string()})),
+            }
         }
         ("POST", "/api/sentiment") => {
-            let input = parse_json_body(&body);
-            serve_json(stream, &api_sentiment(llm, &input));
+            let p: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
+            let text = p.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            match llm.generate("Analyze sentiment: positive, negative, or neutral. Reply ONLY the sentiment.", &[("user".into(), text.to_string())]) {
+                Ok(r) => (200, serde_json::json!({"input":text,"sentiment":r.trim(),"llm":"mimo-v2.5-pro"})),
+                Err(e) => (500, serde_json::json!({"error":e.to_string()})),
+            }
         }
         ("POST", "/api/extract") => {
-            let input = parse_json_body(&body);
-            serve_json(stream, &api_extract(llm, &input));
+            let p: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
+            let text = p.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            match llm.generate("Extract people, organizations, topics. One per line.", &[("user".into(), text.to_string())]) {
+                Ok(r) => { let e: Vec<&str> = r.lines().filter(|l|!l.trim().is_empty()).collect(); (200, serde_json::json!({"input":text,"entities":e,"count":e.len(),"llm":"mimo-v2.5-pro"})) },
+                Err(e) => (500, serde_json::json!({"error":e.to_string()})),
+            }
         }
         ("POST", "/api/reason") => {
-            let input = parse_json_body(&body);
-            serve_json(stream, &api_reason(llm, &input));
+            let p: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
+            let q = p.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            match llm.generate("Think step by step, show reasoning, then give a clear answer.", &[("user".into(), q.to_string())]) {
+                Ok(r) => (200, serde_json::json!({"query":q,"reasoning":r,"llm":"mimo-v2.5-pro"})),
+                Err(e) => (500, serde_json::json!({"error":e.to_string()})),
+            }
         }
         ("POST", "/api/embed") => {
-            let input = parse_json_body(&body);
-            serve_json(stream, &api_embed(llm, &input));
+            let p: serde_json::Value = serde_json::from_str(&body).unwrap_or(serde_json::json!({}));
+            let text = p.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            match llm.embed(text) {
+                Ok(e) => { let p: Vec<i64> = e.iter().take(10).cloned().collect(); (200, serde_json::json!({"input":text,"dimensions":e.len(),"preview":p,"llm":"mimo-v2.5-pro"})) },
+                Err(e) => (500, serde_json::json!({"error":e.to_string()})),
+            }
         }
-        _ => respond(stream, "404 Not Found", "text/plain", b"Not found"),
-    }
+        _ => (404, serde_json::json!({"error":"not found"})),
+    };
+    send_json(stream, resp.0, &resp.1);
+}
+
+fn send_json(stream: &mut TcpStream, status: u16, value: &serde_json::Value) {
+    let body = serde_json::to_string_pretty(value).unwrap();
+    let hdr = format!("HTTP/1.1 {status}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n", body.len());
+    let _ = stream.write_all(hdr.as_bytes()); let _ = stream.write_all(body.as_bytes());
+}
+
+fn send(stream: &mut TcpStream, status: u16, ct: &str, body: &[u8]) {
+    let hdr = format!("HTTP/1.1 {status}\r\nContent-Type: {ct}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+    let _ = stream.write_all(hdr.as_bytes()); let _ = stream.write_all(body);
 }
 
 fn parse_url(url: &str) -> (String, HashMap<String, String>) {
     let mut parts = url.splitn(2, '?');
     let path = parts.next().unwrap_or("/").to_string();
-    let mut query = HashMap::new();
-    if let Some(qs) = parts.next() {
-        for param in qs.split('&') {
-            if let Some((k, v)) = param.split_once('=') {
-                query.insert(k.to_string(), v.to_string());
-            }
-        }
-    }
-    (path, query)
+    let mut q = HashMap::new();
+    if let Some(qs) = parts.next() { for p in qs.split('&') { if let Some((k,v)) = p.split_once('=') { q.insert(k.to_string(), v.to_string()); } } }
+    (path, q)
 }
 
-fn parse_json_body(body: &str) -> HashMap<String, String> {
-    let mut map = HashMap::new();
-    if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
-        if let Some(obj) = json.as_object() {
-            for (k, v) in obj {
-                if let Some(s) = v.as_str() {
-                    map.insert(k.clone(), s.to_string());
-                }
-            }
-        }
-    }
-    map
-}
+type CE = (String, String, String, i32);
+fn build_catalog() -> Vec<CE> { vec![
+    ("Introduction to Agent Programming".into(),"tutorial".into(),"Learn how to build AI agents with AXL 3.0".into(),10),
+    ("The Future of AI Agents".into(),"opinion".into(),"Why agent-native languages are the future".into(),9),
+    ("AXL 3.0 Release Notes".into(),"news".into(),"New LLM primitives and semantic memory".into(),9),
+    ("Building a Chatbot with AXL".into(),"tutorial".into(),"Step-by-step guide to agent communication".into(),8),
+    ("AI Agent Security Best Practices".into(),"news".into(),"How to secure agent tool permissions".into(),9),
+    ("Semantic Memory in Practice".into(),"tutorial".into(),"Using recall_semantic for better search".into(),8),
+    ("Agent-to-Agent Communication".into(),"tutorial".into(),"Send, delegate, and broadcast patterns".into(),9),
+    ("LLM Primitives Deep Dive".into(),"tutorial".into(),"Understanding reason, classify, extract".into(),10),
+    ("Event-Driven Agent Architecture".into(),"opinion".into(),"Why events matter for autonomous agents".into(),8),
+    ("Memory Persistence with AXL".into(),"tutorial".into(),"Storing and retrieving semantic memories".into(),7),
+]}
 
-fn serve_file(stream: &mut TcpStream, root: &Path, name: &str, content_type: &str) {
-    match std::fs::read(root.join(name)) {
-        Ok(body) => respond(stream, "200 OK", content_type, &body),
-        Err(_) => respond(stream, "404 Not Found", "text/plain", b"File not found"),
-    }
-}
-
-fn serve_json(stream: &mut TcpStream, value: &serde_json::Value) {
-    let body = serde_json::to_vec_pretty(value).unwrap_or_default();
-    let header = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {}\r\nAccess-Control-Allow-Origin: *\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS\r\nAccess-Control-Allow-Headers: Content-Type\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-    let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(&body);
-}
-
-fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &[u8]) {
-    let header = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-        body.len()
-    );
-    let _ = stream.write_all(header.as_bytes());
-    let _ = stream.write_all(body);
-}
-
-// ============================================================================
-// API Implementations
-// ============================================================================
-
-fn api_search(query: &str) -> serde_json::Value {
-    let catalog = build_content_catalog();
-    let results: Vec<&(String, String, String, i32)> = catalog.iter()
-        .filter(|(title, cat, desc, _)|
-            query.is_empty() ||
-            title.to_lowercase().contains(&query.to_lowercase()) ||
-            cat.to_lowercase().contains(&query.to_lowercase()) ||
-            desc.to_lowercase().contains(&query.to_lowercase())
-        )
-        .collect();
-
-    let items: Vec<serde_json::Value> = results.into_iter().map(|(title, cat, desc, rating)| {
-        serde_json::json!({
-            "title": title,
-            "category": cat,
-            "description": desc,
-            "rating": rating
-        })
-    }).collect();
-
-    serde_json::json!({
-        "query": query,
-        "count": items.len(),
-        "results": items
-    })
-}
-
-fn api_catalog() -> serde_json::Value {
-    let catalog = build_content_catalog();
-    let items: Vec<serde_json::Value> = catalog.iter().map(|(title, cat, desc, rating)| {
-        serde_json::json!({
-            "title": title,
-            "category": cat,
-            "description": desc,
-            "rating": rating
-        })
-    }).collect();
-    serde_json::json!({ "total": items.len(), "catalog": items })
-}
-
-fn api_agents() -> serde_json::Value {
-    serde_json::json!({
-        "agents": [
-            {
-                "name": "content_agent",
-                "description": "Search and analyze content",
-                "capabilities": ["search", "classify", "sentiment", "extract"],
-                "tools": ["search_catalog", "classify_content", "analyze_sentiment", "extract_entities"]
-            },
-            {
-                "name": "reasoning_agent",
-                "description": "Chain-of-thought reasoning",
-                "capabilities": ["reason", "explain", "summarize"],
-                "tools": ["reason_content"]
-            },
-            {
-                "name": "memory_agent",
-                "description": "Semantic memory operations",
-                "capabilities": ["remember", "recall", "search_similar"],
-                "tools": ["embed_text"]
-            }
-        ]
-    })
-}
-
-fn api_analyze(llm: &Arc<MockBackend>, input: &HashMap<String, String>) -> serde_json::Value {
-    let default_text = "No text provided".to_string();
-    let text = input.get("text").unwrap_or(&default_text);
-    let system = "Analyze this content comprehensively. Provide: 1) Category, 2) Sentiment, 3) Key entities, 4) Summary.";
-    let messages = vec![("user".to_string(), text.clone())];
-    let result = llm.generate(system, &messages).unwrap_or_else(|_| "Analysis failed".into());
-    serde_json::json!({
-        "input": text,
-        "analysis": result,
-        "agent": "content_agent",
-        "primitives_used": ["classify", "sentiment", "extract", "reason"]
-    })
-}
-
-fn api_classify(llm: &Arc<MockBackend>, input: &HashMap<String, String>) -> serde_json::Value {
-    let default_text = "".to_string();
-    let text = input.get("text").unwrap_or(&default_text);
-    let system = "Classify this content into one category: news, opinion, review, tutorial, entertainment. Reply with ONLY the category name.";
-    let messages = vec![("user".to_string(), text.clone())];
-    let category = llm.generate(system, &messages).unwrap_or_else(|_| "unknown".into());
-    serde_json::json!({
-        "input": text,
-        "category": category.trim(),
-        "agent": "content_agent",
-        "primitive": "classify"
-    })
-}
-
-fn api_sentiment(llm: &Arc<MockBackend>, input: &HashMap<String, String>) -> serde_json::Value {
-    let default_text = "".to_string();
-    let text = input.get("text").unwrap_or(&default_text);
-    let system = "Analyze the sentiment of this text. Reply with: positive, negative, or neutral.";
-    let messages = vec![("user".to_string(), text.clone())];
-    let sentiment = llm.generate(system, &messages).unwrap_or_else(|_| "neutral".into());
-    serde_json::json!({
-        "input": text,
-        "sentiment": sentiment.trim(),
-        "agent": "content_agent",
-        "primitive": "sentiment"
-    })
-}
-
-fn api_extract(llm: &Arc<MockBackend>, input: &HashMap<String, String>) -> serde_json::Value {
-    let default_text = "".to_string();
-    let text = input.get("text").unwrap_or(&default_text);
-    let system = "Extract key entities from this text: people names, organizations, topics. One per line.";
-    let messages = vec![("user".to_string(), text.clone())];
-    let result = llm.generate(system, &messages).unwrap_or_default();
-    let entities: Vec<&str> = result.lines().filter(|l| !l.trim().is_empty()).collect();
-    serde_json::json!({
-        "input": text,
-        "entities": entities,
-        "count": entities.len(),
-        "agent": "content_agent",
-        "primitive": "extract"
-    })
-}
-
-fn api_reason(llm: &Arc<MockBackend>, input: &HashMap<String, String>) -> serde_json::Value {
-    let default_text = "".to_string();
-    let query = input.get("query").or(input.get("text")).unwrap_or(&default_text);
-    let system = "You are a thoughtful AI assistant. Think step by step, show your reasoning, then provide a clear answer.";
-    let messages = vec![("user".to_string(), query.clone())];
-    let reasoning = llm.generate(system, &messages).unwrap_or_else(|_| "Reasoning failed".into());
-    serde_json::json!({
-        "query": query,
-        "reasoning": reasoning,
-        "agent": "reasoning_agent",
-        "primitive": "reason"
-    })
-}
-
-fn api_embed(llm: &Arc<MockBackend>, input: &HashMap<String, String>) -> serde_json::Value {
-    let default_text = "".to_string();
-    let text = input.get("text").unwrap_or(&default_text);
-    let embedding = llm.embed(text).unwrap_or_default();
-    let preview: Vec<i64> = embedding.iter().take(10).cloned().collect();
-    serde_json::json!({
-        "input": text,
-        "dimensions": embedding.len(),
-        "preview": preview,
-        "agent": "memory_agent",
-        "primitive": "embed"
-    })
-}
-
-// ============================================================================
-// Content Catalog
-// ============================================================================
-
-type CatalogEntry = (String, String, String, i32);
-
-fn build_content_catalog() -> Vec<CatalogEntry> {
-    vec![
-        ("Introduction to Agent Programming".into(), "tutorial".into(), "Learn how to build AI agents with AXL 3.0".into(), 10),
-        ("The Future of AI Agents".into(), "opinion".into(), "Why agent-native languages are the future".into(), 9),
-        ("AXL 3.0 Release Notes".into(), "news".into(), "New LLM primitives and semantic memory".into(), 9),
-        ("Building a Chatbot with AXL".into(), "tutorial".into(), "Step-by-step guide to agent communication".into(), 8),
-        ("AI Agent Security Best Practices".into(), "news".into(), "How to secure agent tool permissions".into(), 9),
-        ("Semantic Memory in Practice".into(), "tutorial".into(), "Using recall_semantic for better search".into(), 8),
-        ("Agent-to-Agent Communication".into(), "tutorial".into(), "Send, delegate, and broadcast patterns".into(), 9),
-        ("LLM Primitives Deep Dive".into(), "tutorial".into(), "Understanding reason, classify, extract".into(), 10),
-        ("Event-Driven Agent Architecture".into(), "opinion".into(), "Why events matter for autonomous agents".into(), 8),
-        ("Memory Persistence with AXL".into(), "tutorial".into(), "Storing and retrieving semantic memories".into(), 7),
-    ]
-}
+const HTML: &str = r#"<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>AI Platform — MiMo</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#090909;color:#f5f5f1;font-family:system-ui,sans-serif}.hdr{background:linear-gradient(135deg,#1a1a2e,#16213e);padding:40px;text-align:center}.hdr h1{color:#e50914;font-size:36px;margin-bottom:10px}.hdr p{color:#888}.c{max-width:1200px;margin:0 auto;padding:20px}.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px;margin:20px 0}.card{background:#1a1a1a;border-radius:8px;padding:20px}.card h3{color:#e50914;margin-bottom:10px}.btn{background:#e50914;border:0;color:#fff;padding:12px 24px;border-radius:6px;cursor:pointer;font-size:14px}.btn:hover{background:#ff1a25}textarea{width:100%;height:80px;background:#0d0d0d;border:1px solid #333;color:#fff;padding:12px;border-radius:6px;font-family:monospace;font-size:14px;margin:10px 0}pre{background:#0d0d0d;padding:12px;border-radius:6px;font-size:13px;overflow:auto;margin-top:10px;max-height:300px;white-space:pre-wrap}.mimo{background:#2d1a4a;color:#a855f7;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:600}</style></head><body><div class="hdr"><h1>AI Content Platform</h1><p>Powered by <span class="mimo">MiMo mimo-v2.5-pro</span></p></div><div class="c"><div class="card" style="margin-bottom:20px"><h3>Chain-of-Thought Reasoning</h3><textarea id="ri" placeholder="Ask a question...">What are the benefits of agent-native programming?</textarea><button class="btn" onclick="reason()">Reason with MiMo</button><pre id="ro">Click Reason...</pre></div><div class="g"><div class="card"><h3>Classification</h3><textarea id="ci">AXL is a new programming language for AI agents.</textarea><button class="btn" onclick="classify()">Classify</button><pre id="co">Result...</pre></div><div class="card"><h3>Sentiment</h3><textarea id="si">This AI language is absolutely amazing!</textarea><button class="btn" onclick="sentiment()">Analyze</button><pre id="so">Result...</pre></div><div class="card"><h3>Entity Extraction</h3><textarea id="ei">Elon Musk founded Tesla in Austin, Texas.</textarea><button class="btn" onclick="extract()">Extract</button><pre id="eo">Result...</pre></div></div></div><script>async function api(e,i,o){const t=document.getElementById(i).value;document.getElementById(o).textContent='Processing...';try{const r=await fetch(e,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:t})});const d=await r.json();document.getElementById(o).textContent=JSON.stringify(d,null,2)}catch(x){document.getElementById(o).textContent='Error: '+x.message}}async function reason(){const t=document.getElementById('ri').value;document.getElementById('ro').textContent='Reasoning...';try{const r=await fetch('/api/reason',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({query:t})});const d=await r.json();document.getElementById('ro').textContent=d.reasoning||JSON.stringify(d,null,2)}catch(x){document.getElementById('ro').textContent='Error: '+x.message}}function classify(){api('/api/classify','ci','co')}function sentiment(){api('/api/sentiment','si','so')}function extract(){api('/api/extract','ei','eo')}</script></body></html>"#;
