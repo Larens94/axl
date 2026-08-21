@@ -1,0 +1,13 @@
+[package]
+name = "mimo-test"
+version = "0.1.0"
+edition = "2024"
+
+[[bin]]
+name = "mimo-test"
+path = "src/main.rs"
+
+[dependencies]
+axl-core = { path = "../../runtime/axl-core-rs" }
+
+[workspace]

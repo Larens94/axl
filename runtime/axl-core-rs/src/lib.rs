@@ -13,6 +13,7 @@ pub mod llm;
 pub mod primitives;
 pub mod web;
 pub mod compiler;
+pub mod mimo;
 
 pub use compact::{parse_compact, is_compact_source, program_to_compact, split_compact_frames};
 pub use validation::validate;
