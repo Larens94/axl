@@ -317,7 +317,7 @@ fn validate_node(node: &Node, ids: &mut HashSet<u32>) -> Result<(), AxlError> {
         ),
         3 => (&[(1, "string")][..], &[][..], true),
         4 => (
-            &[(1, "string"), (2, "string"), (3, "int")][..],
+            &[(1, "string"), (2, "string"), (3, "int"), (4, "int")][..],
             &[1][..],
             false,
         ),
@@ -471,13 +471,14 @@ fn render_node(node: &Node) -> String {
         ),
         4 => {
             let tone = integer(node, 3).clamp(1, 10);
+            let size = integer(node, 4).clamp(1, 2);
             let action = node
                 .events
                 .first()
                 .map(|event| event.action)
                 .unwrap_or(node.id);
             format!(
-                "<button class=\"ax-card ax-tone-{tone}\" data-action=\"{action}\"><span class=\"ax-rank\">{}</span><strong>{}</strong><small>{}</small><i>▶</i></button>",
+                "<button class=\"ax-card ax-tone-{tone} ax-size-{size}\" data-action=\"{action}\"><span class=\"ax-rank\">{}</span><strong>{}</strong><small>{}</small><i>▶</i></button>",
                 node.id,
                 text(node, 1),
                 text(node, 2)
@@ -511,7 +512,7 @@ mod tests {
 
     #[test]
     fn parses_nested_numeric_ui() {
-        let program = parse("3;80|1|1|\"demo\";60|1;61|1|1;62|1|\"AX\";61|2|3;62|1|\"Row\";61|3|4;62|1|\"Film\";62|2|\"New\";62|3|#1;63|1|3;99;99;99").unwrap();
+        let program = parse("3;80|1|1|\"demo\";60|1;61|1|1;62|1|\"AX\";61|2|3;62|1|\"Row\";61|3|4;62|1|\"Film\";62|2|\"New\";62|3|#1;62|4|#1;63|1|3;99;99;99").unwrap();
         assert_eq!(program.views[0].root.children[0].children[0].id, 3);
     }
 

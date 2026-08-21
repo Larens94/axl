@@ -115,20 +115,15 @@ AXL è distribuito con licenza [Apache-2.0](LICENSE).
 ## Toolchain Rust canonica (sperimentale)
 
 Il workspace Rust contiene la prima vertical slice della toolchain canonica:
-Source 3 numerico, AST AX-UI, validazione del registry e renderer web. Python
-rimane la reference implementation della semantica precedente durante la
-migrazione.
+Source 3 numerico, AST AX-UI, validazione del registry, renderer web e server
+locale. Il flusso AX-UI corrente usa esclusivamente Rust.
 
 ```bash
 source "$HOME/.cargo/env"
 cargo test --workspace
-cargo run -p axl-cli -- \
-  build examples/streaming_home.axl \
-  --target web \
-  -o build/streaming_home-rs
-python3 -m http.server 8000 --directory build/streaming_home-rs
+cargo run -p axl-cli -- serve examples/streaming_home.axl
 ```
 
-Aprire quindi `http://localhost:8000`. Il solo sorgente applicativo è
-`examples/streaming_home.axl`; HTML, CSS e JavaScript sono generati dal renderer
-Rust.
+Aprire quindi `http://localhost:8000`. Il comando compila, serve e ricompila il
+sorgente quando cambia. Il solo sorgente applicativo è
+`examples/streaming_home.axl`; HTML, CSS e JavaScript sono generati da Rust.
