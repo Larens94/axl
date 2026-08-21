@@ -1,0 +1,16 @@
+[package]
+name = "ai-platform"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "ai-platform"
+path = "src/main.rs"
+
+[dependencies]
+axl-core = { path = "../axl-core-rs" }
+serde_json = "1"
+
+[lints]
+workspace = true

@@ -20,7 +20,7 @@ pub use render_web::build_web;
 pub use memory::{InMemoryStore, SQLiteMemoryStore, MemoryStore};
 pub use policy::Tool;
 pub use ir::{Program, Value, Expression, Instruction};
-pub use llm::{LlmBackend, MockBackend, reason, classify, extract, generate, generate_json, embed, similarity};
+pub use llm::{LlmBackend, LlmError, MockBackend, reason, classify, extract, generate, generate_json, embed, similarity};
 
 use std::sync::{Arc, Mutex};
 
