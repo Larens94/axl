@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::{Arc, Mutex};
+use std::path::Path;
 use crate::ir::Value;
 
 pub fn http_server_create(args: &[Value]) -> Result<Value, String> {
@@ -27,13 +27,69 @@ pub fn http_server_route(args: &[Value]) -> Result<Value, String> {
 pub fn http_server_static(args: &[Value]) -> Result<Value, String> {
     let _server = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     let _path = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("/");
-    let _dir = args.get(2).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("./public");
-    Ok(Value::Bool(true))
+    let dir = args.get(2).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("./public");
+    // Actually serve static files
+    Ok(Value::Map(vec![
+        (Value::String("static_dir".into()), Value::String(dir.into())),
+        (Value::String("status".into()), Value::String("configured".into())),
+    ]))
 }
 
 pub fn http_server_listen(args: &[Value]) -> Result<Value, String> {
     let addr = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("127.0.0.1:8080");
-    Ok(Value::String(format!("listening on {addr}")))
+    let static_dir = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
+    
+    let listener = TcpListener::bind(addr).map_err(|e| format!("http_listen: {e}"))?;
+    println!("AXL HTTP Server listening on {addr}");
+    
+    if !static_dir.is_empty() {
+        println!("Serving static files from: {static_dir}");
+    }
+    
+    // Serve a simple response for each connection
+    for stream in listener.incoming() {
+        match stream {
+            Ok(mut stream) => {
+                let mut request = [0u8; 4096];
+                let size = stream.read(&mut request).unwrap_or(0);
+                let request_str = String::from_utf8_lossy(&request[..size]);
+                let first_line = request_str.lines().next().unwrap_or("");
+                let parts: Vec<&str> = first_line.split_whitespace().collect();
+                let path = parts.get(1).unwrap_or(&"/");
+                
+                // Check for static file
+                if !static_dir.is_empty() && *path != "/" {
+                    let file_path = format!("{}/{}", static_dir.trim_end_matches('/'), path.trim_start_matches('/'));
+                    if let Ok(content) = std::fs::read(&file_path) {
+                        let ct = match path.rsplit('.').next() {
+                            Some("html") => "text/html; charset=utf-8",
+                            Some("css") => "text/css; charset=utf-8",
+                            Some("js") => "text/javascript; charset=utf-8",
+                            _ => "application/octet-stream",
+                        };
+                        let response = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: {ct}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            content.len()
+                        );
+                        let _ = stream.write_all(response.as_bytes());
+                        let _ = stream.write_all(&content);
+                        continue;
+                    }
+                }
+                
+                // Default response
+                let body = format!("{{\"path\":\"{path}\",\"method\":\"{}\"}}", parts.first().unwrap_or(&"GET"));
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+            }
+            Err(_) => break,
+        }
+    }
+    
+    Ok(Value::String(format!("server stopped on {addr}")))
 }
 
 pub fn http_response(args: &[Value]) -> Result<Value, String> {
