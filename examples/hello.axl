@@ -1,4 +1,0 @@
-# AXL V0.1
-memory response_style = "short"
-let style = recall response_style
-emit style
