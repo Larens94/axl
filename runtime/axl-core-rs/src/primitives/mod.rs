@@ -6,6 +6,21 @@ pub mod math;
 pub mod system;
 pub mod serialize;
 pub mod crypto;
+pub mod http;
+pub mod db;
+pub mod ws;
+pub mod cache;
+pub mod logging;
+pub mod metrics;
+pub mod validation;
+pub mod uuid;
+pub mod compress;
+pub mod watch;
+pub mod cron;
+pub mod auth;
+pub mod email;
+pub mod ratelimit;
+pub mod secret;
 
 use crate::ir::Value;
 
@@ -58,6 +73,127 @@ pub fn call_primitive(name: &str, args: &[Value]) -> Result<Value, PrimitiveErro
         // Network
         "http_get" => net::http_get(args),
         "http_post" => net::http_post(args),
+        "http_server_create" => http::http_server_create(args).map_err(PrimitiveError),
+        "http_server_route" => http::http_server_route(args).map_err(PrimitiveError),
+        "http_server_static" => http::http_server_static(args).map_err(PrimitiveError),
+        "http_server_listen" => http::http_server_listen(args).map_err(PrimitiveError),
+        "http_response" => http::http_response(args).map_err(PrimitiveError),
+        "http_response_json" => http::http_response_json(args).map_err(PrimitiveError),
+        "http_response_html" => http::http_response_html(args).map_err(PrimitiveError),
+        "http_response_error" => http::http_response_error(args).map_err(PrimitiveError),
+        "http_request_method" => http::http_request_method(args).map_err(PrimitiveError),
+        "http_request_path" => http::http_request_path(args).map_err(PrimitiveError),
+        "http_request_query" => http::http_request_query(args).map_err(PrimitiveError),
+        "http_request_body" => http::http_request_body(args).map_err(PrimitiveError),
+        "http_request_header" => http::http_request_header(args).map_err(PrimitiveError),
+
+        // Database
+        "db_connect" => db::db_connect(args).map_err(PrimitiveError),
+        "db_execute" => db::db_execute(args).map_err(PrimitiveError),
+        "db_query" => db::db_query(args).map_err(PrimitiveError),
+        "db_begin" => db::db_begin(args).map_err(PrimitiveError),
+        "db_commit" => db::db_commit(args).map_err(PrimitiveError),
+        "db_rollback" => db::db_rollback(args).map_err(PrimitiveError),
+        "db_tables" => db::db_tables(args).map_err(PrimitiveError),
+
+        // WebSocket
+        "ws_server_create" => ws::ws_server_create(args).map_err(PrimitiveError),
+        "ws_connect" => ws::ws_connect(args).map_err(PrimitiveError),
+        "ws_send" => ws::ws_send(args).map_err(PrimitiveError),
+        "ws_recv" => ws::ws_recv(args).map_err(PrimitiveError),
+        "ws_broadcast" => ws::ws_broadcast(args).map_err(PrimitiveError),
+        "ws_on_message" => ws::ws_on_message(args).map_err(PrimitiveError),
+
+        // Cache
+        "cache_create" => cache::cache_create(args).map_err(PrimitiveError),
+        "cache_get" => cache::cache_get(args).map_err(PrimitiveError),
+        "cache_set" => cache::cache_set(args).map_err(PrimitiveError),
+        "cache_set_ttl" => cache::cache_set_ttl(args).map_err(PrimitiveError),
+        "cache_delete" => cache::cache_delete(args).map_err(PrimitiveError),
+        "cache_clear" => cache::cache_clear(args).map_err(PrimitiveError),
+        "cache_size" => cache::cache_size(args).map_err(PrimitiveError),
+
+        // Logging
+        "log_info" => logging::log_info(args).map_err(PrimitiveError),
+        "log_warn" => logging::log_warn(args).map_err(PrimitiveError),
+        "log_error" => logging::log_error(args).map_err(PrimitiveError),
+        "log_debug" => logging::log_debug(args).map_err(PrimitiveError),
+        "log_set_level" => logging::log_set_level(args).map_err(PrimitiveError),
+        "log_set_file" => logging::log_set_file(args).map_err(PrimitiveError),
+        "log_json" => logging::log_json(args).map_err(PrimitiveError),
+
+        // Metrics
+        "metric_counter" => metrics::metric_counter(args).map_err(PrimitiveError),
+        "metric_gauge" => metrics::metric_gauge(args).map_err(PrimitiveError),
+        "metric_histogram" => metrics::metric_histogram(args).map_err(PrimitiveError),
+        "metric_timer_start" => metrics::metric_timer_start(args).map_err(PrimitiveError),
+        "metric_timer_stop" => metrics::metric_timer_stop(args).map_err(PrimitiveError),
+
+        // Validation
+        "validate_email" => validation::validate_email(args).map_err(PrimitiveError),
+        "validate_url" => validation::validate_url(args).map_err(PrimitiveError),
+        "validate_ip" => validation::validate_ip(args).map_err(PrimitiveError),
+        "validate_uuid" => validation::validate_uuid(args).map_err(PrimitiveError),
+        "validate_json" => validation::validate_json_str(args).map_err(PrimitiveError),
+        "validate_regex" => validation::validate_regex(args).map_err(PrimitiveError),
+        "validate_credit_card" => validation::validate_credit_card(args).map_err(PrimitiveError),
+        "validate_phone" => validation::validate_phone(args).map_err(PrimitiveError),
+
+        // UUID
+        "uuid_v4" => uuid::uuid_v4(args).map_err(PrimitiveError),
+        "uuid_v5" => uuid::uuid_v5(args).map_err(PrimitiveError),
+        "uuid_parse" => uuid::uuid_parse(args).map_err(PrimitiveError),
+        "uuid_validate" => uuid::uuid_validate(args).map_err(PrimitiveError),
+
+        // Compression
+        "gzip_compress" => compress::gzip_compress(args).map_err(PrimitiveError),
+        "gzip_decompress" => compress::gzip_decompress(args).map_err(PrimitiveError),
+        "zstd_compress" => compress::zstd_compress(args).map_err(PrimitiveError),
+        "zstd_decompress" => compress::zstd_decompress(args).map_err(PrimitiveError),
+        "brotli_compress" => compress::brotli_compress(args).map_err(PrimitiveError),
+        "brotli_decompress" => compress::brotli_decompress(args).map_err(PrimitiveError),
+
+        // File Watch
+        "watch_create" => watch::watch_create(args).map_err(PrimitiveError),
+        "watch_add" => watch::watch_add(args).map_err(PrimitiveError),
+        "watch_remove" => watch::watch_remove(args).map_err(PrimitiveError),
+        "watch_poll" => watch::watch_poll(args).map_err(PrimitiveError),
+        "watch_close" => watch::watch_close(args).map_err(PrimitiveError),
+
+        // Cron
+        "cron_create" => cron::cron_create(args).map_err(PrimitiveError),
+        "cron_add" => cron::cron_add(args).map_err(PrimitiveError),
+        "cron_remove" => cron::cron_remove(args).map_err(PrimitiveError),
+        "cron_start" => cron::cron_start(args).map_err(PrimitiveError),
+        "cron_stop" => cron::cron_stop(args).map_err(PrimitiveError),
+        "cron_list" => cron::cron_list(args).map_err(PrimitiveError),
+
+        // Auth
+        "auth_hash_password" => auth::auth_hash_password(args).map_err(PrimitiveError),
+        "auth_verify_password" => auth::auth_verify_password(args).map_err(PrimitiveError),
+        "auth_jwt_create" => auth::auth_jwt_create(args).map_err(PrimitiveError),
+        "auth_jwt_verify" => auth::auth_jwt_verify(args).map_err(PrimitiveError),
+        "auth_jwt_decode" => auth::auth_jwt_decode(args).map_err(PrimitiveError),
+        "session_create" => auth::session_create(args).map_err(PrimitiveError),
+        "session_get" => auth::session_get(args).map_err(PrimitiveError),
+        "session_destroy" => auth::session_destroy(args).map_err(PrimitiveError),
+
+        // Email
+        "email_send" => email::email_send(args).map_err(PrimitiveError),
+        "email_send_html" => email::email_send_html(args).map_err(PrimitiveError),
+        "email_send_attach" => email::email_send_attach(args).map_err(PrimitiveError),
+        "email_template" => email::email_template(args).map_err(PrimitiveError),
+
+        // Rate Limit
+        "ratelimit_create" => ratelimit::ratelimit_create(args).map_err(PrimitiveError),
+        "ratelimit_check" => ratelimit::ratelimit_check(args).map_err(PrimitiveError),
+        "ratelimit_reset" => ratelimit::ratelimit_reset(args).map_err(PrimitiveError),
+
+        // Secrets
+        "secret_store" => secret::secret_store(args).map_err(PrimitiveError),
+        "secret_get" => secret::secret_get(args).map_err(PrimitiveError),
+        "secret_delete" => secret::secret_delete(args).map_err(PrimitiveError),
+        "secret_list" => secret::secret_list(args).map_err(PrimitiveError),
 
         // Text
         "text_upper" => text::text_upper(args),
@@ -165,7 +301,47 @@ pub fn available_primitives() -> Vec<&'static str> {
         "file_read", "file_write", "file_exists", "file_size", "file_delete",
         "file_copy", "file_move", "dir_create", "dir_list", "dir_delete",
         // Network
-        "http_get", "http_post",
+        "http_get", "http_post", "http_server_create", "http_server_start",
+        "http_listen", "http_response", "http_response_json", "http_response_html",
+        "http_response_error", "http_request_method", "http_request_path",
+        "http_request_query", "http_request_body", "http_request_header",
+        // Database
+        "db_connect", "db_execute", "db_query", "db_begin", "db_commit",
+        "db_rollback", "db_tables",
+        // WebSocket
+        "ws_server_create", "ws_connect", "ws_send", "ws_recv",
+        "ws_broadcast", "ws_on_message",
+        // Cache
+        "cache_create", "cache_get", "cache_set", "cache_set_ttl",
+        "cache_delete", "cache_clear", "cache_size",
+        // Logging
+        "log_info", "log_warn", "log_error", "log_debug",
+        "log_set_level", "log_set_file", "log_json",
+        // Metrics
+        "metric_counter", "metric_gauge", "metric_histogram",
+        "metric_timer_start", "metric_timer_stop",
+        // Validation
+        "validate_email", "validate_url", "validate_ip", "validate_uuid",
+        "validate_json", "validate_regex", "validate_credit_card", "validate_phone",
+        // UUID
+        "uuid_v4", "uuid_v5", "uuid_parse", "uuid_validate",
+        // Compression
+        "gzip_compress", "gzip_decompress", "zstd_compress", "zstd_decompress",
+        "brotli_compress", "brotli_decompress",
+        // File Watch
+        "watch_create", "watch_add", "watch_remove", "watch_poll", "watch_close",
+        // Cron
+        "cron_create", "cron_add", "cron_remove", "cron_start", "cron_stop", "cron_list",
+        // Auth
+        "auth_hash_password", "auth_verify_password", "auth_jwt_create",
+        "auth_jwt_verify", "auth_jwt_decode", "session_create", "session_get",
+        "session_destroy",
+        // Email
+        "email_send", "email_send_html", "email_send_attach", "email_template",
+        // Rate Limit
+        "ratelimit_create", "ratelimit_check", "ratelimit_reset",
+        // Secrets
+        "secret_store", "secret_get", "secret_delete", "secret_list",
         // Text
         "text_upper", "text_lower", "text_trim", "text_replace", "text_split",
         "text_join", "text_find", "text_contains", "text_matches", "text_length",
