@@ -1,0 +1,1 @@
+2;10|addr|"127.0.0.1:8080"|s;10|dir|"build/crm"|s;10|static|$addr,"/",$dir,!http_server_static/3|s;10|result|$addr,$dir,!http_server_listen/2|s;12|$result;

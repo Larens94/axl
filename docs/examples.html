@@ -1,484 +1,82 @@
 <!DOCTYPE html>
 <html lang="it">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AXL Documentation — Examples</title>
-  <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #fafafa; color: #1a1a1a; line-height: 1.6; }
-    .container { max-width: 900px; margin: 0 auto; padding: 40px 20px; }
-    h1 { font-size: 2.5em; margin-bottom: 10px; }
-    h2 { font-size: 1.5em; margin: 40px 0 15px; padding-bottom: 8px; border-bottom: 2px solid #e50914; }
-    h3 { font-size: 1.2em; margin: 25px 0 10px; color: #333; }
-    p { margin: 10px 0; color: #555; }
-    .subtitle { font-size: 1.1em; color: #666; margin-bottom: 30px; }
-    pre { background: #1a1a2e; color: #e5e5e5; padding: 20px; border-radius: 8px; overflow-x: auto; margin: 15px 0; font-size: 14px; line-height: 1.5; }
-    code { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.9em; }
-    .inline-code { background: #f0f0f0; padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
-    .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 0.8em; font-weight: 600; margin-left: 8px; }
-    .badge-new { background: #e8f5e9; color: #2e7d32; }
-    .badge-rust { background: #fff3e0; color: #e65100; }
-    .note { background: #fffde7; border-left: 4px solid #fbc02d; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0; }
-    .section { margin: 30px 0; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
-    @media (max-width: 768px) { .grid { grid-template-columns: 1fr; } }
-    .card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px; }
-    .card h4 { margin-bottom: 10px; color: #e50914; }
-    a { color: #e50914; text-decoration: none; }
-    a:hover { text-decoration: underline; }
-  </style>
+  <title>Esempi — AXL 3.0</title>
+  <link rel="stylesheet" href="docs.css">
 </head>
 <body>
-<div class="container">
-
-<h1>AXL Documentation <span class="badge badge-new">v3.0</span></h1>
-<p class="subtitle">Linguaggio di programmazione per agenti che wrappa Rust</p>
-
-<!-- ============================================================ -->
-<h2>1. Hello World</h2>
-
-<p>Programma AXL base che emette un messaggio:</p>
-
-<pre><code>2;12|"Hello World from AXL!"</code></pre>
-
-<p>Esecuzione:</p>
-<pre><code>$ axl run hello.axl
-Hello World from AXL!</code></pre>
-
-<!-- ============================================================ -->
-<h2>2. Variabili e Binding</h2>
-
-<p>Binding con tipo opzionale:</p>
-
-<pre><code>2;10|x|#42|is;10|name|"AXL"|s;12|$x;12|$name</code></pre>
-
-<p>Output:</p>
-<pre><code>42
-AXL</code></pre>
-
-<!-- ============================================================ -->
-<h2>3. Primitiva Native — Text</h2>
-
-<p>Elaborazione testo con primitive Rust:</p>
-
-<pre><code>2
-# Text upper
-10|upper|"hello world",!text_upper/1|s;12|$upper;
-
-# Text lower
-10|lower|"HELLO WORLD",!text_lower/1|s;12|$lower;
-
-# Text split
-10|words|"a,b,c",!text_split/2,","|s;12|$words;
-
-# Text contains
-10|has|"hello",!text_contains/2,"hell"|s;12|$has;</code></pre>
-
-<p>Output:</p>
-<pre><code>HELLO WORLD
-hello world
-["a", "b", "c"]
-true</code></pre>
-
-<!-- ============================================================ -->
-<h2>4. Primitiva Native — Math</h2>
-
-<p>Operazioni matematiche:</p>
-
-<pre><code>2
-10|sum|#10,#5,!math_add/2|s;12|"10 + 5 = ",$sum;
-
-10|prod|#6,#7,!math_mul/2|s;12|"6 * 7 = ",$prod;
-
-10|max|#3,#8,!math_max/2|s;12|"max(3,8) = ",$max;
-
-10|rand|!math_random/0|s;12|"random: ",$rand;</code></pre>
-
-<p>Output:</p>
-<pre><code>10 + 5 = 15
-6 * 7 = 42
-max(3,8) = 8
-random: 42</code></pre>
-
-<!-- ============================================================ -->
-<h2>5. Primitiva Native — Crypto</h2>
-
-<p>Hash, encoding, crittografia:</p>
-
-<pre><code>2
-10|hash|"AXL",!hash_sha256/1|s;12|$hash;
-
-10|b64|"hello",!encode_base64/1|s;12|$b64;
-
-10|hex|"test",!encode_hex/1|s;12|$hex;</code></pre>
-
-<p>Output:</p>
-<pre><code>9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08
-aGVsbG8=
-74657374</code></pre>
-
-<!-- ============================================================ -->
-<h2>6. Primitiva Native — JSON</h2>
-
-<p>Parse e stringify JSON:</p>
-
-<pre><code>2
-10|data|"{\"name\":\"AXL\",\"version\":3}",!json_parse/1|s;12|$data;
-
-10|json|#42,!json_stringify/1|s;12|$json;
-
-10|valid|"{\"ok\":true}",!json_validate/1|s;12|$valid;</code></pre>
-
-<p>Output:</p>
-<pre><code>{"name":"AXL","version":3}
-42
-true</code></pre>
-
-<!-- ============================================================ -->
-<h2>7. Primitiva Native — File I/O</h2>
-
-<p>Lettura, scrittura, controllo file:</p>
-
-<pre><code>2
-# Write file
-10|w|!file_write/2,"/tmp/test.txt","Hello from AXL!"|s;12|$w;
-
-# Read file
-10|content|!file_read/1,"/tmp/test.txt"|s;12|$content;
-
-# Check existence
-10|exists|!file_exists/1,"/tmp/test.txt"|s;12|$exists;
-
-# Get size
-10|size|!file_size/1,"/tmp/test.txt"|s;12|$size;</code></pre>
-
-<p>Output:</p>
-<pre><code>true
-Hello from AXL!
-true
-17</code></pre>
-
-<!-- ============================================================ -->
-<h2>8. Primitiva Native — Collections</h2>
-
-<p>Liste e mappe:</p>
-
-<pre><code>2
-# Create list
-10|list|!list_new/0|s;
-
-# Push items
-10|list|!list_push/2,$list,#1|s;
-10|list|!list_push/2,$list,#2|s;
-10|list|!list_push/2,$list,#3|s;
-
-# Get length
-10|len|!list_length/1,$list|s;12|$len;
-
-# Create map
-10|map|!map_new/0|s;
-10|map|!map_set/3,$map,"key","value"|s;
-
-# Get value
-10|val|!map_get/2,$map,"key"|s;12|$val;</code></pre>
-
-<p>Output:</p>
-<pre><code>3
-value</code></pre>
-
-<!-- ============================================================ -->
-<h2>9. Primitiva Native — Network</h2>
-
-<p>HTTP client:</p>
-
-<pre><code>2
-10|response|!http_get/1,"https://httpbin.org/get"|s;12|$response;</code></pre>
-
-<!-- ============================================================ -->
-<h2>10. Primitiva Native — System</h2>
-
-<p>Informazioni di sistema:</p>
-
-<pre><code>2
-10|host|!sys_hostname/0|s;12|$host;
-
-10|os|!sys_os/0|s;12|$os;
-
-10|arch|!sys_arch/0|s;12|$arch;
-
-10|ts|!time_now/0|s;12|$ts;</code></pre>
-
-<p>Output:</p>
-<pre><code>MacBook-Pro-di-Fabrizio-2.local
-macos
-aarch64
-1735000000000</code></pre>
-
-<!-- ============================================================ -->
-<h2>11. Funzioni</h2>
-
-<p>Definizione e chiamata funzioni:</p>
-
-<pre><code>2
-# Define function
-40|add|a:i,b:i|i;
-  11|$a,$b,+;
-99
-
-# Call function
-10|result|#3,#4,^add/2|s;12|$result;</code></pre>
-
-<p>Output:</p>
-<pre><code>7</code></pre>
-
-<!-- ============================================================ -->
-<h2>12. Control Flow — If/While</h2>
-
-<p>Condizioni e cicli:</p>
-
-<pre><code>2
-# If/else
-10|x|#5|i;30|$x,#3,>;12|"big";31;12|"small";99
-
-# While loop
-10|i|#0|i;32|$i,#5,<;
-  10|i|$i,#1,+|i;
-  12|$i;
-99</code></pre>
-
-<p>Output:</p>
-<pre><code>big
-1
-2
-3
-4</code></pre>
-
-<!-- ============================================================ -->
-<h2>13. Agenti</h2>
-
-<p>Definizione e esecuzione agenti:</p>
-
-<pre><code>2
-# Define agent
-50|search_agent|search_catalog;
-  40|search|query:s|s;
-    10|result|!text_lower/1,$query|s;
-    12|"[agent] Searching: ",$result;
-    11|$result;
-  99;
-99
-
-# Run agent
-12|"Running agent...";
-52|search_agent;
-12|"Agent done.";</code></pre>
-
-<!-- ============================================================ -->
-<h2>14. Workflow</h2>
-
-<p>Workflows per orchestrare agenti:</p>
-
-<pre><code>2
-51|content_pipeline;
-  12|"Pipeline started";
-  10|r1|!hash_sha256/1,"step1"|s;12|"Step 1: ",$r1;
-  10|r2|!encode_base64/1,"step2"|s;12|"Step 2: ",$r2;
-  12|"Pipeline complete";
-99
-
-52|content_pipeline;</code></pre>
-
-<!-- ============================================================ -->
-<h2>15. Backend Completo — API Server</h2>
-
-<p>Server REST con autenticazione, caching, rate limiting:</p>
-
-<pre><code>2
-# Backend logic
-40|handle_request|method:s,path:s|->s;
-  10|response|!json_stringify/1,"{status:200}"|s;
-  11|$response;
-99
-
-# Route handlers
-40|get_users|->s;
-  10|users|"[{\"id\":1,\"name\":\"Alice\"},{\"id\":2,\"name\":\"Bob\"}]",!json_parse/1|s;
-  11|$users;
-99
-
-40|create_user|data:s|->s;
-  10|id|!math_random/0|s;
-  10|result|"{\"id\":",$id,",\"status\":\"created\"}",!json_parse/1|s;
-  11|$result;
-99
-
-# API endpoints
-12|"GET /api/users";52|get_users;
-12|"POST /api/users";10|new|!create_user/1,"{}"|s;12|$new;</code></pre>
-
-<!-- ============================================================ -->
-<h2>16. Frontend Completo — UI Components</h2>
-
-<p>Componenti UI per interfacce web:</p>
-
-<pre><code>2
-# Layout components
-60|1;61|1|1;62|1|"My App";
-
-# Hero section
-61|2|30;62|1|"Welcome";62|2|"Subtitle";62|3|"Description";99;
-
-# Cards
-61|3|31;62|1|"Features";
-  61|10|32;62|1|"Fast";62|2|"High performance";62|3|#10;62|4|#1;99;
-  61|11|32;62|1|"Secure";62|2|"Memory safe";62|3|#9;62|4|#1;99;
-99;99</code></pre>
-
-<!-- ============================================================ -->
-<h2>17. Data Pipeline</h2>
-
-<p>ETL con parsing, transformazione, caching:</p>
-
-<pre><code>2
-# Extract
-10|raw|!file_read/1,"data.csv"|s;
-
-# Transform
-10|clean|!text_upper/1,$raw|s;
-
-# Load
-10|ok|!file_write/2,"output.json",$clean|s;12|"Pipeline done: ",$ok;</code></pre>
-
-<!-- ============================================================ -->
-<h2>18. Multi-Agent System</h2>
-
-<p>Agenti collaborativi con LLM:</p>
-
-<pre><code>2
-# Research Agent
-50|research_agent|search_content;
-  40|search|query:s|s;
-    10|result|!text_lower/1,$query|s;
-    11|$result;
-  99;
-99
-
-# Analysis Agent
-50|analysis_agent|classify_content;
-  40|analyze|text:s|s;
-    10|category|!classify/3,"categorize",text,"news,opinion,tutorial"|s;
-    12|"Category: ",$category;
-    11|$category;
-  99;
-99
-
-# Workflow
-51|collaborate;
-  10|q|"AI agents"|s;
-  10|searched|!text_lower/1,$q|s;
-  10|analyzed|!classify/3,"categorize",$searched,"news,opinion,tutorial"|s;
-  12|"Result: ",$analyzed;
-99
-
-52|collaborate;</code></pre>
-
-<!-- ============================================================ -->
-<h2>19. LLM Integration</h2>
-
-<p>Reasoning con MiMo LLM:</p>
-
-<pre><code>2
-# Reason
-10|answer|!reason/2,"You are helpful","What is AXL?"|s;12|$answer;
-
-# Classify
-10|category|!classify/3,"Classify this text",text,"news,opinion,tutorial"|s;12|$category;
-
-# Extract entities
-10|entities|!extract/2,"people, organizations",text|s;12|$entities;</code></pre>
-
-<!-- ============================================================ -->
-<h2>20. Memory System</h2>
-
-<p>Memoria persistente con scope e TTL:</p>
-
-<pre><code>2
-# Write memory
-20|user:1:name|"Fabrizio"|s;
-
-# Read memory
-10|name|@user:1:name|s;12|$name;
-
-# Forget memory
-21|user:1:name;</code></pre>
-
-<!-- ============================================================ -->
-<h2>Riepilogo Primitiva</h2>
-
-<div class="grid">
-  <div class="card">
-    <h4>I/O</h4>
-    <p>file_read, file_write, file_exists, file_size, file_delete, dir_create, dir_list</p>
-  </div>
-  <div class="card">
-    <h4>Text</h4>
-    <p>text_upper, text_lower, text_split, text_join, text_find, text_contains, text_matches, text_length</p>
-  </div>
-  <div class="card">
-    <h4>Collections</h4>
-    <p>list_new, list_push, list_length, list_sort, list_reverse, map_new, map_get, map_set, map_keys</p>
-  </div>
-  <div class="card">
-    <h4>Math</h4>
-    <p>math_add, math_sub, math_mul, math_div, math_pow, math_random, math_min, math_max, math_sum</p>
-  </div>
-  <div class="card">
-    <h4>Crypto</h4>
-    <p>hash_sha256, hash_blake3, hash_md5, encode_base64, decode_base64, encode_hex, decode_hex</p>
-  </div>
-  <div class="card">
-    <h4>JSON</h4>
-    <p>json_parse, json_stringify, json_validate, json_merge</p>
-  </div>
-  <div class="card">
-    <h4>Network</h4>
-    <p>http_get, http_post, tcp_connect, tcp_send, ws_connect</p>
-  </div>
-  <div class="card">
-    <h4>System</h4>
-    <p>env_get, time_now, path_join, sys_hostname, sys_os, process_run, temp_file</p>
-  </div>
-</div>
-
-<!-- ============================================================ -->
-<h2>Esecuzione</h2>
-
-<pre><code># Compila ed esegui
-$ cargo build --workspace
-$ cargo run -p axl-cli -- run examples/ai-platform/platform.axl
-
-# Esegui con memory persistente
-$ cargo run -p axl-cli -- run program.axl --memory db.sqlite
-
-# Compila a JSON IR
-$ cargo run -p axl-cli -- compile program.axl -o program.json</code></pre>
-
-<!-- ============================================================ -->
-<h2>Stack Tecnico</h2>
-
-<table style="width:100%; border-collapse:collapse; margin:20px 0;">
-<tr style="background:#f5f5f5;"><th style="padding:10px; text-align:left; border:1px solid #ddd;">Componente</th><th style="padding:10px; text-align:left; border:1px solid #ddd;">Tecnologia</th></tr>
-<tr><td style="padding:10px; border:1px solid #ddd;">Runtime</td><td style="padding:10px; border:1px solid #ddd;">Rust (axl-core)</td></tr>
-<tr><td style="padding:10px; border:1px solid #ddd;">Parser</td><td style="padding:10px; border:1px solid #ddd;">Compact Source 2/3 (RPN)</td></tr>
-<tr><td style="padding:10px; border:1px solid #ddd;">Primitiva</td><td style="padding:10px; border:1px solid #ddd;">95 native Rust</td></tr>
-<tr><td style="padding:10px; border:1px solid #ddd;">LLM Backend</td><td style="padding:10px; border:1px solid #ddd;">MiMo mimo-v2.5-pro</td></tr>
-<tr><td style="padding:10px; border:1px solid #ddd;">Memory</td><td style="padding:10px; border:1px solid #ddd;">InMemory + SQLite</td></tr>
-<tr><td style="padding:10px; border:1px solid #ddd;">UI Kit</td><td style="padding:10px; border:1px solid #ddd;">35+ componenti AX-UI</td></tr>
-</table>
-
-<p style="margin-top:40px; color:#999; font-size:0.9em;">AXL 3.0 — Linguaggio di programmazione per agenti che wrappa Rust</p>
-
-</div>
+  <header class="docs-header">
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>3.0</i></a>
+    <nav class="product-nav">
+      <a href="primitives.html">Primitiva</a>
+      <a href="llm-integration.html">LLM</a>
+      <a href="examples.html" class="active">Esempi</a>
+      <a href="https://github.com/Larens94/axl">GitHub</a>
+    </nav>
+  </header>
+
+  <main class="content-wrap">
+    <div class="article-column">
+      <h1>Esempi AXL</h1>
+      
+      <p>Tutti gli esempi sono scritti in AXL e eseguiti dall'interpreter.</p>
+
+      <h2>1. Hello World</h2>
+      <pre><code>2;12|"Hello World from AXL!"</code></pre>
+      <p>Esecuzione: <code>axl run hello.axl</code></p>
+      <p>Output: <code>Hello World from AXL!</code></p>
+
+      <h2>2. Variabili e Binding</h2>
+      <pre><code>2;10|x|#42|is;10|name|"AXL"|s;12|$x;12|$name</code></pre>
+      <p>Output: <code>42</code> + <code>AXL</code></p>
+
+      <h2>3. Text Operations</h2>
+      <pre><code>2;10|upper|"hello world",!text_upper/1|s;12|$upper
+10|words|"a,b,c",!text_split/2,","|s;12|$words</code></pre>
+      <p>Output: <code>HELLO WORLD</code> + <code>["a", "b", "c"]</code></p>
+
+      <h2>4. Math</h2>
+      <pre><code>2;10|sum|#10,#5,!math_add/2|s;12|$sum
+10|prod|#6,#7,!math_mul/2|s;12|$prod</code></pre>
+      <p>Output: <code>15</code> + <code>42</code></p>
+
+      <h2>5. Crypto</h2>
+      <pre><code>2;10|hash|"AXL",!hash_sha256/1|s;12|$hash
+10|b64|"hello",!encode_base64/1|s;12|$b64</code></pre>
+      <p>Output: <code>SHA-256 hash</code> + <code>aGVsbG8=</code></p>
+
+      <h2>6. JSON</h2>
+      <pre><code>2;10|data|'{"name":"AXL","version":3}',!json_parse/1|s;12|$data</code></pre>
+      <p>Output: <code>{"name":"AXL","version":3}</code></p>
+
+      <h2>7. File I/O</h2>
+      <pre><code>2;10|w|"/tmp/test.txt","Hello!",!file_write/2|s;12|$w
+10|c|"/tmp/test.txt",!file_read/1|s;12|$c</code></pre>
+      <p>Output: <code>true</code> + <code>Hello!</code></p>
+
+      <h2>8. System</h2>
+      <pre><code>2;10|host|!sys_hostname/0|s;12|$host
+10|os|!sys_os/0|s;12|$os
+10|ts|!time_now/0|s;12|$ts</code></pre>
+
+      <h2>9. LLM Reasoning</h2>
+      <pre><code>2;10|reason|"step by step","What is 2+2?",!llm_reason/2|s;12|$reason</code></pre>
+      <p>Output: Chain-of-thought analysis di MiMo</p>
+
+      <h2>10. LLM Classification</h2>
+      <pre><code>2;10|cat|"Classify this","Rust is great for systems","tech,science,general",!llm_classify/3|s;12|$cat</code></pre>
+      <p>Output: <code>tech</code></p>
+
+      <h2>11. Database</h2>
+      <pre><code>2;10|db|":memory:",!db_connect/1|s;12|$db</code></pre>
+      <p>Output: <code>db_:memory_</code></p>
+
+      <h2>12. Agent + Workflow</h2>
+      <pre><code>2;50|my_agent|;12|"Agent executed";99;52|my_agent;12|"Done"</code></pre>
+      <p>Output: <code>Agent executed</code> + <code>Done</code></p>
+    </div>
+  </main>
 </body>
 </html>

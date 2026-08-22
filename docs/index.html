@@ -1,115 +1,69 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="AXL: Linguaggio di programmazione agent-native che wrappa Rust">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>AXL — Linguaggio Agent-Native</title>
   <link rel="stylesheet" href="docs.css">
-  <script defer src="docs.js"></script>
 </head>
-<body data-lang="it" data-page="welcome">
-  <a class="skip" href="#content">Vai al contenuto</a>
+<body>
   <header class="docs-header">
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>3.0</i></a>
-    <nav class="product-nav" aria-label="Documentazione">
-      <a class="active" href="./">Docs</a>
+    <nav class="product-nav">
       <a href="primitives.html">Primitiva</a>
       <a href="llm-integration.html">LLM</a>
+      <a href="examples.html">Esempi</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
-    <button class="search-trigger" type="button" aria-label="Cerca" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca</span><kbd>⌘ K</kbd></button>
-    <a class="language" href="en/" hreflang="en">English</a>
-    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
   </header>
-  <div class="docs-shell">
-    <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll">
-        <div class="nav-group">
-          <p>Introduzione</p>
-          <a href="./" aria-current="page" class="active">Benvenuto</a>
-          <a href="overview.html">Visione</a>
-          <a href="architecture.html">Architettura</a>
-        </div>
-        <div class="nav-group">
-          <p>Linguaggio</p>
-          <a href="compact-syntax.html">Compact Source</a>
-          <a href="ax-ir.html">AX-IR</a>
-          <a href="primitives.html">Primitiva Native</a>
-        </div>
-        <div class="nav-group">
-          <p>Agenti</p>
-          <a href="agent-runtime.html">Runtime Agenti</a>
-          <a href="llm-integration.html">Integrazione LLM</a>
-          <a href="security.html">Sicurezza</a>
-        </div>
-        <div class="nav-group">
-          <p>Toolchain</p>
-          <a href="toolchain.html">CLI e Build</a>
-          <a href="development.html">Sviluppo</a>
-          <a href="roadmap.html">Roadmap</a>
-        </div>
-      </div>
-      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
-    </aside>
-    <main id="content" class="content-wrap">
-      <div class="article-column">
-        <p class="breadcrumb"><a href="./">Docs</a><span>/</span>Benvenuto</p>
-        <article class="prose">
-          <h1 id="axl-3-0">AXL 3.0 — Linguaggio Agent-Native</h1>
 
-          <p><strong>AXL</strong> è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare. Gli agenti combinano primitiva native per costruire qualsiasi software.</p>
+  <main class="content-wrap">
+    <div class="article-column">
+      <h1>AXL — Linguaggio Agent-Native</h1>
+      
+      <p>AXL è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare. Gli agenti combinano primitiva native per costruire qualsiasi software.</p>
 
-          <h2 id="cos-e">Cos'è AXL</h2>
-          <ul>
-            <li><strong>Linguaggio agent-native</strong> — l'agente è la prima classe, non la funzione</li>
-            <li><strong>90+ primitiva native</strong> — ogni capability di Rust è esponibile</li>
-            <li><strong>LLM integrato</strong> — reason, classify, extract, generate, embed sono native</li>
-            <li><strong>Rust-backed</strong> — performance, sicurezza, portabilità</li>
-          </ul>
+      <h2>Cos'è AXL</h2>
+      <ul>
+        <li><strong>Linguaggio agent-native</strong> — l'agente è la prima classe, non la funzione</li>
+        <li><strong>90+ primitiva native</strong> — ogni capability di Rust è esponibile</li>
+        <li><strong>LLM integrato</strong> — reason, classify, extract, generate, embed sono native</li>
+        <li><strong>Rust-backed</strong> — performance, sicurezza, portabilità</li>
+      </ul>
 
-          <h2 id="esempio">Esempio</h2>
-          <pre><code>2;10|result|"hello world",!text_upper/1|s;12|$result</code></pre>
-          <p>→ <code>"HELLO WORLD"</code></p>
+      <h2>Esempio</h2>
+      <pre><code>2;10|result|"hello world",!text_upper/1|s;12|$result</code></pre>
+      <p>Output: <code>"HELLO WORLD"</code></p>
 
-          <h2 id="primitiva">Primitiva Disponibili</h2>
-          <ul>
-            <li><strong>I/O:</strong> file_read, file_write, file_exists, dir_list...</li>
-            <li><strong>Text:</strong> text_upper, text_lower, text_split, text_find...</li>
-            <li><strong>Collections:</strong> list_push, list_sort, map_get, map_set...</li>
-            <li><strong>Math:</strong> math_add, math_mul, math_random...</li>
-            <li><strong>Crypto:</strong> hash_sha256, encode_base64, crypto_random_bytes...</li>
-            <li><strong>JSON:</strong> json_parse, json_stringify, json_validate...</li>
-            <li><strong>Network:</strong> http_get, http_post...</li>
-            <li><strong>System:</strong> env_get, time_now, path_join, process_run...</li>
-          </ul>
+      <h2>Primitiva</h2>
+      <ul>
+        <li><strong>I/O:</strong> file_read, file_write, file_exists, dir_list</li>
+        <li><strong>Text:</strong> text_upper, text_lower, text_split, text_find</li>
+        <li><strong>Collections:</strong> list_push, list_sort, map_get, map_set</li>
+        <li><strong>Math:</strong> math_add, math_mul, math_random</li>
+        <li><strong>Crypto:</strong> hash_sha256, encode_base64, crypto_random_bytes</li>
+        <li><strong>JSON:</strong> json_parse, json_stringify, json_validate</li>
+        <li><strong>Network:</strong> http_get, http_post, http_server_listen</li>
+        <li><strong>System:</strong> env_get, time_now, path_join, process_run</li>
+        <li><strong>LLM:</strong> llm_generate, llm_reason, llm_classify, llm_extract</li>
+        <li><strong>DB:</strong> db_connect, db_execute, db_query</li>
+        <li><strong>Auth:</strong> auth_hash_password, validate_email</li>
+      </ul>
 
-          <h2 id="avvio">Avvio Rapido</h2>
-          <pre><code>cargo build --workspace
-cargo run -p axl-cli -- run examples/compact.axl
-cargo run -p netflix-server     # Netflix demo
-cargo run -p ai-platform        # AI Platform demo</code></pre>
-        </article>
-        <section class="start-grid">
-          <h2>Da dove iniziare</h2>
-          <div>
-            <a class="start-card" href="primitives.html"><span>01</span><b>Primitiva</b><p>90+ primitiva native Rust.</p><em>→</em></a>
-            <a class="start-card" href="llm-integration.html"><span>02</span><b>LLM</b><p>Integrazione LLM nativa.</p><em>→</em></a>
-            <a class="start-card" href="agent-runtime.html"><span>03</span><b>Agenti</b><p>Runtime agent-native.</p><em>→</em></a>
-            <a class="start-card" href="architecture.html"><span>04</span><b>Architettura</b><p>Stack Rust completo.</p><em>→</em></a>
-          </div>
-        </section>
-        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/README.md">Modifica questa pagina ↗</a></div>
-        <nav class="pager" aria-label="Paginazione"><a class="next" href="overview.html"><small>Successivo →</small><b>Visione</b></a></nav>
-      </div>
-      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#cos-e">Cos'è AXL</a><a class="toc-l2" href="#esempio">Esempio</a><a class="toc-l2" href="#primitiva">Primitiva</a><a class="toc-l2" href="#avvio">Avvio Rapido</a></aside>
-    </main>
-  </div>
-  <dialog id="docs-search" class="search-dialog" aria-label="Cerca" data-search-dialog>
-    <form method="dialog"><button aria-label="Chiudi">×</button></form>
-    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca" placeholder="Cerca..." autocomplete="off" data-search-input></div>
-    <div class="search-results" data-search-results></div>
-  </dialog>
+      <h2>Avvio Rapido</h2>
+      <pre><code>cargo build --workspace
+cargo test --workspace
+cargo run -p axl-cli -- run examples/compact.axl</code></pre>
+
+      <h2>Documentazione</h2>
+      <ul>
+        <li><a href="primitives.html">Primitiva Native</a> — 194 primitiva complete</li>
+        <li><a href="llm-integration.html">Integrazione LLM</a> — MiMo, reasoning, classify</li>
+        <li><a href="examples.html">Esempi</a> — Backend, Data Pipeline, Frontend</li>
+        <li><a href="architecture.html">Architettura</a> — Stack Rust completo</li>
+        <li><a href="compact-syntax.html">Sintassi Compatta</a> — Format RPN</li>
+      </ul>
+    </div>
+  </main>
 </body>
 </html>

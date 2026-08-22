@@ -1,98 +1,81 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Integrazione LLM · AXL 3.0</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Integrazione LLM — AXL 3.0</title>
   <link rel="stylesheet" href="docs.css">
-  <script defer src="docs.js"></script>
 </head>
-<body data-lang="it" data-page="llm-integration">
-  <a class="skip" href="#content">Vai al contenuto</a>
+<body>
   <header class="docs-header">
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>3.0</i></a>
-    <nav class="product-nav" aria-label="Documentazione">
-      <a href="./">Docs</a>
+    <nav class="product-nav">
       <a href="primitives.html">Primitiva</a>
-      <a class="active" href="llm-integration.html">LLM</a>
+      <a href="llm-integration.html" class="active">LLM</a>
+      <a href="examples.html">Esempi</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
-    <button class="search-trigger" type="button" aria-label="Cerca"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg></button>
-    <a class="language" href="en/" hreflang="en">English</a>
-    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
   </header>
-  <div class="docs-shell">
-    <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll">
-        <div class="nav-group"><p>Introduzione</p><a href="./">Benvenuto</a><a href="overview.html">Visione</a><a href="architecture.html">Architettura</a></div>
-        <div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source</a><a href="ax-ir.html">AX-IR</a><a href="primitives.html">Primitiva Native</a></div>
-        <div class="nav-group"><p>Agenti</p><a href="agent-runtime.html">Runtime Agenti</a><a href="llm-integration.html" class="active">Integrazione LLM</a><a href="security.html">Sicurezza</a></div>
-        <div class="nav-group"><p>Toolchain</p><a href="toolchain.html">CLI e Build</a><a href="development.html">Sviluppo</a><a href="roadmap.html">Roadmap</a></div>
-      </div>
-    </aside>
-    <main id="content" class="content-wrap">
-      <div class="article-column">
-        <p class="breadcrumb"><a href="./">Docs</a><span>/</span>Integrazione LLM</p>
-        <article class="prose">
-          <h1>Integrazione LLM</h1>
-          <p>AXL 3.0 ha il reasoning LLM come primitiva nativa, non come tool esterno.</p>
 
-          <h2>Backend Trait</h2>
-          <pre><code>pub trait LlmBackend: Send + Sync {
+  <main class="content-wrap">
+    <div class="article-column">
+      <h1>Integrazione LLM</h1>
+      
+      <p>AXL 3.0 ha il reasoning LLM come primitiva nativa, non come tool esterno. Gli agenti possono ragionare, classificare, estrarre, e generare testo direttamente dal codice AXL.</p>
+
+      <h2>Backend Trait</h2>
+      <pre><code>pub trait LlmBackend: Send + Sync {
     fn generate(&amp;self, system: &amp;str, messages: &amp;[(String, String)]) -> Result&lt;String, LlmError&gt;;
     fn generate_stream(&amp;self, system: &amp;str, messages: &amp;[(String, String)], on_chunk: &amp;dyn Fn(&amp;str) -> Result&lt;(), LlmError&gt;) -> Result&lt;String, LlmError&gt;;
     fn embed(&amp;self, text: &amp;str) -> Result&lt;Vec&lt;i64&gt;, LlmError&gt;;
     fn generate_json(&amp;self, instruction: &amp;str, input: &amp;str, schema: &amp;serde_json::Value) -> Result&lt;serde_json::Value, LlmError&gt;;
 }</code></pre>
 
-          <h2>Primitive LLM</h2>
+      <h2>Primitiva LLM</h2>
 
-          <h3>Reasoning</h3>
-          <pre><code># Chain-of-thought
-!reason/2 "step by step" problem</code></pre>
+      <h3>Reasoning</h3>
+      <pre><code># Chain-of-thought
+10|result|"step by step",input,!llm_reason/2|s</code></pre>
 
-          <h3>Classification</h3>
-          <pre><code># Classifica testo
-!classify/3 "instruction" text "label1,label2,label3"</code></pre>
+      <h3>Classification</h3>
+      <pre><code># Classifica testo
+10|category|"classify this",text,"news,opinion,tutorial",!llm_classify/3|s</code></pre>
 
-          <h3>Extraction</h3>
-          <pre><code># Estrai entità
-!extract/2 "person, org, location" text</code></pre>
+      <h3>Extraction</h3>
+      <pre><code># Estrai entità
+10|entities|"people, organizations",text,!llm_extract/2|s</code></pre>
 
-          <h3>Generation</h3>
-          <pre><code># Genera testo
-!generate/2 "system prompt" messages</code></pre>
+      <h3>Generation</h3>
+      <pre><code># Genera testo
+10|response|"system prompt",messages,!llm_generate/2|s</code></pre>
 
-          <h3>Embedding</h3>
-          <pre><code># Genera embedding
-!embed/1 "text to vector"</code></pre>
+      <h3>Embedding</h3>
+      <pre><code># Genera embedding
+10|embedding|"text to vector",!llm_embed/1|s</code></pre>
 
-          <h2>MockBackend (Testing)</h2>
-          <pre><code>let backend = MockBackend::new(vec!["response".into()]);
+      <h2>MockBackend (Testing)</h2>
+      <pre><code>let backend = MockBackend::new(vec!["response".into()]);
 let result = llm::reason(&amp;backend, "instruction", "input").unwrap();</code></pre>
 
-          <h2>Implementazione Reale</h2>
-          <pre><code>struct OpenAiBackend { api_key: String }
+      <h2>Implementazione Reale</h2>
+      <pre><code>struct MiMoBackend { api_key: String }
 
-impl LlmBackend for OpenAiBackend {
+impl LlmBackend for MiMoBackend {
     fn generate(&amp;self, system: &amp;str, messages: &amp;[(String, String)]) -> Result&lt;String, LlmError&gt; {
-        // Chiamata API OpenAI
+        // Chiamata API MiMo
     }
     fn embed(&amp;self, text: &amp;str) -> Result&lt;Vec&lt;i64&gt;, LlmError&gt; {
-        // OpenAI embeddings API
+        // MiMo embeddings API
     }
 }</code></pre>
 
-          <h2>Esempio Completo</h2>
-          <pre><code>2;
-10|query|"what is AXL?",!reason/2,"explain step by step",$query|s;
-12|$query;
-10|category|text,!classify/3,"categorize",text,"tutorial,news,opinion"|s;
+      <h2>Esempio Completo</h2>
+      <pre><code>2;
+10|reason|"step by step",input,!llm_reason/2|s;
+12|$reason;
+10|category|"classify",text,"news,opinion,tutorial",!llm_classify/3|s;
 12|$category</code></pre>
-        </article>
-        <nav class="pager"><a class="prev" href="primitives.html"><small>← Primitiva</small></a><a class="next" href="agent-runtime.html"><small>Runtime Agenti →</small></a></nav>
-      </div>
-    </main>
-  </div>
+    </div>
+  </main>
 </body>
 </html>
