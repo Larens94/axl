@@ -21,6 +21,7 @@ pub mod auth;
 pub mod email;
 pub mod ratelimit;
 pub mod secret;
+pub mod llm;
 
 use crate::ir::Value;
 
@@ -195,6 +196,14 @@ pub fn call_primitive(name: &str, args: &[Value]) -> Result<Value, PrimitiveErro
         "secret_delete" => secret::secret_delete(args).map_err(PrimitiveError),
         "secret_list" => secret::secret_list(args).map_err(PrimitiveError),
 
+        // LLM
+        "llm_generate" => llm::llm_generate(args).map_err(PrimitiveError),
+        "llm_reason" => llm::llm_reason(args).map_err(PrimitiveError),
+        "llm_classify" => llm::llm_classify(args).map_err(PrimitiveError),
+        "llm_extract" => llm::llm_extract(args).map_err(PrimitiveError),
+        "llm_embed" => llm::llm_embed(args).map_err(PrimitiveError),
+        "llm_similarity" => llm::llm_similarity(args).map_err(PrimitiveError),
+
         // Text
         "text_upper" => text::text_upper(args),
         "text_lower" => text::text_lower(args),
@@ -368,5 +377,8 @@ pub fn available_primitives() -> Vec<&'static str> {
         "hash_sha256", "hash_blake3", "hash_md5",
         "encode_base64", "decode_base64", "encode_hex", "decode_hex",
         "crypto_random_bytes",
+        // LLM
+        "llm_generate", "llm_reason", "llm_classify", "llm_extract",
+        "llm_embed", "llm_similarity",
     ]
 }
