@@ -13,57 +13,94 @@
       <a href="primitives.html">Primitiva</a>
       <a href="llm-integration.html">LLM</a>
       <a href="examples.html">Esempi</a>
+      <a href="architecture.html">Architettura</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
+    <button class="menu-trigger" onclick="document.querySelector('.sidebar').classList.toggle('open')" aria-label="Menu">☰</button>
   </header>
 
-  <main class="content-wrap">
-    <div class="article-column">
-      <h1>AXL — Linguaggio Agent-Native</h1>
-      
-      <p>AXL è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare. Gli agenti combinano primitiva native per costruire qualsiasi software.</p>
+  <div class="docs-shell">
+    <aside class="sidebar">
+      <div class="sidebar-scroll">
+        <div class="nav-group">
+          <p>Introduzione</p>
+          <a href="./" class="active">Benvenuto</a>
+          <a href="overview.html">Visione</a>
+          <a href="architecture.html">Architettura</a>
+        </div>
+        <div class="nav-group">
+          <p>Linguaggio</p>
+          <a href="compact-syntax.html">Compact Source</a>
+          <a href="ax-ir.html">AX-IR</a>
+          <a href="primitives.html">Primitiva Native</a>
+        </div>
+        <div class="nav-group">
+          <p>Agenti</p>
+          <a href="agent-runtime.html">Runtime Agenti</a>
+          <a href="llm-integration.html">Integrazione LLM</a>
+          <a href="security.html">Sicurezza</a>
+        </div>
+        <div class="nav-group">
+          <p>Toolchain</p>
+          <a href="toolchain.html">CLI e Build</a>
+          <a href="development.html">Sviluppo</a>
+          <a href="roadmap.html">Roadmap</a>
+        </div>
+        <div class="nav-group">
+          <p>Esempi</p>
+          <a href="examples.html">Esempi AXL</a>
+        </div>
+      </div>
+    </aside>
 
-      <h2>Cos'è AXL</h2>
-      <ul>
-        <li><strong>Linguaggio agent-native</strong> — l'agente è la prima classe, non la funzione</li>
-        <li><strong>90+ primitiva native</strong> — ogni capability di Rust è esponibile</li>
-        <li><strong>LLM integrato</strong> — reason, classify, extract, generate, embed sono native</li>
-        <li><strong>Rust-backed</strong> — performance, sicurezza, portabilità</li>
-      </ul>
+    <main class="content-wrap">
+      <div class="article-column">
+        <h1>AXL — Linguaggio Agent-Native</h1>
+        
+        <p>AXL è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare. Gli agenti combinano primitiva native per costruire qualsiasi software.</p>
 
-      <h2>Esempio</h2>
-      <pre><code>2;10|result|"hello world",!text_upper/1|s;12|$result</code></pre>
-      <p>Output: <code>"HELLO WORLD"</code></p>
+        <h2>Cos'è AXL</h2>
+        <ul>
+          <li><strong>Linguaggio agent-native</strong> — l'agente è la prima classe, non la funzione</li>
+          <li><strong>194 primitiva native</strong> — ogni capability di Rust è esponibile</li>
+          <li><strong>LLM integrato</strong> — reason, classify, extract, generate, embed sono native</li>
+          <li><strong>Rust-backed</strong> — performance, sicurezza, portabilità</li>
+        </ul>
 
-      <h2>Primitiva</h2>
-      <ul>
-        <li><strong>I/O:</strong> file_read, file_write, file_exists, dir_list</li>
-        <li><strong>Text:</strong> text_upper, text_lower, text_split, text_find</li>
-        <li><strong>Collections:</strong> list_push, list_sort, map_get, map_set</li>
-        <li><strong>Math:</strong> math_add, math_mul, math_random</li>
-        <li><strong>Crypto:</strong> hash_sha256, encode_base64, crypto_random_bytes</li>
-        <li><strong>JSON:</strong> json_parse, json_stringify, json_validate</li>
-        <li><strong>Network:</strong> http_get, http_post, http_server_listen</li>
-        <li><strong>System:</strong> env_get, time_now, path_join, process_run</li>
-        <li><strong>LLM:</strong> llm_generate, llm_reason, llm_classify, llm_extract</li>
-        <li><strong>DB:</strong> db_connect, db_execute, db_query</li>
-        <li><strong>Auth:</strong> auth_hash_password, validate_email</li>
-      </ul>
+        <h2>Esempio</h2>
+        <pre><code>2;10|result|"hello world",!text_upper/1|s;12|$result</code></pre>
+        <p>Output: <code>"HELLO WORLD"</code></p>
 
-      <h2>Avvio Rapido</h2>
-      <pre><code>cargo build --workspace
+        <h2>Primitiva</h2>
+        <ul>
+          <li><strong>I/O:</strong> file_read, file_write, file_exists, dir_list</li>
+          <li><strong>Text:</strong> text_upper, text_lower, text_split, text_find</li>
+          <li><strong>Collections:</strong> list_push, list_sort, map_get, map_set</li>
+          <li><strong>Math:</strong> math_add, math_mul, math_random</li>
+          <li><strong>Crypto:</strong> hash_sha256, encode_base64, crypto_random_bytes</li>
+          <li><strong>JSON:</strong> json_parse, json_stringify, json_validate</li>
+          <li><strong>Network:</strong> http_get, http_post, http_server_listen</li>
+          <li><strong>System:</strong> env_get, time_now, path_join, process_run</li>
+          <li><strong>LLM:</strong> llm_generate, llm_reason, llm_classify, llm_extract</li>
+          <li><strong>DB:</strong> db_connect, db_execute, db_query</li>
+          <li><strong>Auth:</strong> auth_hash_password, validate_email</li>
+        </ul>
+
+        <h2>Avvio Rapido</h2>
+        <pre><code>cargo build --workspace
 cargo test --workspace
 cargo run -p axl-cli -- run examples/compact.axl</code></pre>
 
-      <h2>Documentazione</h2>
-      <ul>
-        <li><a href="primitives.html">Primitiva Native</a> — 194 primitiva complete</li>
-        <li><a href="llm-integration.html">Integrazione LLM</a> — MiMo, reasoning, classify</li>
-        <li><a href="examples.html">Esempi</a> — Backend, Data Pipeline, Frontend</li>
-        <li><a href="architecture.html">Architettura</a> — Stack Rust completo</li>
-        <li><a href="compact-syntax.html">Sintassi Compatta</a> — Format RPN</li>
-      </ul>
-    </div>
-  </main>
+        <h2>Documentazione</h2>
+        <ul>
+          <li><a href="primitives.html">Primitiva Native</a> — 194 primitiva complete</li>
+          <li><a href="llm-integration.html">Integrazione LLM</a> — MiMo, reasoning, classify</li>
+          <li><a href="examples.html">Esempi</a> — Backend, Data Pipeline, Frontend</li>
+          <li><a href="architecture.html">Architettura</a> — Stack Rust completo</li>
+          <li><a href="compact-syntax.html">Sintassi Compatta</a> — Format RPN</li>
+        </ul>
+      </div>
+    </main>
+  </div>
 </body>
 </html>
