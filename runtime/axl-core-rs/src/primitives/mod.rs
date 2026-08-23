@@ -74,6 +74,10 @@ pub fn call_primitive(name: &str, args: &[Value]) -> Result<Value, PrimitiveErro
         // Network
         "http_get" => net::http_get(args),
         "http_post" => net::http_post(args),
+        "http_put" => net::http_put(args),
+        "http_delete" => net::http_delete(args),
+        "http_patch" => net::http_patch(args),
+        "http_download" => net::http_download(args),
         "http_server_create" => http::http_server_create(args).map_err(PrimitiveError),
         "http_server_route" => http::http_server_route(args).map_err(PrimitiveError),
         "http_server_static" => http::http_server_static(args).map_err(PrimitiveError),
@@ -87,6 +91,9 @@ pub fn call_primitive(name: &str, args: &[Value]) -> Result<Value, PrimitiveErro
         "http_request_query" => http::http_request_query(args).map_err(PrimitiveError),
         "http_request_body" => http::http_request_body(args).map_err(PrimitiveError),
         "http_request_header" => http::http_request_header(args).map_err(PrimitiveError),
+        "http_server_state_get" => http::http_server_state_get(args).map_err(PrimitiveError),
+        "http_server_state_set" => http::http_server_state_set(args).map_err(PrimitiveError),
+        "axl_server_start" => http::axl_server_start(args).map_err(PrimitiveError),
 
         // Database
         "db_connect" => db::db_connect(args).map_err(PrimitiveError),
@@ -96,6 +103,11 @@ pub fn call_primitive(name: &str, args: &[Value]) -> Result<Value, PrimitiveErro
         "db_commit" => db::db_commit(args).map_err(PrimitiveError),
         "db_rollback" => db::db_rollback(args).map_err(PrimitiveError),
         "db_tables" => db::db_tables(args).map_err(PrimitiveError),
+        "db_columns" => db::db_columns(args).map_err(PrimitiveError),
+        "db_count" => db::db_count(args).map_err(PrimitiveError),
+        "db_insert" => db::db_insert(args).map_err(PrimitiveError),
+        "db_update" => db::db_update(args).map_err(PrimitiveError),
+        "db_delete" => db::db_delete(args).map_err(PrimitiveError),
 
         // WebSocket
         "ws_server_create" => ws::ws_server_create(args).map_err(PrimitiveError),
@@ -310,13 +322,17 @@ pub fn available_primitives() -> Vec<&'static str> {
         "file_read", "file_write", "file_exists", "file_size", "file_delete",
         "file_copy", "file_move", "dir_create", "dir_list", "dir_delete",
         // Network
-        "http_get", "http_post", "http_server_create", "http_server_start",
-        "http_listen", "http_response", "http_response_json", "http_response_html",
-        "http_response_error", "http_request_method", "http_request_path",
-        "http_request_query", "http_request_body", "http_request_header",
+        "http_get", "http_post", "http_put", "http_delete", "http_patch",
+        "http_download", "http_server_create", "http_server_route",
+        "http_server_static", "http_server_listen", "http_response",
+        "http_response_json", "http_response_html", "http_response_error",
+        "http_request_method", "http_request_path", "http_request_query",
+        "http_request_body", "http_request_header",
+        "http_server_state_get", "http_server_state_set",
         // Database
         "db_connect", "db_execute", "db_query", "db_begin", "db_commit",
-        "db_rollback", "db_tables",
+        "db_rollback", "db_tables", "db_columns", "db_count",
+        "db_insert", "db_update", "db_delete",
         // WebSocket
         "ws_server_create", "ws_connect", "ws_send", "ws_recv",
         "ws_broadcast", "ws_on_message",
@@ -380,5 +396,7 @@ pub fn available_primitives() -> Vec<&'static str> {
         // LLM
         "llm_generate", "llm_reason", "llm_classify", "llm_extract",
         "llm_embed", "llm_similarity",
+        // Server
+        "axl_server_start",
     ]
 }

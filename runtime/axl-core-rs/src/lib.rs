@@ -2,6 +2,7 @@ pub mod ir;
 pub mod type_names;
 pub mod ui_registry;
 pub mod compact;
+pub mod keyword;
 pub mod validation;
 pub mod typechecker;
 pub mod memory;
@@ -14,6 +15,7 @@ pub mod primitives;
 pub mod web;
 pub mod compiler;
 pub mod mimo;
+pub mod server;
 
 pub use compact::{parse_compact, is_compact_source, program_to_compact, split_compact_frames};
 pub use validation::validate;

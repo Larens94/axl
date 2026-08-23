@@ -19,7 +19,7 @@
 
   <main class="content-wrap">
     <div class="article-column">
-      <h1>Primitiva Native — 194 Primitiva</h1>
+      <h1>Primitiva Native — 216 Primitiva</h1>
       
       <p>Ogni capability di Rust è esponibile come primitiva AXL. Gli agenti combinano queste primitive per costruire qualsiasi software.</p>
 
@@ -112,14 +112,28 @@
 !json_stringify/1  # stringify JSON
 !json_validate/1   # valida JSON</code></pre>
 
-      <h2>Network (15)</h2>
+      <h2>Network (20)</h2>
       <pre><code>!http_get/1        # HTTP GET
 !http_post/2       # HTTP POST
+!http_put/2        # HTTP PUT
+!http_delete/1     # HTTP DELETE
+!http_patch/2      # HTTP PATCH
+!http_download/2   # download file
 !http_server_create/1 # crea server
+!http_server_route/3  # registra route
+!http_server_static/3 # file statici
 !http_server_listen/2 # avvia server
 !http_response/2   # crea response
 !http_response_json/2 # response JSON
-!http_response_html/2 # response HTML</code></pre>
+!http_response_html/2 # response HTML
+!http_response_error/2 # response errore
+!http_request_method/1 # metodo HTTP
+!http_request_path/1   # percorso
+!http_request_query/1  # query string
+!http_request_body/1   # body
+!http_request_header/2 # header
+!http_server_state_get/1 # stato server
+!http_server_state_set/2 # imposta stato</code></pre>
 
       <h2>System (19)</h2>
       <pre><code>!env_get/1         # variabile ambiente
@@ -149,14 +163,19 @@
 !llm_embed/1       # genera embedding
 !llm_similarity/2  # similarità coseno</code></pre>
 
-      <h2>Database (7)</h2>
+      <h2>Database (12)</h2>
       <pre><code>!db_connect/1      # connetti SQLite
 !db_execute/2      # esegui SQL
 !db_query/2        # esegui query
 !db_begin/1        # inizia transazione
 !db_commit/1       # commit transazione
 !db_rollback/1     # rollback transazione
-!db_tables/1       # elenca tabelle</code></pre>
+!db_tables/1       # elenca tabelle
+!db_columns/2      # colonne tabella
+!db_count/2        # conta righe
+!db_insert/3       # inserisce riga
+!db_update/4       # aggiorna righe
+!db_delete/3       # elimina righe</code></pre>
 
       <h2>Auth (8)</h2>
       <pre><code>!auth_hash_password/1    # hash password

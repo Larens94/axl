@@ -497,6 +497,9 @@ fn parse_expression(source: &str, frame: usize) -> Result<Expression, CompactPar
                 return Err(CompactParseError(format!("frame {frame}: call '{token}' needs {arity} values")));
             }
             let arguments: Vec<_> = stack.drain(stack.len()-arity..).collect();
+            if name.contains("server") {
+                let _ = std::fs::write("/tmp/axl_parse.txt", format!("token={token} name={name} arity={arity} stack={}\n", arguments.len()));
+            }
             let expr = if kind == '!' {
                 Expression::ToolCall { name: name.to_string(), arguments }
             } else {

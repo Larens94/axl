@@ -242,13 +242,14 @@ fn evaluate(state: &mut InterpreterState, expr: &Expression, memory: Arc<Mutex<d
             }
         }
         Expression::ToolCall { name, arguments } => {
+            let _ = std::fs::write("/tmp/axl_toolcall.txt", format!("name={name} args={}\n", arguments.len()));
             state.tool_calls += 1;
             if state.tool_calls > state.config.max_tool_calls {
                 return Err(RuntimeError(format!("tool call budget exceeded ({})", state.config.max_tool_calls)));
             }
 
-            // Check tool exists — first check native primitives, then user tools
-            let is_native_primitive = primitives::call_primitive(name, &[]).is_ok() || primitives::available_primitives().contains(&name.as_str());
+            // Check tool exists — check the list first to avoid accidentally executing side-effecting primitives
+            let is_native_primitive = primitives::available_primitives().contains(&name.as_str()) || primitives::call_primitive(name, &[]).is_ok();
             let tool_effect = if is_native_primitive {
                 Some("native".to_string())
             } else {
@@ -277,6 +278,9 @@ fn evaluate(state: &mut InterpreterState, expr: &Expression, memory: Arc<Mutex<d
             }
 
             let args: Vec<Value> = arguments.iter().map(|a| evaluate(state, a, memory.clone())).collect::<Result<_, _>>()?;
+            if name.contains("server") {
+                let _ = std::fs::write("/tmp/axl_interp_debug.txt", format!("name={name} raw={} evaluated={}\n", arguments.len(), args.len()));
+            }
             let request = ApprovalRequest {
                 tool: name.clone(), arguments: args.clone(),
                 effect: tool_effect.clone().unwrap_or_default(),

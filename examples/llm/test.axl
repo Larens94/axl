@@ -1,0 +1,1 @@
+2;10|q1|"What is 2+2?",!llm_generate/1|s;12|$q1;10|q2|"Classify: The weather is sunny today",!llm_classify/1|s;12|$q2;10|q3|"Extract names from: Alice met Bob yesterday",!llm_extract/1|s;12|$q3;10|q4|"Explain what AXL is in one sentence",!llm_reason/1|s;12|$q4;12|"LLM test complete";

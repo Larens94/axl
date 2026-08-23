@@ -69,13 +69,34 @@
       <pre><code>2;10|cat|"Classify this","Rust is great for systems","tech,science,general",!llm_classify/3|s;12|$cat</code></pre>
       <p>Output: <code>tech</code></p>
 
-      <h2>11. Database</h2>
-      <pre><code>2;10|db|":memory:",!db_connect/1|s;12|$db</code></pre>
-      <p>Output: <code>db_:memory_</code></p>
+      <h2>11. Database CRUD</h2>
+      <pre><code>2;10|db|":memory:",!db_connect/1|s
+10|s1|$db,"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT)",!db_execute/2|s
+10|i1|$db,"users","name","Alice",%1,!db_insert/3|s
+10|q|$db,"SELECT * FROM users",!db_query/2|s
+12|$q</code></pre>
+      <p>Output: <code>[{"id":1,"name":"Alice"}]</code></p>
 
-      <h2>12. Agent + Workflow</h2>
-      <pre><code>2;50|my_agent|;12|"Agent executed";99;52|my_agent;12|"Done"</code></pre>
-      <p>Output: <code>Agent executed</code> + <code>Done</code></p>
+      <h2>12. HTTP Server</h2>
+      <pre><code>2;10|addr|"127.0.0.1:8080"|s
+10|dir|"./public"|s
+10|s|$addr,"/",$dir,!http_server_static/3|s
+10|r|$addr,$dir,!http_server_listen/2|s</code></pre>
+      <p>Serve file statici dalla directory ./public</p>
+
+      <h2>13. REST API Data</h2>
+      <pre><code>2;10|db|"/tmp/api.db",!db_connect/1|s
+10|t|$db,"CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, value INTEGER)",!db_execute/2|s
+10|i1|$db,"items","name","Widget","value",#100,%2,!db_insert/3|s
+10|i2|$db,"items","name","Gadget","value",#250,%2,!db_insert/3|s
+10|q|$db,"SELECT * FROM items",!db_query/2|s
+12|$q</code></pre>
+      <p>Crea database, inserisce dati, e li legge</p>
+
+      <h2>14. LLM Pipeline</h2>
+      <pre><code>2;10|q|"Extract names from: Alice met Bob",!llm_extract/1|s;12|$q
+10|c|"Classify: The weather is sunny",!llm_classify/1|s;12|$c</code></pre>
+      <p>Output: <code>["Alice","Bob"]</code> + <code>Weather</code></p>
     </div>
   </main>
 </body>

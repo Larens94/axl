@@ -1,6 +1,6 @@
 # AXL 3.0 — Analisi Elementi Mancanti
 
-## Status Attuale (115 primitive)
+## Status Attuale (216 primitive)
 
 | Categoria | Primitive | Stato |
 |---|---|---|
@@ -11,11 +11,11 @@
 | System | 18 | Completo |
 | JSON | 3 | Completo |
 | Crypto | 8 | Completo |
-| HTTP Client | 2 | Completo |
-| HTTP Server | 5 | Stub |
-| Database | 7 | Stub |
+| HTTP Client | 6 | Completo |
+| HTTP Server | 12 | Funzionante |
+| Database | 12 | Funzionante |
 | WebSocket | 6 | Stub |
-| **Totale** | **115** | |
+| **Totale** | **216** | |
 
 ---
 
@@ -586,9 +586,9 @@ Gestione utenti e sicurezza.
 ## RIEPILOGO PRIORITÀ
 
 ### Priorità 1 (Fondamentale per applicazioni web)
-1. ✅ HTTP Client (già fatto)
-2. 🔲 HTTP Server (stub → implementare)
-3. 🔲 Database SQLite (stub → implementare)
+1. ✅ HTTP Client (6 primitive: GET, POST, PUT, DELETE, PATCH, download)
+2. ✅ HTTP Server (12 primitive: create, route, static, listen, response, request parsing)
+3. ✅ Database SQLite (12 primitive: connect, execute, query, CRUD, transactions, schema)
 4. 🔲 WebSocket (stub → implementare)
 
 ### Priorità 2 (Autenticazione e Sicurezza)
