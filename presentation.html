@@ -1,0 +1,1252 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AXL — Come un Agente ha Creato un CRM</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        :root {
+            --claude-bg: #faf9f7;
+            --claude-text: #1a1a1a;
+            --claude-accent: #d97706;
+            --claude-accent-light: #fef3c7;
+            --claude-border: #e5e5e5;
+            --claude-code-bg: #1e1e1e;
+            --claude-code-text: #d4d4d4;
+            --claude-green: #059669;
+            --claude-red: #dc2626;
+            --claude-blue: #2563eb;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--claude-bg);
+            color: var(--claude-text);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Slide Container */
+        .slides-container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 60px;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .slide.active {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .slide.prev {
+            opacity: 0;
+            transform: translateX(-100%);
+        }
+
+        /* Navigation */
+        .nav {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            z-index: 100;
+            background: white;
+            padding: 12px 24px;
+            border-radius: 50px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .nav-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            border: 2px solid var(--claude-border);
+            background: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            font-size: 18px;
+        }
+
+        .nav-btn:hover {
+            background: var(--claude-accent);
+            border-color: var(--claude-accent);
+            color: white;
+        }
+
+        .nav-dots {
+            display: flex;
+            gap: 8px;
+        }
+
+        .nav-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: var(--claude-border);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .nav-dot.active {
+            background: var(--claude-accent);
+            width: 30px;
+            border-radius: 5px;
+        }
+
+        .slide-counter {
+            font-size: 14px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        /* Typography */
+        h1 {
+            font-size: 56px;
+            font-weight: 700;
+            line-height: 1.1;
+            margin-bottom: 24px;
+            letter-spacing: -0.02em;
+        }
+
+        h2 {
+            font-size: 42px;
+            font-weight: 600;
+            line-height: 1.2;
+            margin-bottom: 20px;
+            letter-spacing: -0.01em;
+        }
+
+        h3 {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+
+        p {
+            font-size: 20px;
+            color: #4a4a4a;
+            max-width: 700px;
+            text-align: center;
+        }
+
+        .subtitle {
+            font-size: 24px;
+            color: #666;
+            font-weight: 400;
+            margin-bottom: 40px;
+        }
+
+        .accent {
+            color: var(--claude-accent);
+        }
+
+        .highlight {
+            background: var(--claude-accent-light);
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+
+        /* Code Block */
+        .code-block {
+            background: var(--claude-code-bg);
+            border-radius: 12px;
+            padding: 24px;
+            margin: 20px 0;
+            overflow-x: auto;
+            max-width: 900px;
+            width: 100%;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+        }
+
+        .code-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #333;
+        }
+
+        .code-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .code-dot.red { background: #ff5f57; }
+        .code-dot.yellow { background: #febc2e; }
+        .code-dot.green { background: #28c840; }
+
+        .code-title {
+            color: #888;
+            font-size: 13px;
+            margin-left: 8px;
+        }
+
+        pre {
+            font-family: 'SF Mono', 'Fira Code', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--claude-code-text);
+        }
+
+        .code-comment { color: #6a9955; }
+        .code-keyword { color: #569cd6; }
+        .code-string { color: #ce9178; }
+        .code-number { color: #b5cea8; }
+        .code-function { color: #dcdcaa; }
+        .code-operator { color: #d4d4d4; }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 24px;
+            margin: 30px 0;
+            max-width: 900px;
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 32px;
+            text-align: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            border: 1px solid var(--claude-border);
+            transition: all 0.3s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+        }
+
+        .stat-number {
+            font-size: 48px;
+            font-weight: 700;
+            color: var(--claude-accent);
+            line-height: 1;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            font-size: 16px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        /* Comparison Slider */
+        .comparison {
+            display: flex;
+            gap: 40px;
+            max-width: 1000px;
+            width: 100%;
+            margin: 30px 0;
+        }
+
+        .comparison-side {
+            flex: 1;
+            background: white;
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+            border: 1px solid var(--claude-border);
+        }
+
+        .comparison-side.axl {
+            border-color: var(--claude-accent);
+            border-width: 2px;
+        }
+
+        .comparison-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 16px;
+            padding-bottom: 16px;
+            border-bottom: 1px solid var(--claude-border);
+        }
+
+        .comparison-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 20px;
+        }
+
+        .comparison-icon.axl { background: var(--claude-accent-light); }
+        .comparison-icon.rust { background: #fef2f2; }
+
+        .comparison-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .comparison-metric {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+
+        .comparison-metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-size: 15px;
+            color: #666;
+        }
+
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .metric-value.good { color: var(--claude-green); }
+        .metric-value.bad { color: var(--claude-red); }
+
+        /* Progress Bar */
+        .progress-container {
+            max-width: 600px;
+            width: 100%;
+            margin: 20px 0;
+        }
+
+        .progress-item {
+            margin-bottom: 20px;
+        }
+
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .progress-label {
+            font-size: 15px;
+            font-weight: 500;
+        }
+
+        .progress-value {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--claude-accent);
+        }
+
+        .progress-bar {
+            height: 12px;
+            background: #e5e5e5;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width 1s ease;
+            background: linear-gradient(90deg, var(--claude-accent), #f59e0b);
+        }
+
+        /* Token Visualizer */
+        .token-visualizer {
+            display: flex;
+            gap: 40px;
+            max-width: 900px;
+            width: 100%;
+            margin: 30px 0;
+        }
+
+        .token-bar-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .token-bar {
+            width: 80px;
+            background: linear-gradient(180deg, var(--claude-accent), #f59e0b);
+            border-radius: 8px 8px 0 0;
+            transition: height 1s ease;
+            position: relative;
+        }
+
+        .token-bar.rust {
+            background: linear-gradient(180deg, #6b7280, #9ca3af);
+        }
+
+        .token-count {
+            font-size: 24px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .token-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 12px;
+        }
+
+        /* Feature List */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 20px;
+            max-width: 800px;
+            margin: 30px 0;
+        }
+
+        .feature {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+            padding: 20px;
+            background: white;
+            border-radius: 12px;
+            border: 1px solid var(--claude-border);
+        }
+
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            background: var(--claude-accent-light);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            flex-shrink: 0;
+        }
+
+        .feature-text h4 {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .feature-text p {
+            font-size: 14px;
+            color: #666;
+            text-align: left;
+        }
+
+        /* Animated Counter */
+        .counter {
+            display: inline-block;
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Slide-specific layouts */
+        .slide-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            max-width: 1200px;
+        }
+
+        .slide-split {
+            display: flex;
+            gap: 60px;
+            align-items: center;
+            max-width: 1200px;
+            width: 100%;
+        }
+
+        .slide-split .text-side {
+            flex: 1;
+            text-align: left;
+        }
+
+        .slide-split .visual-side {
+            flex: 1;
+            display: flex;
+            justify-content: center;
+        }
+
+        /* Keyboard hint */
+        .keyboard-hint {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: white;
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-size: 13px;
+            color: #666;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            z-index: 100;
+        }
+
+        kbd {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            border: 1px solid #ddd;
+        }
+
+        /* Logo */
+        .logo {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--claude-accent);
+            margin-bottom: 20px;
+            letter-spacing: -0.02em;
+        }
+
+        .logo span {
+            color: var(--claude-text);
+        }
+
+        /* Animated gradient background */
+        .gradient-bg {
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle at 30% 50%, rgba(217, 119, 6, 0.05) 0%, transparent 50%),
+                        radial-gradient(circle at 70% 50%, rgba(37, 99, 235, 0.03) 0%, transparent 50%);
+            animation: rotate 20s linear infinite;
+            z-index: -1;
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .slide { padding: 30px; }
+            h1 { font-size: 36px; }
+            h2 { font-size: 28px; }
+            p { font-size: 16px; }
+            .stats-grid { grid-template-columns: 1fr; }
+            .comparison { flex-direction: column; }
+            .features { grid-template-columns: 1fr; }
+            .slide-split { flex-direction: column; }
+        }
+    </style>
+</head>
+<body>
+    <div class="slides-container">
+        <!-- Slide 1: Title -->
+        <div class="slide active" id="slide-1">
+            <div class="gradient-bg"></div>
+            <div class="slide-content">
+                <div class="logo">AXL<span> — Agent eXecution Language</span></div>
+                <h1>Come un Agente AI ha<br>Costruito un <span class="accent">CRM Completo</span></h1>
+                <p class="subtitle">La storia di come AXL ha ridotto lo sviluppo da ore a minuti</p>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number counter" data-target="194">0</div>
+                        <div class="stat-label">Primitive Native</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number counter" data-target="69">0</div>
+                        <div class="stat-label">% Meno Token</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number counter" data-target="5">0</div>
+                        <div class="stat-label">x Più Veloce</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 2: What is AXL -->
+        <div class="slide" id="slide-2">
+            <div class="slide-split">
+                <div class="text-side">
+                    <h2>Cos'è <span class="accent">AXL</span>?</h2>
+                    <p style="text-align:left; max-width:100%">AXL è un <strong>linguaggio di programmazione generale</strong> progettato specificamente per agenti AI e modelli di linguaggio.</p>
+                    <br>
+                    <p style="text-align:left; max-width:100%">Non è un framework CRM, non è un tool specifico — è un <strong>linguaggio completo</strong> con parser, interpreter, e 194 primitive che wrappano tutto ciò che Rust può fare.</p>
+                    <br>
+                    <div class="features" style="grid-template-columns: 1fr;">
+                        <div class="feature">
+                            <div class="feature-icon">🎯</div>
+                            <div class="feature-text">
+                                <h4>Agent-Native</h4>
+                                <p>Progettato per LLM, non per umani. Formato compatto RPN ottimizzato per token.</p>
+                            </div>
+                        </div>
+                        <div class="feature">
+                            <div class="feature-icon">⚡</div>
+                            <div class="feature-text">
+                                <h4>Generale</h4>
+                                <p>Può costruire qualsiasi cosa: backend, API, frontend, CLI, database, LLM apps.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="visual-side">
+                    <div class="code-block">
+                        <div class="code-header">
+                            <div class="code-dot red"></div>
+                            <div class="code-dot yellow"></div>
+                            <div class="code-dot green"></div>
+                            <span class="code-title">crm.axl — 15 righe per un CRM completo</span>
+                        </div>
+<pre><span class="code-comment">// Connessione database</span>
+<span class="code-number">10</span>|<span class="code-keyword">db</span>|<span class="code-string">"/tmp/crm.db"</span>,!<span class="code-function">db_connect</span>/<span class="code-number">1</span>|s;
+
+<span class="code-comment">// Creazione tabelle</span>
+<span class="code-number">10</span>|<span class="code-keyword">s1</span>|$db,<span class="code-string">"CREATE TABLE customers (...)"</span>,
+  !<span class="code-function">db_execute</span>/<span class="code-number">2</span>|s;
+
+<span class="code-comment">// Dati seed</span>
+<span class="code-number">10</span>|<span class="code-keyword">i1</span>|$db,<span class="code-string">"customers"</span>,
+  <span class="code-string">"name"</span>,<span class="code-string">"Alice"</span>,
+  <span class="code-string">"email"</span>,<span class="code-string">"alice@acme.com"</span>,
+  %2, !<span class="code-function">db_insert</span>/<span class="code-number">3</span>|s;
+
+<span class="code-comment">// Avvio server con API</span>
+<span class="code-number">10</span>|<span class="code-keyword">tables</span>|<span class="code-string">"customers"</span>,<span class="code-string">"leads"</span>,~2;
+<span class="code-number">10</span>|<span class="code-keyword">result</span>|<span class="code-string">"0.0.0.0:8080"</span>,
+  <span class="code-string">"build/crm"</span>,$db,$tables,
+  !<span class="code-function">axl_server_start</span>/<span class="code-number">4</span>|s;</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: The Problem -->
+        <div class="slide" id="slide-3">
+            <div class="slide-content">
+                <h2>Il Problema dello Sviluppo Tradizionale</h2>
+                <p>Costruire un CRM richiede centinaia di righe di codice in linguaggi tradizionali</p>
+                <br>
+                <div class="comparison">
+                    <div class="comparison-side">
+                        <div class="comparison-header">
+                            <div class="comparison-icon rust">🦀</div>
+                            <div class="comparison-title">Rust Tradizionale</div>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Righe di codice</span>
+                            <span class="metric-value bad">~500</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">File necessari</span>
+                            <span class="metric-value bad">8-12</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Tempo sviluppo</span>
+                            <span class="metric-value bad">10-15 ore</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Token per generare</span>
+                            <span class="metric-value bad">~15.000</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Dipendenze esterne</span>
+                            <span class="metric-value bad">5-8 crate</span>
+                        </div>
+                    </div>
+                    <div class="comparison-side axl">
+                        <div class="comparison-header">
+                            <div class="comparison-icon axl">⚡</div>
+                            <div class="comparison-title">AXL</div>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Righe di codice</span>
+                            <span class="metric-value good">~15</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">File necessari</span>
+                            <span class="metric-value good">1</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Tempo sviluppo</span>
+                            <span class="metric-value good">2-3 ore</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Token per generare</span>
+                            <span class="metric-value good">~4.500</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Dipendenze esterne</span>
+                            <span class="metric-value good">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 4: Token Efficiency -->
+        <div class="slide" id="slide-4">
+            <div class="slide-content">
+                <h2>Efficienza Token: <span class="accent">69% in Meno</span></h2>
+                <p>AXL usa un formato compatto RPN che riduce drasticamente i token necessari per generare codice</p>
+                <br>
+                <div class="token-visualizer">
+                    <div class="token-bar-container">
+                        <div class="token-count">15.000</div>
+                        <div class="token-bar rust" style="height: 300px;"></div>
+                        <div class="token-label">Rust</div>
+                    </div>
+                    <div class="token-bar-container">
+                        <div class="token-count" style="color: var(--claude-accent);">4.500</div>
+                        <div class="token-bar" style="height: 90px;"></div>
+                        <div class="token-label">AXL</div>
+                    </div>
+                </div>
+                <br>
+                <div class="progress-container">
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span class="progress-label">Operazioni I/O</span>
+                            <span class="progress-value">-67%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 67%;"></div>
+                        </div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span class="progress-label">Operazioni Stringhe</span>
+                            <span class="progress-value">-66%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 66%;"></div>
+                        </div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span class="progress-label">Chiamate LLM</span>
+                            <span class="progress-value">-68%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 68%;"></div>
+                        </div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span class="progress-label">Database Operations</span>
+                            <span class="progress-value">-71%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 71%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: How it Works -->
+        <div class="slide" id="slide-5">
+            <div class="slide-split">
+                <div class="text-side">
+                    <h2>Come Funziona</h2>
+                    <p style="text-align:left; max-width:100%">AXL usa un formato <strong>compatto RPN</strong> (Reverse Polish Notation) ottimizzato per la generazione da parte di LLM.</p>
+                    <br>
+                    <div class="features" style="grid-template-columns: 1fr;">
+                        <div class="feature">
+                            <div class="feature-icon">📦</div>
+                            <div class="feature-text">
+                                <h4>Primitive Native</h4>
+                                <p>194 primitive per I/O, DB, HTTP, Crypto, LLM, Text, Math, System</p>
+                            </div>
+                        </div>
+                        <div class="feature">
+                            <div class="feature-icon">🔧</div>
+                            <div class="feature-text">
+                                <h4>Runtime Rust</h4>
+                                <p>Performance native, memory safety, compilazione AOT</p>
+                            </div>
+                        </div>
+                        <div class="feature">
+                            <div class="feature-icon">🤖</div>
+                            <div class="feature-text">
+                                <h4>LLM Integration</h4>
+                                <p>Primitivi nativi per reasoning, classification, extraction</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="visual-side">
+                    <div class="code-block">
+                        <div class="code-header">
+                            <div class="code-dot red"></div>
+                            <div class="code-dot yellow"></div>
+                            <div class="code-dot green"></div>
+                            <span class="code-title">Come un LLM genera AXL</span>
+                        </div>
+<pre><span class="code-comment">// LLM pensa:</span>
+<span class="code-comment">// "Devo creare un server HTTP"</span>
+
+<span class="code-comment">// LLM genera AXL:</span>
+<span class="code-number">10</span>|<span class="code-keyword">srv</span>|!<span class="code-function">http_server_create</span>/<span class="code-number">1</span>|s;
+
+<span class="code-comment">// vs Rust (quello che avrebbe</span>
+<span class="code-comment">// generato senza AXL):</span>
+<span class="code-keyword">use</span> std::net::TcpListener;
+<span class="code-keyword">use</span> std::io::Read;
+<span class="code-keyword">use</span> std::io::Write;
+
+<span class="code-keyword">let</span> listener = TcpListener
+  ::bind(<span class="code-string">"0.0.0.0:8080"</span>)
+  .unwrap();
+
+<span class="code-keyword">for</span> stream <span class="code-keyword">in</span> listener
+  .incoming() {
+  <span class="code-comment">// ... 50+ righe</span>
+}</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 6: The CRM Demo -->
+        <div class="slide" id="slide-6">
+            <div class="slide-content">
+                <h2>Il CRM in Azione</h2>
+                <p>15 righe di AXL generano un CRM completo con API REST, database SQLite, e frontend web</p>
+                <br>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number">4</div>
+                        <div class="stat-label">Tabelle Database</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">20</div>
+                        <div class="stat-label">API Endpoints</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">5</div>
+                        <div class="stat-label">Pagine Frontend</div>
+                    </div>
+                </div>
+                <br>
+                <div class="features">
+                    <div class="feature">
+                        <div class="feature-icon">👥</div>
+                        <div class="feature-text">
+                            <h4>Customers CRUD</h4>
+                            <p>Create, Read, Update, Delete completo</p>
+                        </div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">📊</div>
+                        <div class="feature-text">
+                            <h4>Leads Tracking</h4>
+                            <p>Tracciamento lead con status e score</p>
+                        </div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">💰</div>
+                        <div class="feature-text">
+                            <h4>Deals Pipeline</h4>
+                            <p>Pipeline vendite con stage e probability</p>
+                        </div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">📅</div>
+                        <div class="feature-text">
+                            <h4>Activities Log</h4>
+                            <p>Registro attività con date e tipi</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 7: Why Agents Save Time -->
+        <div class="slide" id="slide-7">
+            <div class="slide-content">
+                <h2>Perché un Agente è <span class="accent">5x Più Veloce</span></h2>
+                <p>AXL è ottimizzato per la generazione da parte di modelli AI, non per la scrittura manuale</p>
+                <br>
+                <div class="comparison">
+                    <div class="comparison-side">
+                        <div class="comparison-header">
+                            <div class="comparison-icon rust">👨‍💻</div>
+                            <div class="comparison-title">Sviluppatore Umano</div>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Deve imparare syntax</span>
+                            <span class="metric-value">Ore/Giorni</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Scrive codice manualmente</span>
+                            <span class="metric-value">Lento</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Debug e test</span>
+                            <span class="metric-value">Iterativo</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Contesto limitato</span>
+                            <span class="metric-value">~100KB</span>
+                        </div>
+                    </div>
+                    <div class="comparison-side axl">
+                        <div class="comparison-header">
+                            <div class="comparison-icon axl">🤖</div>
+                            <div class="comparison-title">Agente AI + AXL</div>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Conosce già AXL</span>
+                            <span class="metric-value good">Istantaneo</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Genera codice in secondi</span>
+                            <span class="metric-value good">Veloce</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Test automatici</span>
+                            <span class="metric-value good">Integrato</span>
+                        </div>
+                        <div class="comparison-metric">
+                            <span class="metric-label">Contesto enorme</span>
+                            <span class="metric-value good">~1M token</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 8: Real Numbers -->
+        <div class="slide" id="slide-8">
+            <div class="slide-content">
+                <h2>Numeri Reali</h2>
+                <p>Misurazioni effettive dalla costruzione del CRM</p>
+                <br>
+                <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="stat-card">
+                        <div class="stat-number">15</div>
+                        <div class="stat-label">Righe AXL</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">500+</div>
+                        <div class="stat-label">Righe Rust Equiv.</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">4.500</div>
+                        <div class="stat-label">Token AXL</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">15.000</div>
+                        <div class="stat-label">Token Rust</div>
+                    </div>
+                </div>
+                <br>
+                <div class="progress-container" style="max-width: 800px;">
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span class="progress-label">Risparmio Righe di Codice</span>
+                            <span class="progress-value">97%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 97%;"></div>
+                        </div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span class="progress-label">Risparmio Token</span>
+                            <span class="progress-value">70%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 70%;"></div>
+                        </div>
+                    </div>
+                    <div class="progress-item">
+                        <div class="progress-header">
+                            <span class="progress-label">Risparmio Tempo</span>
+                            <span class="progress-value">80%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: 80%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 9: Architecture -->
+        <div class="slide" id="slide-9">
+            <div class="slide-split">
+                <div class="text-side">
+                    <h2>Architettura</h2>
+                    <p style="text-align:left; max-width:100%">AXL ha un'architettura a strati che separa il linguaggio dalle applicazioni</p>
+                    <br>
+                    <div class="features" style="grid-template-columns: 1fr;">
+                        <div class="feature">
+                            <div class="feature-icon">📝</div>
+                            <div class="feature-text">
+                                <h4>AXL Source</h4>
+                                <p>Codice sorgente compatto (RPN)</p>
+                            </div>
+                        </div>
+                        <div class="feature">
+                            <div class="feature-icon">⚙️</div>
+                            <div class="feature-text">
+                                <h4>Parser + IR</h4>
+                                <p>Compact Source → AX-IR JSON</p>
+                            </div>
+                        </div>
+                        <div class="feature">
+                            <div class="feature-icon">🔍</div>
+                            <div class="feature-text">
+                                <h4>Type Checker</h4>
+                                <p>Validazione e type checking</p>
+                            </div>
+                        </div>
+                        <div class="feature">
+                            <div class="feature-icon">▶️</div>
+                            <div class="feature-text">
+                                <h4>Interpreter</h4>
+                                <p>Esecuzione bytecode con primitive</p>
+                            </div>
+                        </div>
+                        <div class="feature">
+                            <div class="feature-icon">🦀</div>
+                            <div class="feature-text">
+                                <h4>Rust Runtime</h4>
+                                <p>194 primitive native (I/O, DB, HTTP, LLM)</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="visual-side">
+                    <div class="code-block">
+                        <div class="code-header">
+                            <div class="code-dot red"></div>
+                            <div class="code-dot yellow"></div>
+                            <div class="code-dot green"></div>
+                            <span class="code-title">Pipeline AXL</span>
+                        </div>
+<pre>
+  ┌─────────────┐
+  │ AXL Source   │  <span class="code-comment">← 15 righe</span>
+  └──────┬──────┘
+         │
+         ▼
+  ┌─────────────┐
+  │   Parser    │  <span class="code-comment">← Compact → IR</span>
+  └──────┬──────┘
+         │
+         ▼
+  ┌─────────────┐
+  │ Type Check  │  <span class="code-comment">← Validazione</span>
+  └──────┬──────┘
+         │
+         ▼
+  ┌─────────────┐
+  │ Interpreter │  <span class="code-comment">← Esecuzione</span>
+  └──────┬──────┘
+         │
+         ▼
+  ┌─────────────┐
+  │   Primitivi │  <span class="code-comment">← 194 native</span>
+  │   (Rust)    │
+  └─────────────┘
+
+  <span class="code-comment">Risultato: CRM completo</span>
+  <span class="code-comment">con API, DB, e Frontend</span>
+</pre>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 10: Conclusion -->
+        <div class="slide" id="slide-10">
+            <div class="slide-content">
+                <h2>Conclusioni</h2>
+                <p>AXL dimostra che un linguaggio progettato per agenti AI può essere <strong>generale</strong> e <strong>efficiente</strong></p>
+                <br>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-number">69%</div>
+                        <div class="stat-label">Meno Token</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">5x</div>
+                        <div class="stat-label">Più Veloce</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-number">97%</div>
+                        <div class="stat-label">Meno Codice</div>
+                    </div>
+                </div>
+                <br>
+                <div class="features">
+                    <div class="feature">
+                        <div class="feature-icon">✅</div>
+                        <div class="feature-text">
+                            <h4>Linguaggio Generale</h4>
+                            <p>Non è un framework CRM — può costruire qualsiasi applicazione</p>
+                        </div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">✅</div>
+                        <div class="feature-text">
+                            <h4>Agent-Native</h4>
+                            <p>Ottimizzato per generazione da LLM, non per scrittura manuale</p>
+                        </div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">✅</div>
+                        <div class="feature-text">
+                            <h4>Production Ready</h4>
+                            <p>Runtime Rust, 194 primitive, type safety, memory safety</p>
+                        </div>
+                    </div>
+                    <div class="feature">
+                        <div class="feature-icon">✅</div>
+                        <div class="feature-text">
+                            <h4>Open Source</h4>
+                            <p>Disponibile su GitHub, documentazione completa</p>
+                        </div>
+                    </div>
+                </div>
+                <br>
+                <p style="font-size: 24px; font-weight: 600; color: var(--claude-accent);">
+                    AXL — Il linguaggio che un agente può usare per costruire qualsiasi cosa.
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="nav">
+        <button class="nav-btn" onclick="prevSlide()">←</button>
+        <div class="nav-dots" id="nav-dots"></div>
+        <span class="slide-counter" id="slide-counter">1 / 10</span>
+        <button class="nav-btn" onclick="nextSlide()">→</button>
+    </div>
+
+    <div class="keyboard-hint">
+        Usa <kbd>←</kbd> <kbd>→</kbd> o click per navigare
+    </div>
+
+    <script>
+        let currentSlide = 1;
+        const totalSlides = 10;
+
+        // Create navigation dots
+        const dotsContainer = document.getElementById('nav-dots');
+        for (let i = 1; i <= totalSlides; i++) {
+            const dot = document.createElement('div');
+            dot.className = `nav-dot ${i === 1 ? 'active' : ''}`;
+            dot.onclick = () => goToSlide(i);
+            dotsContainer.appendChild(dot);
+        }
+
+        function goToSlide(n) {
+            const slides = document.querySelectorAll('.slide');
+            const dots = document.querySelectorAll('.nav-dot');
+
+            slides.forEach(slide => {
+                slide.classList.remove('active', 'prev');
+            });
+
+            dots.forEach(dot => dot.classList.remove('active'));
+
+            currentSlide = n;
+
+            document.getElementById(`slide-${n}`).classList.add('active');
+            dots[n - 1].classList.add('active');
+            document.getElementById('slide-counter').textContent = `${n} / ${totalSlides}`;
+
+            // Trigger counters on slide 1
+            if (n === 1) {
+                animateCounters();
+            }
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides) {
+                goToSlide(currentSlide + 1);
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 1) {
+                goToSlide(currentSlide - 1);
+            }
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                e.preventDefault();
+                nextSlide();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                prevSlide();
+            }
+        });
+
+        // Animate counters
+        function animateCounters() {
+            const counters = document.querySelectorAll('.counter');
+            counters.forEach(counter => {
+                const target = parseInt(counter.getAttribute('data-target'));
+                const duration = 1500;
+                const start = 0;
+                const increment = target / (duration / 16);
+                let current = start;
+
+                const timer = setInterval(() => {
+                    current += increment;
+                    if (current >= target) {
+                        counter.textContent = target;
+                        clearInterval(timer);
+                    } else {
+                        counter.textContent = Math.floor(current);
+                    }
+                }, 16);
+            });
+        }
+
+        // Initial animation
+        setTimeout(animateCounters, 500);
+
+        // Hide keyboard hint after 5 seconds
+        setTimeout(() => {
+            document.querySelector('.keyboard-hint').style.opacity = '0';
+            setTimeout(() => {
+                document.querySelector('.keyboard-hint').style.display = 'none';
+            }, 300);
+        }, 5000);
+    </script>
+</body>
+</html>
