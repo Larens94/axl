@@ -47,7 +47,7 @@ axl --help
 </code></pre>
 
 <h2 id="running-canonical-source">Running canonical source</h2>
-<pre class="codehilite"><code class="language-bash">axl run examples/compact.axl
+<pre class="codehilite"><code class="language-bash">axl run examples/crm/serve.axl
 </code></pre>
 
 <h2 id="canonicalization">Canonicalization</h2>
@@ -56,11 +56,11 @@ axl --help
 
 <p><code>pack</code> accepts either the legacy or compact frontend, performs validation and type-checking, and produces normalized single-line Compact Source 2.</p>
 <h2 id="running-source-with-host-capabilities">Running source with host capabilities</h2>
-<pre class="codehilite"><code class="language-bash">axl run examples/functions.axl
+<pre class="codehilite"><code class="language-bash">axl run examples/crm/app.axl
 </code></pre>
 
 <p>With memory and plugins:</p>
-<pre class="codehilite"><code class="language-bash">axl run examples/agent_workflow.axl \
+<pre class="codehilite"><code class="language-bash">axl run examples/crm/server.axl \
   --plugin examples.demo_tools \
   --approve-tool publish \
   --memory .axl-memory.sqlite \
@@ -68,8 +68,8 @@ axl --help
 </code></pre>
 
 <h2 id="compiling-and-executing-ax-ir">Compiling and executing AX-IR</h2>
-<pre class="codehilite"><code class="language-bash">axl compile examples/functions.axl -o functions.axlir.json
-axl exec functions.axlir.json
+<pre class="codehilite"><code class="language-bash">axl compile examples/crm/app.axl -o crm.axlir.json
+axl exec crm.axlir.json
 </code></pre>
 
 <p><code>compile</code> resolves modules, validates, and type-checks before producing AX-IR. <code>exec</code> validates the document again before any effects occur.</p>
