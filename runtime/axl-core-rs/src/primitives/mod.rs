@@ -94,6 +94,7 @@ pub fn call_primitive(name: &str, args: &[Value]) -> Result<Value, PrimitiveErro
         "http_server_state_get" => http::http_server_state_get(args).map_err(PrimitiveError),
         "http_server_state_set" => http::http_server_state_set(args).map_err(PrimitiveError),
         "axl_server_start" => http::axl_server_start(args).map_err(PrimitiveError),
+        "http_server_api" => http::http_server_api(args).map_err(PrimitiveError),
 
         // Database
         "db_connect" => db::db_connect(args).map_err(PrimitiveError),
@@ -397,6 +398,6 @@ pub fn available_primitives() -> Vec<&'static str> {
         "llm_generate", "llm_reason", "llm_classify", "llm_extract",
         "llm_embed", "llm_similarity",
         // Server
-        "axl_server_start",
+        "axl_server_start", "http_server_api",
     ]
 }

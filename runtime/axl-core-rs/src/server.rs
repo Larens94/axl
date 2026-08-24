@@ -74,292 +74,192 @@ impl AxlServer {
     }
 
     pub fn add_api_routes(&mut self) {
+        // Generic CRUD routes are now added via add_table_routes()
+        // This method is kept for backward compatibility
+    }
+
+    /// Add generic CRUD routes for any database table.
+    /// Creates: GET /api/{table}, GET /api/{table}/:id, POST /api/{table}, PUT /api/{table}/:id, DELETE /api/{table}/:id
+    pub fn add_table_routes(&mut self, table: &str) {
         let db = self.db_path.clone();
+        let tbl = table.to_string();
+        let api_prefix = format!("/api/{}", tbl);
 
-        // GET /api/customers
+        // GET /api/{table} — list all rows
         let db_clone = db.clone();
-        self.add_route("GET", "/api/customers", Box::new(move |_, _, _, _| {
+        let tbl_clone = tbl.clone();
+        self.add_route("GET", &api_prefix, Box::new(move |_, _, _, _| {
             let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let mut stmt = conn.prepare("SELECT id, name, email, company, phone, status FROM customers").unwrap();
-            let mut customers = Vec::new();
-            let mut rows = stmt.query([]).unwrap();
-            while let Some(row) = rows.next().unwrap() {
-                let id: i64 = row.get(0).unwrap();
-                let name: String = row.get(1).unwrap();
-                let email: String = row.get(2).unwrap();
-                let company: String = row.get(3).unwrap();
-                let phone: String = row.get(4).unwrap();
-                let status: String = row.get(5).unwrap();
-                customers.push(format!("{{\"id\":{},\"name\":\"{}\",\"email\":\"{}\",\"company\":\"{}\",\"phone\":\"{}\",\"status\":\"{}\"}}", id, name, email, company, phone, status));
+            let sql = format!("SELECT * FROM {}", tbl_clone);
+            let mut stmt = match conn.prepare(&sql) {
+                Ok(s) => s,
+                Err(e) => return (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
+            };
+            let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+            let mut rows = Vec::new();
+            let mut row_iter = match stmt.query([]) {
+                Ok(r) => r,
+                Err(e) => return (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
+            };
+            while let Ok(Some(row)) = row_iter.next() {
+                let mut map = Vec::new();
+                for (i, col) in columns.iter().enumerate() {
+                    // Try integer first, then string
+                    let val = if let Ok(n) = row.get::<_, i64>(i) {
+                        format!("{}", n)
+                    } else if let Ok(s) = row.get::<_, String>(i) {
+                        format!("\"{}\"", s.replace('"', "\\\""))
+                    } else {
+                        "null".to_string()
+                    };
+                    map.push(format!("\"{}\":{}", col, val));
+                }
+                rows.push(format!("{{{}}}", map.join(",")));
             }
-            let json = format!("[{}]", customers.join(","));
+            let json = format!("[{}]", rows.join(","));
             (200, "application/json".to_string(), json)
         }));
 
-        // GET /api/leads
+        // POST /api/{table} — create new row
         let db_clone = db.clone();
-        self.add_route("GET", "/api/leads", Box::new(move |_, _, _, _| {
+        let tbl_clone = tbl.clone();
+        self.add_route("POST", &api_prefix, Box::new(move |_, _, body, _| {
             let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let mut stmt = conn.prepare("SELECT id, company, contact, email, source, status, value, score FROM leads").unwrap();
-            let mut leads = Vec::new();
-            let mut rows = stmt.query([]).unwrap();
-            while let Some(row) = rows.next().unwrap() {
-                let id: i64 = row.get(0).unwrap();
-                let company: String = row.get(1).unwrap();
-                let contact: String = row.get(2).unwrap();
-                let email: String = row.get(3).unwrap();
-                let source: String = row.get(4).unwrap();
-                let status: String = row.get(5).unwrap();
-                let value: i64 = row.get(6).unwrap();
-                let score: i64 = row.get(7).unwrap();
-                leads.push(format!("{{\"id\":{},\"company\":\"{}\",\"contact\":\"{}\",\"email\":\"{}\",\"source\":\"{}\",\"status\":\"{}\",\"value\":{},\"score\":{}}}", id, company, contact, email, source, status, value, score));
-            }
-            let json = format!("[{}]", leads.join(","));
-            (200, "application/json".to_string(), json)
-        }));
+            // Parse JSON body into key-value pairs
+            let mut columns = Vec::new();
+            let mut values = Vec::new();
+            let mut placeholders = Vec::new();
+            let mut idx = 1;
 
-        // GET /api/deals
-        let db_clone = db.clone();
-        self.add_route("GET", "/api/deals", Box::new(move |_, _, _, _| {
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let mut stmt = conn.prepare("SELECT id, name, customer, value, stage, probability FROM deals").unwrap();
-            let mut deals = Vec::new();
-            let mut rows = stmt.query([]).unwrap();
-            while let Some(row) = rows.next().unwrap() {
-                let id: i64 = row.get(0).unwrap();
-                let name: String = row.get(1).unwrap();
-                let customer: String = row.get(2).unwrap();
-                let value: i64 = row.get(3).unwrap();
-                let stage: String = row.get(4).unwrap();
-                let probability: i64 = row.get(5).unwrap();
-                deals.push(format!("{{\"id\":{},\"name\":\"{}\",\"customer\":\"{}\",\"value\":{},\"stage\":\"{}\",\"probability\":{}}}", id, name, customer, value, stage, probability));
+            // Simple JSON parsing
+            let body_trimmed = body.trim();
+            if body_trimmed.starts_with('{') && body_trimmed.ends_with('}') {
+                let inner = &body_trimmed[1..body_trimmed.len()-1];
+                for pair in inner.split(',') {
+                    if let Some((key, val)) = pair.split_once(':') {
+                        let key = key.trim().trim_matches('"').to_string();
+                        let val = val.trim();
+                        let val_str = if val.starts_with('"') && val.ends_with('"') {
+                            val[1..val.len()-1].to_string()
+                        } else {
+                            val.to_string()
+                        };
+                        columns.push(key);
+                        values.push(val_str);
+                        placeholders.push(format!("?{}", idx));
+                        idx += 1;
+                    }
+                }
             }
-            let json = format!("[{}]", deals.join(","));
-            (200, "application/json".to_string(), json)
-        }));
 
-        // GET /api/activities
-        let db_clone = db.clone();
-        self.add_route("GET", "/api/activities", Box::new(move |_, _, _, _| {
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let mut stmt = conn.prepare("SELECT id, date, type, related, description FROM activities ORDER BY date DESC").unwrap();
-            let mut activities = Vec::new();
-            let mut rows = stmt.query([]).unwrap();
-            while let Some(row) = rows.next().unwrap() {
-                let id: i64 = row.get(0).unwrap();
-                let date: String = row.get(1).unwrap();
-                let act_type: String = row.get(2).unwrap();
-                let related: String = row.get(3).unwrap();
-                let description: String = row.get(4).unwrap();
-                activities.push(format!("{{\"id\":{},\"date\":\"{}\",\"type\":\"{}\",\"related\":\"{}\",\"desc\":\"{}\"}}", id, date, act_type, related, description));
+            if columns.is_empty() {
+                return (400, "application/json".to_string(), "{\"error\":\"empty body\"}".to_string());
             }
-            let json = format!("[{}]", activities.join(","));
-            (200, "application/json".to_string(), json)
-        }));
 
-        // GET /api/stats
-        let db_clone = db.clone();
-        self.add_route("GET", "/api/stats", Box::new(move |_, _, _, _| {
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let customers: i64 = conn.query_row("SELECT COUNT(*) FROM customers", [], |r| r.get(0)).unwrap_or(0);
-            let leads: i64 = conn.query_row("SELECT COUNT(*) FROM leads", [], |r| r.get(0)).unwrap_or(0);
-            let deals: i64 = conn.query_row("SELECT COUNT(*) FROM deals", [], |r| r.get(0)).unwrap_or(0);
-            let revenue: i64 = conn.query_row("SELECT COALESCE(SUM(value),0) FROM deals", [], |r| r.get(0)).unwrap_or(0);
-            let won: i64 = conn.query_row("SELECT COUNT(*) FROM deals WHERE stage='closed-won'", [], |r| r.get(0)).unwrap_or(0);
-            let win_rate = if deals > 0 { (won * 100 / deals) as i64 } else { 0 };
-            let json = format!("{{\"customers\":{},\"leads\":{},\"deals\":{},\"revenue\":{},\"winRate\":{}}}", customers, leads, deals, revenue, win_rate);
-            (200, "application/json".to_string(), json)
-        }));
-
-        // POST /api/customers
-        let db_clone = db.clone();
-        self.add_route("POST", "/api/customers", Box::new(move |_, _, body, _| {
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            // Simple JSON parsing for name, email, company, phone
-            let name = extract_json_string(body, "name");
-            let email = extract_json_string(body, "email");
-            let company = extract_json_string(body, "company");
-            let phone = extract_json_string(body, "phone");
-            if name.is_empty() || email.is_empty() {
-                return (400, "application/json".to_string(), "{\"error\":\"name and email required\"}".to_string());
-            }
-            let result = conn.execute(
-                "INSERT INTO customers (name, email, company, phone, status) VALUES (?1, ?2, ?3, ?4, 'active')",
-                rusqlite::params![name, email, company, phone],
-            );
-            match result {
+            let sql = format!("INSERT INTO {} ({}) VALUES ({})", tbl_clone, columns.join(", "), placeholders.join(", "));
+            let params_refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+            match conn.execute(&sql, params_refs.as_slice()) {
                 Ok(_) => {
                     let id = conn.last_insert_rowid();
-                    let json = format!("{{\"id\":{},\"name\":\"{}\",\"email\":\"{}\",\"company\":\"{}\",\"phone\":\"{}\",\"status\":\"active\"}}", id, name, email, company, phone);
+                    let json = format!("{{\"id\":{}}}", id);
                     (201, "application/json".to_string(), json)
                 }
                 Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
             }
         }));
 
-        // PUT /api/customers/:id
+        // GET /api/{table}/:id — get by id
         let db_clone = db.clone();
-        self.add_route("PUT", "/api/customers", Box::new(move |_, path, body, _| {
+        let tbl_clone = tbl.clone();
+        let prefix = format!("{}/", api_prefix);
+        self.add_route("GET", &prefix, Box::new(move |_, path, _, _| {
             let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
             if id == 0 {
                 return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
             }
             let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let name = extract_json_string(body, "name");
-            let email = extract_json_string(body, "email");
-            let company = extract_json_string(body, "company");
-            let phone = extract_json_string(body, "phone");
-            let status = extract_json_string(body, "status");
-            let result = conn.execute(
-                "UPDATE customers SET name=?1, email=?2, company=?3, phone=?4, status=?5 WHERE id=?6",
-                rusqlite::params![name, email, company, phone, if status.is_empty() { "active" } else { &status }, id],
-            );
-            match result {
-                Ok(_) => (200, "application/json".to_string(), "{\"success\":true}".to_string()),
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
-            }
-        }));
-
-        // DELETE /api/customers/:id
-        let db_clone = db.clone();
-        self.add_route("DELETE", "/api/customers", Box::new(move |_, path, _, _| {
-            let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
-            if id == 0 {
-                return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
-            }
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let result = conn.execute("DELETE FROM customers WHERE id=?1", rusqlite::params![id]);
-            match result {
-                Ok(_) => (200, "application/json".to_string(), "{\"success\":true}".to_string()),
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
-            }
-        }));
-
-        // POST /api/leads
-        let db_clone = db.clone();
-        self.add_route("POST", "/api/leads", Box::new(move |_, _, body, _| {
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let company = extract_json_string(body, "company");
-            let contact = extract_json_string(body, "contact");
-            let email = extract_json_string(body, "email");
-            let source = extract_json_string(body, "source");
-            let value = extract_json_number(body, "value");
-            if company.is_empty() || contact.is_empty() {
-                return (400, "application/json".to_string(), "{\"error\":\"company and contact required\"}".to_string());
-            }
-            let result = conn.execute(
-                "INSERT INTO leads (company, contact, email, source, status, value, score) VALUES (?1, ?2, ?3, ?4, 'warm', ?5, 50)",
-                rusqlite::params![company, contact, email, source, value],
-            );
-            match result {
-                Ok(_) => {
-                    let id = conn.last_insert_rowid();
-                    let json = format!("{{\"id\":{},\"company\":\"{}\",\"contact\":\"{}\",\"email\":\"{}\",\"source\":\"{}\",\"status\":\"warm\",\"value\":{},\"score\":50}}", id, company, contact, email, source, value);
-                    (201, "application/json".to_string(), json)
+            let sql = format!("SELECT * FROM {} WHERE id = ?1", tbl_clone);
+            let mut stmt = match conn.prepare(&sql) {
+                Ok(s) => s,
+                Err(e) => return (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
+            };
+            let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+            match stmt.query_row(rusqlite::params![id], |row| {
+                let mut map = Vec::new();
+                for (i, col) in columns.iter().enumerate() {
+                    let val = if let Ok(n) = row.get::<_, i64>(i) {
+                        format!("{}", n)
+                    } else if let Ok(s) = row.get::<_, String>(i) {
+                        format!("\"{}\"", s.replace('"', "\\\""))
+                    } else {
+                        "null".to_string()
+                    };
+                    map.push(format!("\"{}\":{}", col, val));
                 }
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
+                Ok(format!("{{{}}}", map.join(",")))
+            }) {
+                Ok(json) => (200, "application/json".to_string(), json),
+                Err(_) => (404, "application/json".to_string(), "{\"error\":\"not found\"}".to_string()),
             }
         }));
 
-        // PUT /api/leads/:id
+        // PUT /api/{table}/:id — update by id
         let db_clone = db.clone();
-        self.add_route("PUT", "/api/leads", Box::new(move |_, path, body, _| {
+        let tbl_clone = tbl.clone();
+        self.add_route("PUT", &prefix, Box::new(move |_, path, body, _| {
             let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
             if id == 0 {
                 return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
             }
             let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let company = extract_json_string(body, "company");
-            let contact = extract_json_string(body, "contact");
-            let email = extract_json_string(body, "email");
-            let source = extract_json_string(body, "source");
-            let value = extract_json_number(body, "value");
-            let status = extract_json_string(body, "status");
-            let score = extract_json_number(body, "score");
-            let result = conn.execute(
-                "UPDATE leads SET company=?1, contact=?2, email=?3, source=?4, value=?5, status=?6, score=?7 WHERE id=?8",
-                rusqlite::params![company, contact, email, source, value, if status.is_empty() { "warm" } else { &status }, score, id],
-            );
-            match result {
-                Ok(_) => (200, "application/json".to_string(), "{\"success\":true}".to_string()),
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
-            }
-        }));
 
-        // DELETE /api/leads/:id
-        let db_clone = db.clone();
-        self.add_route("DELETE", "/api/leads", Box::new(move |_, path, _, _| {
-            let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
-            if id == 0 {
-                return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
-            }
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let result = conn.execute("DELETE FROM leads WHERE id=?1", rusqlite::params![id]);
-            match result {
-                Ok(_) => (200, "application/json".to_string(), "{\"success\":true}".to_string()),
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
-            }
-        }));
-
-        // POST /api/deals
-        let db_clone = db.clone();
-        self.add_route("POST", "/api/deals", Box::new(move |_, _, body, _| {
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let name = extract_json_string(body, "name");
-            let customer = extract_json_string(body, "customer");
-            let value = extract_json_number(body, "value");
-            let stage = extract_json_string(body, "stage");
-            if name.is_empty() {
-                return (400, "application/json".to_string(), "{\"error\":\"name required\"}".to_string());
-            }
-            let stage_str = if stage.is_empty() { "discovery" } else { &stage };
-            let result = conn.execute(
-                "INSERT INTO deals (name, customer, value, stage, probability) VALUES (?1, ?2, ?3, ?4, 50)",
-                rusqlite::params![name, customer, value, stage_str],
-            );
-            match result {
-                Ok(_) => {
-                    let id = conn.last_insert_rowid();
-                    let json = format!("{{\"id\":{},\"name\":\"{}\",\"customer\":\"{}\",\"value\":{},\"stage\":\"{}\",\"probability\":50}}", id, name, customer, value, stage_str);
-                    (201, "application/json".to_string(), json)
+            // Parse JSON body
+            let mut set_parts = Vec::new();
+            let mut values = Vec::new();
+            let mut idx = 1;
+            let body_trimmed = body.trim();
+            if body_trimmed.starts_with('{') && body_trimmed.ends_with('}') {
+                let inner = &body_trimmed[1..body_trimmed.len()-1];
+                for pair in inner.split(',') {
+                    if let Some((key, val)) = pair.split_once(':') {
+                        let key = key.trim().trim_matches('"').to_string();
+                        let val = val.trim();
+                        let val_str = if val.starts_with('"') && val.ends_with('"') {
+                            val[1..val.len()-1].to_string()
+                        } else {
+                            val.to_string()
+                        };
+                        set_parts.push(format!("{} = ?{}", key, idx));
+                        values.push(val_str);
+                        idx += 1;
+                    }
                 }
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
             }
-        }));
 
-        // PUT /api/deals/:id
-        let db_clone = db.clone();
-        self.add_route("PUT", "/api/deals", Box::new(move |_, path, body, _| {
-            let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
-            if id == 0 {
-                return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
+            if set_parts.is_empty() {
+                return (400, "application/json".to_string(), "{\"error\":\"empty body\"}".to_string());
             }
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let name = extract_json_string(body, "name");
-            let customer = extract_json_string(body, "customer");
-            let value = extract_json_number(body, "value");
-            let stage = extract_json_string(body, "stage");
-            let probability = extract_json_number(body, "probability");
-            let result = conn.execute(
-                "UPDATE deals SET name=?1, customer=?2, value=?3, stage=?4, probability=?5 WHERE id=?6",
-                rusqlite::params![name, customer, value, if stage.is_empty() { "discovery" } else { &stage }, probability, id],
-            );
-            match result {
+
+            values.push(id.to_string());
+            let sql = format!("UPDATE {} SET {} WHERE id = ?{}", tbl_clone, set_parts.join(", "), idx);
+            let params_refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+            match conn.execute(&sql, params_refs.as_slice()) {
                 Ok(_) => (200, "application/json".to_string(), "{\"success\":true}".to_string()),
                 Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
             }
         }));
 
-        // DELETE /api/deals/:id
+        // DELETE /api/{table}/:id — delete by id
         let db_clone = db.clone();
-        self.add_route("DELETE", "/api/deals", Box::new(move |_, path, _, _| {
+        let tbl_clone = tbl.clone();
+        self.add_route("DELETE", &prefix, Box::new(move |_, path, _, _| {
             let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
             if id == 0 {
                 return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
             }
             let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let result = conn.execute("DELETE FROM deals WHERE id=?1", rusqlite::params![id]);
-            match result {
+            let sql = format!("DELETE FROM {} WHERE id = ?1", tbl_clone);
+            match conn.execute(&sql, rusqlite::params![id]) {
                 Ok(_) => (200, "application/json".to_string(), "{\"success\":true}".to_string()),
                 Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
             }
@@ -443,17 +343,18 @@ fn handle_connection(mut stream: TcpStream, routes: &[(String, String, Arc<Handl
         return;
     }
 
-    // Check routes
+    // Check routes — exact match first, then prefix match
+    // This ensures /api/customers matches exactly, while /api/customers/1 matches the prefix route
     for (route_method, route_path, handler) in routes {
         if route_method == &method || route_method == "*" {
             let matched = if route_path == &path {
+                // Exact match
                 true
-            } else if route_path.ends_with('/') {
-                path.starts_with(route_path.as_str())
+            } else if route_path.ends_with('/') && path.starts_with(route_path.as_str()) && path.len() > route_path.len() {
+                // Prefix match only if path is longer than route (e.g., /api/customers/1 matches /api/customers/)
+                true
             } else {
-                // Support /api/customers/:id pattern
-                let prefix = format!("{}/", route_path);
-                path.starts_with(&prefix)
+                false
             };
             if matched {
                 let (status, ct, response_body) = handler(&method, &path, &body, &headers);

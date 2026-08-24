@@ -336,10 +336,64 @@ pub fn axl_server_start(args: &[Value]) -> Result<Value, String> {
     let db_path = args.get(2).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or(":memory:");
 
     let mut server = crate::server::AxlServer::new(addr, static_dir, db_path);
-    server.add_api_routes();
+
+    // If a 4th arg is a list of table names, add generic CRUD routes for each
+    if let Some(Value::List(tables)) = args.get(3) {
+        for table_val in tables {
+            if let Value::String(table_name) = table_val {
+                server.add_table_routes(table_name);
+                println!("  API routes: /api/{}", table_name);
+            }
+        }
+    }
 
     println!("AXL Server on {addr} | db={db_path} | static={static_dir}");
 
     server.run().map_err(|e| format!("axl_server_start: {e}"))?;
     Ok(Value::String(format!("server stopped on {addr}")))
+}
+
+/// Register generic CRUD API routes for a database table.
+/// Usage: http_server_api(db_path, table_name)
+/// Creates: GET /api/{table}, GET /api/{table}/:id, POST /api/{table}, PUT /api/{table}/:id, DELETE /api/{table}/:id
+pub fn http_server_api(args: &[Value]) -> Result<Value, String> {
+    let db_path = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None })
+        .ok_or("http_server_api: missing db_path")?;
+    let table = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None })
+        .ok_or("http_server_api: missing table name")?;
+
+    let db = db_path.to_string();
+    let tbl = table.to_string();
+    let api_prefix = format!("/api/{}", tbl);
+
+    // GET /api/{table} — list all rows
+    let db_c = db.clone();
+    let tbl_c = tbl.clone();
+    ROUTES.lock().unwrap().push(("GET".into(), api_prefix.clone(), format!("list_{}", tbl_c)));
+
+    // POST /api/{table} — create new row
+    let db_c = db.clone();
+    let tbl_c = tbl.clone();
+    ROUTES.lock().unwrap().push(("POST".into(), api_prefix.clone(), format!("create_{}", tbl_c)));
+
+    // GET /api/{table}/:id — get by id (prefix match)
+    let db_c = db.clone();
+    let tbl_c = tbl.clone();
+    ROUTES.lock().unwrap().push(("GET".into(), format!("{}/", api_prefix), format!("get_{}", tbl_c)));
+
+    // PUT /api/{table}/:id — update by id
+    let db_c = db.clone();
+    let tbl_c = tbl.clone();
+    ROUTES.lock().unwrap().push(("PUT".into(), format!("{}/", api_prefix), format!("update_{}", tbl_c)));
+
+    // DELETE /api/{table}/:id — delete by id
+    let db_c = db.clone();
+    let tbl_c = tbl.clone();
+    ROUTES.lock().unwrap().push(("DELETE".into(), format!("{}/", api_prefix), format!("delete_{}", tbl_c)));
+
+    Ok(Value::Map(vec![
+        (Value::String("table".into()), Value::String(tbl.into())),
+        (Value::String("routes".into()), Value::Int(5)),
+        (Value::String("status".into()), Value::String("registered".into())),
+    ]))
 }
