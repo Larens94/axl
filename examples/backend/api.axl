@@ -1,1 +1,0 @@
-2;12|"=== AXL Backend API ===";10|db|"/tmp/axl_db.json","{\"users\":[]}",!file_write/2|s;12|$db;10|data|"/tmp/axl_db.json",!file_read/1|s;12|$data;10|hash|"secret123",!hash_sha256/1|s;12|$hash;10|enc|"hello",!encode_base64/1|s;12|$enc;10|ts|!time_now/0|s;12|$ts;12|"=== Backend Complete ===";
