@@ -1,5 +1,6 @@
 [workspace]
-members = ["runtime/axl-core-rs", "runtime/axl-cli"]
+members = ["runtime/axl-core-rs", "runtime/axl-cli", "runtime/axl-compiler"]
+exclude = ["crm-backend", "generated"]
 resolver = "2"
 
 [workspace.package]

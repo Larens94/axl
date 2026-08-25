@@ -8,25 +8,13 @@ pub fn generate(app: &AnalyzedApp, output: &Path) -> Result<()> {
     fs::create_dir_all(output.join("src/pages"))?;
     fs::create_dir_all(output.join("src/components"))?;
     
-    // Generate package.json
     generate_package_json(app, output)?;
-    
-    // Generate vite.config.ts
     generate_vite_config(output)?;
-    
-    // Generate tsconfig.json
     generate_tsconfig(output)?;
-    
-    // Generate index.html
     generate_index_html(app, output)?;
-    
-    // Generate src/main.tsx
     generate_main_tsx(output)?;
-    
-    // Generate src/App.tsx
     generate_app_tsx(app, output)?;
     
-    // Generate pages
     for entity in &app.entities {
         generate_list_page(entity, output)?;
         generate_create_page(entity, output)?;
@@ -34,15 +22,16 @@ pub fn generate(app: &AnalyzedApp, output: &Path) -> Result<()> {
         generate_show_page(entity, output)?;
     }
     
-    // Generate dashboard
     generate_dashboard(app, output)?;
     
     Ok(())
 }
 
 fn generate_package_json(app: &AnalyzedApp, output: &Path) -> Result<()> {
-    let content = format!(r#"{{
-  "name": "{}",
+    let name = app.name.to_lowercase().replace(" ", "-");
+    let content = format!(
+        r#"{{
+  "name": "{name}",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -75,7 +64,8 @@ fn generate_package_json(app: &AnalyzedApp, output: &Path) -> Result<()> {
     "typescript": "^5.0.0",
     "vite": "^5.0.0"
   }}
-}}"#, app.name.to_lowercase().replace(" ", "-"));
+}}"#
+    );
     
     fs::write(output.join("package.json"), content)?;
     Ok(())
@@ -128,19 +118,22 @@ fn generate_tsconfig(output: &Path) -> Result<()> {
 }
 
 fn generate_index_html(app: &AnalyzedApp, output: &Path) -> Result<()> {
-    let content = format!(r#"<!DOCTYPE html>
+    let name = &app.name;
+    let content = format!(
+        r#"<!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>{}</title>
+    <title>{name}</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-"#, app.name);
+"#
+    );
     
     fs::write(output.join("index.html"), content)?;
     Ok(())
@@ -209,7 +202,8 @@ fn generate_app_tsx(app: &AnalyzedApp, output: &Path) -> Result<()> {
         ));
     }
     
-    let content = format!(r#"import {{ Refine }} from "@refinedev/core";
+    let content = format!(
+        r#"import {{ Refine }} from "@refinedev/core";
 import {{ RefineThemes, useNotificationProvider }} from "@refinedev/mui";
 import {{ CssBaseline, GlobalStyles }} from "@mui/material";
 import {{ BrowserRouter, Outlet, Route, Routes }} from "react-router-dom";
@@ -240,7 +234,8 @@ const App: React.FC = () => {{
 }};
 
 export default App;
-"#);
+"#
+    );
     
     fs::write(output.join("src/App.tsx"), content)?;
     Ok(())
@@ -248,27 +243,33 @@ export default App;
 
 fn generate_list_page(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Result<()> {
     let entity_lower = entity.name.to_lowercase();
+    let entity_name = &entity.name;
     
     let mut columns = String::new();
     for field in &entity.fields {
         if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
+            let header = field.name.replace("_", " ")
+                .chars()
+                .enumerate()
+                .map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() })
+                .collect::<String>();
             columns.push_str(&format!(
                 "          {{ field: \"{}\", headerName: \"{}\", flex: 1 }},\n",
-                field.name,
-                field.name.replace("_", " ").chars().enumerate().map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() }).collect::<String>()
+                field.name, header
             ));
         }
     }
     
-    let content = format!(r#"import {{ useDataGrid }} from "@refinedev/mui";
+    let content = format!(
+        r#"import {{ useDataGrid }} from "@refinedev/mui";
 import {{ DataGrid, GridColDef }} from "@mui/x-data-grid";
 import {{ List, EditButton, ShowButton, DeleteButton }} from "@refinedev/mui";
 import {{ Button, Stack }} from "@mui/material";
 import {{ useNavigate }} from "react-router-dom";
 
-export const {}List: React.FC = () => {{
+export const {entity_name}List: React.FC = () => {{
   const {{ dataGridProps }} = useDataGrid({{
-    resource: "{}s",
+    resource: "{entity_lower}s",
   }});
   
   const navigate = useNavigate();
@@ -279,7 +280,7 @@ export const {}List: React.FC = () => {{
       headerName: "Actions",
       flex: 1,
       renderCell: (params) => (
-        <Stack direction="row" spacing={1}>
+        <Stack direction="row" spacing={{1}}>
           <EditButton hideText recordItemId={{params.row.id}} />
           <ShowButton hideText recordItemId={{params.row.id}} />
           <DeleteButton hideText recordItemId={{params.row.id}} />
@@ -293,9 +294,9 @@ export const {}List: React.FC = () => {{
       headerButtons={{(
         <Button
           variant="contained"
-          onClick={{() => navigate("/{}s/create")}}
+          onClick={{() => navigate("/{entity_lower}s/create")}}
         >
-          Create {}
+          Create {entity_name}
         </Button>
       )}}
     >
@@ -303,7 +304,8 @@ export const {}List: React.FC = () => {{
     </List>
   );
 }};
-"#, entity.name, entity_lower, entity_lower, entity.name);
+"#
+    );
     
     fs::create_dir_all(output.join(format!("src/pages/{}", entity_lower)))?;
     fs::write(output.join(format!("src/pages/{}/list.tsx", entity_lower)), content)?;
@@ -312,40 +314,47 @@ export const {}List: React.FC = () => {{
 
 fn generate_create_page(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Result<()> {
     let entity_lower = entity.name.to_lowercase();
+    let entity_name = &entity.name;
     
     let mut fields = String::new();
     for field in &entity.fields {
         if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
+            let label = field.name.replace("_", " ")
+                .chars()
+                .enumerate()
+                .map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() })
+                .collect::<String>();
             fields.push_str(&format!(
                 "          <TextField\n            label=\"{}\"\n            {{...register(\"{}\", {{ required: true }})}}\n            fullWidth\n            margin=\"normal\"\n          />\n",
-                field.name.replace("_", " ").chars().enumerate().map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() }).collect::<String>(),
-                field.name
+                label, field.name
             ));
         }
     }
     
-    let content = format!(r#"import {{ useForm }} from "@refinedev/react-hook-form";
+    let content = format!(
+        r#"import {{ useForm }} from "@refinedev/react-hook-form";
 import {{ Create }} from "@refinedev/mui";
 import {{ TextField, Box }} from "@mui/material";
 
-export const {}Create: React.FC = () => {{
+export const {entity_name}Create: React.FC = () => {{
   const {{
     saveButtonProps,
     refineCore: {{ formLoading }},
     register,
     formState: {{ errors }},
   }} = useForm({{
-    resource: "{}s",
+    resource: "{entity_lower}s",
   }});
 
   return (
     <Create isLoading={{formLoading}} saveButtonProps={{saveButtonProps}}>
-      <Box component="form" sx={{ display: "flex", flexDirection: "column" }} autoComplete="off">
+      <Box component="form" sx={{{{ display: "flex", flexDirection: "column" }}}} autoComplete="off">
 {fields}      </Box>
     </Create>
   );
 }};
-"#, entity.name, entity_lower);
+"#
+    );
     
     fs::create_dir_all(output.join(format!("src/pages/{}", entity_lower)))?;
     fs::write(output.join(format!("src/pages/{}/create.tsx", entity_lower)), content)?;
@@ -354,40 +363,47 @@ export const {}Create: React.FC = () => {{
 
 fn generate_edit_page(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Result<()> {
     let entity_lower = entity.name.to_lowercase();
+    let entity_name = &entity.name;
     
     let mut fields = String::new();
     for field in &entity.fields {
         if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
+            let label = field.name.replace("_", " ")
+                .chars()
+                .enumerate()
+                .map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() })
+                .collect::<String>();
             fields.push_str(&format!(
                 "          <TextField\n            label=\"{}\"\n            {{...register(\"{}\", {{ required: true }})}}\n            fullWidth\n            margin=\"normal\"\n          />\n",
-                field.name.replace("_", " ").chars().enumerate().map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() }).collect::<String>(),
-                field.name
+                label, field.name
             ));
         }
     }
     
-    let content = format!(r#"import {{ useForm }} from "@refinedev/react-hook-form";
+    let content = format!(
+        r#"import {{ useForm }} from "@refinedev/react-hook-form";
 import {{ Edit }} from "@refinedev/mui";
 import {{ TextField, Box }} from "@mui/material";
 
-export const {}Edit: React.FC = () => {{
+export const {entity_name}Edit: React.FC = () => {{
   const {{
     saveButtonProps,
     refineCore: {{ formLoading, queryResult }},
     register,
     formState: {{ errors }},
   }} = useForm({{
-    resource: "{}s",
+    resource: "{entity_lower}s",
   }});
 
   return (
     <Edit isLoading={{formLoading}} saveButtonProps={{saveButtonProps}}>
-      <Box component="form" sx={{ display: "flex", flexDirection: "column" }} autoComplete="off">
+      <Box component="form" sx={{{{ display: "flex", flexDirection: "column" }}}} autoComplete="off">
 {fields}      </Box>
     </Edit>
   );
 }};
-"#, entity.name, entity_lower);
+"#
+    );
     
     fs::create_dir_all(output.join(format!("src/pages/{}", entity_lower)))?;
     fs::write(output.join(format!("src/pages/{}/edit.tsx", entity_lower)), content)?;
@@ -396,25 +412,31 @@ export const {}Edit: React.FC = () => {{
 
 fn generate_show_page(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Result<()> {
     let entity_lower = entity.name.to_lowercase();
+    let entity_name = &entity.name;
     
     let mut fields = String::new();
     for field in &entity.fields {
         if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
+            let label = field.name.replace("_", " ")
+                .chars()
+                .enumerate()
+                .map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() })
+                .collect::<String>();
             fields.push_str(&format!(
                 "          <Typography variant=\"subtitle1\">{}: {{record?.{}}}</Typography>\n",
-                field.name.replace("_", " ").chars().enumerate().map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() }).collect::<String>(),
-                field.name
+                label, field.name
             ));
         }
     }
     
-    let content = format!(r#"import {{ useShow }} from "@refinedev/core";
-import {{ Show }}, {{ TextFieldComponent as TextField, NumberField }} from "@refinedev/mui";
+    let content = format!(
+        r#"import {{ useShow }} from "@refinedev/core";
+import {{ Show, TextFieldComponent as TextField, NumberField }} from "@refinedev/mui";
 import {{ Typography, Stack }} from "@mui/material";
 
-export const {}Show: React.FC = () => {{
+export const {entity_name}Show: React.FC = () => {{
   const {{ queryResult }} = useShow({{
-    resource: "{}s",
+    resource: "{entity_lower}s",
   }});
   
   const {{ data, isLoading }} = queryResult;
@@ -427,14 +449,15 @@ export const {}Show: React.FC = () => {{
     </Show>
   );
 }};
-"#, entity.name, entity_lower);
+"#
+    );
     
     fs::create_dir_all(output.join(format!("src/pages/{}", entity_lower)))?;
     fs::write(output.join(format!("src/pages/{}/show.tsx", entity_lower)), content)?;
     Ok(())
 }
 
-fn generate_dashboard(app: &AnalyzedApp, output: &Path) -> Result<()> {
+fn generate_dashboard(_app: &AnalyzedApp, output: &Path) -> Result<()> {
     let content = r#"import { Card, CardContent, Typography, Grid } from "@mui/material";
 import { useList } from "@refinedev/core";
 
