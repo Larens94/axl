@@ -36,7 +36,7 @@ cp -r /Users/fabriziocorpora/Desktop/workspaces/axl/generated/frontend/dist/* /U
 
 # Avvia backend
 cd /Users/fabriziocorpora/Desktop/workspaces/axl/generated/backend
-./target/release/crm-backend
+./target/release/app
 ```
 
 ## 7. Test
@@ -52,27 +52,34 @@ generated/
 │   │   ├── main.rs
 │   │   ├── auth.rs
 │   │   ├── handlers/
+│   │   │   ├── mod.rs
+│   │   │   ├── customer.rs
+│   │   │   ├── lead.rs
+│   │   │   ├── deal.rs
+│   │   │   └── activity.rs
 │   │   └── models/
+│   │       ├── mod.rs
+│   │       ├── customer.rs
+│   │       ├── lead.rs
+│   │       ├── deal.rs
+│   │       └── activity.rs
 │   └── .env
 └── frontend/         ← React (MUI + Refine)
     ├── package.json
     ├── src/
     │   ├── App.tsx
     │   └── pages/
+    │       ├── dashboard.tsx
+    │       ├── customer/
+    │       │   ├── list.tsx
+    │       │   ├── create.tsx
+    │       │   ├── edit.tsx
+    │       │   └── show.tsx
+    │       ├── lead/
+    │       ├── deal/
+    │       └── activity/
     └── index.html
 ```
 
 ## Sorgente AXL
 - `examples/crm/crm.axl` — Definizione completa dell'applicazione
-
-
-
-
-short:
-export PATH="$HOME/.cargo/bin:$PATH"
-cd /Users/fabriziocorpora/Desktop/workspaces/axl
-rm -rf generated
-cargo run -p axl-compiler -- examples/crm/crm.axl generated
-cd generated/backend && cargo build --release
-cd /Users/fabriziocorpora/Desktop/workspaces/axl/generated/frontend
-npm install && npm run buil
