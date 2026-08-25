@@ -30,6 +30,8 @@ pub fn generate(app: &AnalyzedApp, output: &Path) -> Result<()> {
     for entity in &app.entities {
         generate_list_page(entity, output)?;
         generate_create_page(entity, output)?;
+        generate_edit_page(entity, output)?;
+        generate_show_page(entity, output)?;
     }
     
     // Generate dashboard
@@ -54,6 +56,7 @@ fn generate_package_json(app: &AnalyzedApp, output: &Path) -> Result<()> {
     "@refinedev/mui": "^5.0.0",
     "@refinedev/react-router-v6": "^4.0.0",
     "@refinedev/simple-rest": "^5.0.0",
+    "@refinedev/react-hook-form": "^4.0.0",
     "@mui/material": "^5.0.0",
     "@mui/icons-material": "^5.0.0",
     "@mui/x-data-grid": "^6.0.0",
@@ -62,6 +65,7 @@ fn generate_package_json(app: &AnalyzedApp, output: &Path) -> Result<()> {
     "react": "^18.0.0",
     "react-dom": "^18.0.0",
     "react-router-dom": "^6.0.0",
+    "react-hook-form": "^7.0.0",
     "@tanstack/react-query": "^5.0.0"
   }},
   "devDependencies": {{
@@ -173,6 +177,14 @@ fn generate_app_tsx(app: &AnalyzedApp, output: &Path) -> Result<()> {
             "import {{ {}Create }} from './pages/{}/create'\n",
             entity.name, entity_lower
         ));
+        imports.push_str(&format!(
+            "import {{ {}Edit }} from './pages/{}/edit'\n",
+            entity.name, entity_lower
+        ));
+        imports.push_str(&format!(
+            "import {{ {}Show }} from './pages/{}/show'\n",
+            entity.name, entity_lower
+        ));
         
         routes.push_str(&format!(
             "          <Route path=\"{}s\" element={{<{}List />}} />\n",
@@ -182,10 +194,18 @@ fn generate_app_tsx(app: &AnalyzedApp, output: &Path) -> Result<()> {
             "          <Route path=\"{}s/create\" element={{<{}Create />}} />\n",
             entity_lower, entity.name
         ));
+        routes.push_str(&format!(
+            "          <Route path=\"{}s/edit/:id\" element={{<{}Edit />}} />\n",
+            entity_lower, entity.name
+        ));
+        routes.push_str(&format!(
+            "          <Route path=\"{}s/show/:id\" element={{<{}Show />}} />\n",
+            entity_lower, entity.name
+        ));
         
         resources.push_str(&format!(
-            "          {{ name: \"{}s\", list: \"/{}s\", create: \"/{}s/create\" }},\n",
-            entity_lower, entity_lower, entity_lower
+            "          {{ name: \"{}s\", list: \"/{}s\", create: \"/{}s/create\", edit: \"/{}s/edit/:id\", show: \"/{}s/show/:id\" }},\n",
+            entity_lower, entity_lower, entity_lower, entity_lower, entity_lower
         ));
     }
     
@@ -242,8 +262,8 @@ fn generate_list_page(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -
     
     let content = format!(r#"import {{ useDataGrid }} from "@refinedev/mui";
 import {{ DataGrid, GridColDef }} from "@mui/x-data-grid";
-import {{ List }} from "@refinedev/mui";
-import {{ Button }} from "@mui/material";
+import {{ List, EditButton, ShowButton, DeleteButton }} from "@refinedev/mui";
+import {{ Button, Stack }} from "@mui/material";
 import {{ useNavigate }} from "react-router-dom";
 
 export const {}List: React.FC = () => {{
@@ -254,7 +274,19 @@ export const {}List: React.FC = () => {{
   const navigate = useNavigate();
 
   const columns: GridColDef[] = [
-{columns}  ];
+{columns}    {{
+      field: "actions",
+      headerName: "Actions",
+      flex: 1,
+      renderCell: (params) => (
+        <Stack direction="row" spacing={1}>
+          <EditButton hideText recordItemId={{params.row.id}} />
+          <ShowButton hideText recordItemId={{params.row.id}} />
+          <DeleteButton hideText recordItemId={{params.row.id}} />
+        </Stack>
+      ),
+    }},
+  ];
 
   return (
     <List
@@ -320,17 +352,104 @@ export const {}Create: React.FC = () => {{
     Ok(())
 }
 
+fn generate_edit_page(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Result<()> {
+    let entity_lower = entity.name.to_lowercase();
+    
+    let mut fields = String::new();
+    for field in &entity.fields {
+        if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
+            fields.push_str(&format!(
+                "          <TextField\n            label=\"{}\"\n            {{...register(\"{}\", {{ required: true }})}}\n            fullWidth\n            margin=\"normal\"\n          />\n",
+                field.name.replace("_", " ").chars().enumerate().map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() }).collect::<String>(),
+                field.name
+            ));
+        }
+    }
+    
+    let content = format!(r#"import {{ useForm }} from "@refinedev/react-hook-form";
+import {{ Edit }} from "@refinedev/mui";
+import {{ TextField, Box }} from "@mui/material";
+
+export const {}Edit: React.FC = () => {{
+  const {{
+    saveButtonProps,
+    refineCore: {{ formLoading, queryResult }},
+    register,
+    formState: {{ errors }},
+  }} = useForm({{
+    resource: "{}s",
+  }});
+
+  return (
+    <Edit isLoading={{formLoading}} saveButtonProps={{saveButtonProps}}>
+      <Box component="form" sx={{ display: "flex", flexDirection: "column" }} autoComplete="off">
+{fields}      </Box>
+    </Edit>
+  );
+}};
+"#, entity.name, entity_lower);
+    
+    fs::create_dir_all(output.join(format!("src/pages/{}", entity_lower)))?;
+    fs::write(output.join(format!("src/pages/{}/edit.tsx", entity_lower)), content)?;
+    Ok(())
+}
+
+fn generate_show_page(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Result<()> {
+    let entity_lower = entity.name.to_lowercase();
+    
+    let mut fields = String::new();
+    for field in &entity.fields {
+        if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
+            fields.push_str(&format!(
+                "          <Typography variant=\"subtitle1\">{}: {{record?.{}}}</Typography>\n",
+                field.name.replace("_", " ").chars().enumerate().map(|(i, c)| if i == 0 { c.to_uppercase().to_string() } else { c.to_string() }).collect::<String>(),
+                field.name
+            ));
+        }
+    }
+    
+    let content = format!(r#"import {{ useShow }} from "@refinedev/core";
+import {{ Show }}, {{ TextFieldComponent as TextField, NumberField }} from "@refinedev/mui";
+import {{ Typography, Stack }} from "@mui/material";
+
+export const {}Show: React.FC = () => {{
+  const {{ queryResult }} = useShow({{
+    resource: "{}s",
+  }});
+  
+  const {{ data, isLoading }} = queryResult;
+  const record = data?.data;
+
+  return (
+    <Show isLoading={{isLoading}}>
+      <Stack spacing={{2}}>
+{fields}      </Stack>
+    </Show>
+  );
+}};
+"#, entity.name, entity_lower);
+    
+    fs::create_dir_all(output.join(format!("src/pages/{}", entity_lower)))?;
+    fs::write(output.join(format!("src/pages/{}/show.tsx", entity_lower)), content)?;
+    Ok(())
+}
+
 fn generate_dashboard(app: &AnalyzedApp, output: &Path) -> Result<()> {
     let content = r#"import { Card, CardContent, Typography, Grid } from "@mui/material";
+import { useList } from "@refinedev/core";
 
 export const Dashboard: React.FC = () => {
+  const { data: customers } = useList({ resource: "customers" });
+  const { data: leads } = useList({ resource: "leads" });
+  const { data: deals } = useList({ resource: "deals" });
+
   return (
     <Grid container spacing={3}>
       <Grid item xs={12} md={3}>
         <Card>
           <CardContent>
             <Typography variant="h6">Customers</Typography>
-            <Typography variant="h4">-</Typography>
+            <Typography variant="h4">{customers?.data?.length || 0}</Typography>
           </CardContent>
         </Card>
       </Grid>
@@ -338,7 +457,7 @@ export const Dashboard: React.FC = () => {
         <Card>
           <CardContent>
             <Typography variant="h6">Leads</Typography>
-            <Typography variant="h4">-</Typography>
+            <Typography variant="h4">{leads?.data?.length || 0}</Typography>
           </CardContent>
         </Card>
       </Grid>
@@ -346,7 +465,7 @@ export const Dashboard: React.FC = () => {
         <Card>
           <CardContent>
             <Typography variant="h6">Deals</Typography>
-            <Typography variant="h4">-</Typography>
+            <Typography variant="h4">{deals?.data?.length || 0}</Typography>
           </CardContent>
         </Card>
       </Grid>
@@ -354,7 +473,9 @@ export const Dashboard: React.FC = () => {
         <Card>
           <CardContent>
             <Typography variant="h6">Revenue</Typography>
-            <Typography variant="h4">-</Typography>
+            <Typography variant="h4">
+              ${deals?.data?.reduce((sum: number, deal: any) => sum + (deal.value || 0), 0).toLocaleString() || 0}
+            </Typography>
           </CardContent>
         </Card>
       </Grid>
