@@ -11,6 +11,22 @@ pub fn generate(app: &AnalyzedApp, output: &Path) -> Result<()> {
     generate_cargo_toml(app, output)?;
     generate_main_rs(app, output)?;
     
+    // Generate mod.rs for handlers
+    let mut handlers_mod = String::new();
+    for api in &app.apis {
+        let entity_lower = api.entity.to_lowercase();
+        handlers_mod.push_str(&format!("pub mod {};\n", entity_lower));
+    }
+    fs::write(output.join("src/handlers/mod.rs"), handlers_mod)?;
+    
+    // Generate mod.rs for models
+    let mut models_mod = String::new();
+    for entity in &app.entities {
+        let entity_lower = entity.name.to_lowercase();
+        models_mod.push_str(&format!("pub mod {};\n", entity_lower));
+    }
+    fs::write(output.join("src/models/mod.rs"), models_mod)?;
+    
     for entity in &app.entities {
         generate_model(entity, output)?;
     }
