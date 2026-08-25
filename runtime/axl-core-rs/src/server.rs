@@ -3,7 +3,7 @@ use std::io::{Read, Write, BufRead, BufReader};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use crate::ir::Value;
+use crate::primitives::db::SharedConnection;
 use rusqlite::Connection;
 
 type HandlerFn = Box<dyn Fn(&str, &str, &str, &HashMap<String,String>) -> (u16, String, String) + Send + Sync>;
@@ -13,6 +13,7 @@ pub struct AxlServer {
     pub static_dir: String,
     routes: Vec<(String, String, Arc<HandlerFn>)>,
     db_path: String,
+    db_conn: Option<SharedConnection>,
 }
 
 impl AxlServer {
@@ -22,6 +23,19 @@ impl AxlServer {
             static_dir: static_dir.to_string(),
             routes: Vec::new(),
             db_path: db_path.to_string(),
+            db_conn: None,
+        }
+    }
+
+    /// Create a server that uses an existing shared database connection.
+    /// The AXL program owns the schema and seed data; the server only queries.
+    pub fn with_connection(addr: &str, static_dir: &str, conn: SharedConnection) -> Self {
+        Self {
+            addr: addr.to_string(),
+            static_dir: static_dir.to_string(),
+            routes: Vec::new(),
+            db_path: String::new(),
+            db_conn: Some(conn),
         }
     }
 
@@ -78,196 +92,122 @@ impl AxlServer {
         // This method is kept for backward compatibility
     }
 
+    /// Get or create a SharedConnection for route handlers.
+    fn get_shared_conn(&self) -> SharedConnection {
+        if let Some(ref conn) = self.db_conn {
+            conn.clone()
+        } else {
+            let conn = Connection::open(&self.db_path).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
+            Arc::new(Mutex::new(conn))
+        }
+    }
+
     /// Add generic CRUD routes for any database table.
     /// Creates: GET /api/{table}, GET /api/{table}/:id, POST /api/{table}, PUT /api/{table}/:id, DELETE /api/{table}/:id
     pub fn add_table_routes(&mut self, table: &str) {
-        let db = self.db_path.clone();
+        let sc = self.get_shared_conn();
         let tbl = table.to_string();
         let api_prefix = format!("/api/{}", tbl);
+        let prefix = format!("{}/", api_prefix);
 
-        // GET /api/{table} — list all rows
-        let db_clone = db.clone();
-        let tbl_clone = tbl.clone();
+        // GET /api/{table} — list all rows (Refine format: {data:[...],total:N})
+        let c = sc.clone(); let t = tbl.clone();
         self.add_route("GET", &api_prefix, Box::new(move |_, _, _, _| {
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let sql = format!("SELECT * FROM {}", tbl_clone);
-            let mut stmt = match conn.prepare(&sql) {
-                Ok(s) => s,
-                Err(e) => return (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
-            };
+            let conn = c.lock().unwrap();
+            let sql = format!("SELECT * FROM {}", t);
+            let mut stmt = match conn.prepare(&sql) { Ok(s) => s, Err(e) => return (500, "application/json".into(), format!("{{\"error\":\"{}\"}}", e)) };
             let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
             let mut rows = Vec::new();
-            let mut row_iter = match stmt.query([]) {
-                Ok(r) => r,
-                Err(e) => return (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
-            };
+            let mut row_iter = match stmt.query([]) { Ok(r) => r, Err(e) => return (500, "application/json".into(), format!("{{\"error\":\"{}\"}}", e)) };
             while let Ok(Some(row)) = row_iter.next() {
                 let mut map = Vec::new();
                 for (i, col) in columns.iter().enumerate() {
-                    // Try integer first, then string
-                    let val = if let Ok(n) = row.get::<_, i64>(i) {
-                        format!("{}", n)
-                    } else if let Ok(s) = row.get::<_, String>(i) {
-                        format!("\"{}\"", s.replace('"', "\\\""))
-                    } else {
-                        "null".to_string()
-                    };
+                    let val = if let Ok(n) = row.get::<_, i64>(i) { format!("{}", n) }
+                        else if let Ok(s) = row.get::<_, String>(i) { format!("\"{}\"", s.replace('"', "\\\"")) }
+                        else { "null".into() };
                     map.push(format!("\"{}\":{}", col, val));
                 }
                 rows.push(format!("{{{}}}", map.join(",")));
             }
-            let json = format!("[{}]", rows.join(","));
-            (200, "application/json".to_string(), json)
+            let total = rows.len();
+            (200, "application/json".into(), format!("{{\"data\":[{}],\"total\":{}}}", rows.join(","), total))
         }));
 
-        // POST /api/{table} — create new row
-        let db_clone = db.clone();
-        let tbl_clone = tbl.clone();
+        // POST /api/{table} — create new row (Refine format: {data:{...}})
+        let c = sc.clone(); let t = tbl.clone();
         self.add_route("POST", &api_prefix, Box::new(move |_, _, body, _| {
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            // Parse JSON body into key-value pairs
-            let mut columns = Vec::new();
-            let mut values = Vec::new();
-            let mut placeholders = Vec::new();
-            let mut idx = 1;
-
-            // Simple JSON parsing
-            let body_trimmed = body.trim();
-            if body_trimmed.starts_with('{') && body_trimmed.ends_with('}') {
-                let inner = &body_trimmed[1..body_trimmed.len()-1];
-                for pair in inner.split(',') {
-                    if let Some((key, val)) = pair.split_once(':') {
-                        let key = key.trim().trim_matches('"').to_string();
-                        let val = val.trim();
-                        let val_str = if val.starts_with('"') && val.ends_with('"') {
-                            val[1..val.len()-1].to_string()
-                        } else {
-                            val.to_string()
-                        };
-                        columns.push(key);
-                        values.push(val_str);
-                        placeholders.push(format!("?{}", idx));
-                        idx += 1;
-                    }
-                }
-            }
-
-            if columns.is_empty() {
-                return (400, "application/json".to_string(), "{\"error\":\"empty body\"}".to_string());
-            }
-
-            let sql = format!("INSERT INTO {} ({}) VALUES ({})", tbl_clone, columns.join(", "), placeholders.join(", "));
+            let conn = c.lock().unwrap();
+            let (columns, values, placeholders) = parse_json_body(body);
+            if columns.is_empty() { return (400, "application/json".into(), "{\"error\":\"empty body\"}".into()); }
+            let sql = format!("INSERT INTO {} ({}) VALUES ({})", t, columns.join(", "), placeholders.join(", "));
             let params_refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
             match conn.execute(&sql, params_refs.as_slice()) {
                 Ok(_) => {
                     let id = conn.last_insert_rowid();
-                    let json = format!("{{\"id\":{}}}", id);
-                    (201, "application/json".to_string(), json)
-                }
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
-            }
-        }));
-
-        // GET /api/{table}/:id — get by id
-        let db_clone = db.clone();
-        let tbl_clone = tbl.clone();
-        let prefix = format!("{}/", api_prefix);
-        self.add_route("GET", &prefix, Box::new(move |_, path, _, _| {
-            let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
-            if id == 0 {
-                return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
-            }
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let sql = format!("SELECT * FROM {} WHERE id = ?1", tbl_clone);
-            let mut stmt = match conn.prepare(&sql) {
-                Ok(s) => s,
-                Err(e) => return (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
-            };
-            let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
-            match stmt.query_row(rusqlite::params![id], |row| {
-                let mut map = Vec::new();
-                for (i, col) in columns.iter().enumerate() {
-                    let val = if let Ok(n) = row.get::<_, i64>(i) {
-                        format!("{}", n)
-                    } else if let Ok(s) = row.get::<_, String>(i) {
-                        format!("\"{}\"", s.replace('"', "\\\""))
+                    if let Some(row_json) = query_row_json(&conn, &t, id) {
+                        (201, "application/json".into(), format!("{{\"data\":{}}}", row_json))
                     } else {
-                        "null".to_string()
-                    };
-                    map.push(format!("\"{}\":{}", col, val));
-                }
-                Ok(format!("{{{}}}", map.join(",")))
-            }) {
-                Ok(json) => (200, "application/json".to_string(), json),
-                Err(_) => (404, "application/json".to_string(), "{\"error\":\"not found\"}".to_string()),
-            }
-        }));
-
-        // PUT /api/{table}/:id — update by id
-        let db_clone = db.clone();
-        let tbl_clone = tbl.clone();
-        self.add_route("PUT", &prefix, Box::new(move |_, path, body, _| {
-            let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
-            if id == 0 {
-                return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
-            }
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-
-            // Parse JSON body
-            let mut set_parts = Vec::new();
-            let mut values = Vec::new();
-            let mut idx = 1;
-            let body_trimmed = body.trim();
-            if body_trimmed.starts_with('{') && body_trimmed.ends_with('}') {
-                let inner = &body_trimmed[1..body_trimmed.len()-1];
-                for pair in inner.split(',') {
-                    if let Some((key, val)) = pair.split_once(':') {
-                        let key = key.trim().trim_matches('"').to_string();
-                        let val = val.trim();
-                        let val_str = if val.starts_with('"') && val.ends_with('"') {
-                            val[1..val.len()-1].to_string()
-                        } else {
-                            val.to_string()
-                        };
-                        set_parts.push(format!("{} = ?{}", key, idx));
-                        values.push(val_str);
-                        idx += 1;
+                        (201, "application/json".into(), format!("{{\"data\":{{\"id\":{}}}}}", id))
                     }
                 }
-            }
-
-            if set_parts.is_empty() {
-                return (400, "application/json".to_string(), "{\"error\":\"empty body\"}".to_string());
-            }
-
-            values.push(id.to_string());
-            let sql = format!("UPDATE {} SET {} WHERE id = ?{}", tbl_clone, set_parts.join(", "), idx);
-            let params_refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
-            match conn.execute(&sql, params_refs.as_slice()) {
-                Ok(_) => (200, "application/json".to_string(), "{\"success\":true}".to_string()),
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
+                Err(e) => (500, "application/json".into(), format!("{{\"error\":\"{}\"}}", e)),
             }
         }));
 
-        // DELETE /api/{table}/:id — delete by id
-        let db_clone = db.clone();
-        let tbl_clone = tbl.clone();
-        self.add_route("DELETE", &prefix, Box::new(move |_, path, _, _| {
-            let id = path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0);
-            if id == 0 {
-                return (400, "application/json".to_string(), "{\"error\":\"invalid id\"}".to_string());
+        // GET /api/{table}/:id — get by id (Refine format: {data:{...}})
+        let c = sc.clone(); let t = tbl.clone();
+        self.add_route("GET", &prefix, Box::new(move |_, path, _, _| {
+            let id = extract_id(path);
+            if id == 0 { return (400, "application/json".into(), "{\"error\":\"invalid id\"}".into()); }
+            let conn = c.lock().unwrap();
+            match query_row_json(&conn, &t, id) {
+                Some(json) => (200, "application/json".into(), format!("{{\"data\":{}}}", json)),
+                None => (404, "application/json".into(), "{\"error\":\"not found\"}".into()),
             }
-            let conn = Connection::open(&db_clone).unwrap_or_else(|_| Connection::open_in_memory().unwrap());
-            let sql = format!("DELETE FROM {} WHERE id = ?1", tbl_clone);
+        }));
+
+        // PUT /api/{table}/:id — update by id (Refine format: {data:{...}})
+        let c = sc.clone(); let t = tbl.clone();
+        self.add_route("PUT", &prefix, Box::new(move |_, path, body, _| {
+            let id = extract_id(path);
+            if id == 0 { return (400, "application/json".into(), "{\"error\":\"invalid id\"}".into()); }
+            let conn = c.lock().unwrap();
+            let (set_parts, mut values) = parse_json_set(body);
+            if set_parts.is_empty() { return (400, "application/json".into(), "{\"error\":\"empty body\"}".into()); }
+            values.push(id.to_string());
+            let idx = values.len();
+            let sql = format!("UPDATE {} SET {} WHERE id = ?{}", t, set_parts.join(", "), idx);
+            let params_refs: Vec<&dyn rusqlite::types::ToSql> = values.iter().map(|v| v as &dyn rusqlite::types::ToSql).collect();
+            match conn.execute(&sql, params_refs.as_slice()) {
+                Ok(_) => {
+                    if let Some(row_json) = query_row_json(&conn, &t, id) {
+                        (200, "application/json".into(), format!("{{\"data\":{}}}", row_json))
+                    } else {
+                        (200, "application/json".into(), "{\"data\":{}}".into())
+                    }
+                }
+                Err(e) => (500, "application/json".into(), format!("{{\"error\":\"{}\"}}", e)),
+            }
+        }));
+
+        // DELETE /api/{table}/:id — delete by id (Refine format: {data:{id:N}})
+        let c = sc.clone(); let t = tbl.clone();
+        self.add_route("DELETE", &prefix, Box::new(move |_, path, _, _| {
+            let id = extract_id(path);
+            if id == 0 { return (400, "application/json".into(), "{\"error\":\"invalid id\"}".into()); }
+            let conn = c.lock().unwrap();
+            let sql = format!("DELETE FROM {} WHERE id = ?1", t);
             match conn.execute(&sql, rusqlite::params![id]) {
-                Ok(_) => (200, "application/json".to_string(), "{\"success\":true}".to_string()),
-                Err(e) => (500, "application/json".to_string(), format!("{{\"error\":\"{}\"}}", e)),
+                Ok(_) => (200, "application/json".into(), format!("{{\"data\":{{\"id\":{}}}}}", id)),
+                Err(e) => (500, "application/json".into(), format!("{{\"error\":\"{}\"}}", e)),
             }
         }));
     }
 
     pub fn run(&self) -> Result<(), String> {
-        self.init_database()?;
+        if self.db_conn.is_none() {
+            self.init_database()?;
+        }
         let listener = TcpListener::bind(&self.addr).map_err(|e| format!("bind: {e}"))?;
         println!("AXL Server listening on {}", self.addr);
         println!("API routes: {}", self.routes.len());
@@ -294,6 +234,89 @@ impl AxlServer {
         }
         Ok(())
     }
+
+    /// Spawn the server in a background thread and return immediately.
+    pub fn run_non_blocking(self) -> Result<(), String> {
+        let addr = self.addr.clone();
+        thread::spawn(move || {
+            if let Err(e) = self.run() {
+                eprintln!("AXL Server error: {e}");
+            }
+        });
+        // Small delay to let the thread start
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        println!("AXL Server started on {addr} (background)");
+        Ok(())
+    }
+}
+
+fn extract_id(path: &str) -> i64 {
+    path.split('/').last().unwrap_or("0").parse::<i64>().unwrap_or(0)
+}
+
+/// Query a single row by id and return it as a JSON object string.
+fn query_row_json(conn: &Connection, table: &str, id: i64) -> Option<String> {
+    let sql = format!("SELECT * FROM {} WHERE id = ?1", table);
+    let mut stmt = conn.prepare(&sql).ok()?;
+    let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+    stmt.query_row(rusqlite::params![id], |row| {
+        let mut map = Vec::new();
+        for (i, col) in columns.iter().enumerate() {
+            let val = if let Ok(n) = row.get::<_, i64>(i) { format!("{}", n) }
+                else if let Ok(s) = row.get::<_, String>(i) { format!("\"{}\"", s.replace('"', "\\\"")) }
+                else { "null".into() };
+            map.push(format!("\"{}\":{}", col, val));
+        }
+        Ok(format!("{{{}}}", map.join(",")))
+    }).ok()
+}
+
+fn parse_json_body(body: &str) -> (Vec<String>, Vec<String>, Vec<String>) {
+    let mut columns = Vec::new();
+    let mut values = Vec::new();
+    let mut placeholders = Vec::new();
+    let mut idx = 1;
+    let body_trimmed = body.trim();
+    if body_trimmed.starts_with('{') && body_trimmed.ends_with('}') {
+        let inner = &body_trimmed[1..body_trimmed.len()-1];
+        for pair in inner.split(',') {
+            if let Some((key, val)) = pair.split_once(':') {
+                let key = key.trim().trim_matches('"').to_string();
+                let val = val.trim();
+                let val_str = if val.starts_with('"') && val.ends_with('"') {
+                    val[1..val.len()-1].to_string()
+                } else { val.to_string() };
+                columns.push(key);
+                values.push(val_str);
+                placeholders.push(format!("?{}", idx));
+                idx += 1;
+            }
+        }
+    }
+    (columns, values, placeholders)
+}
+
+fn parse_json_set(body: &str) -> (Vec<String>, Vec<String>) {
+    let mut set_parts = Vec::new();
+    let mut values = Vec::new();
+    let mut idx = 1;
+    let body_trimmed = body.trim();
+    if body_trimmed.starts_with('{') && body_trimmed.ends_with('}') {
+        let inner = &body_trimmed[1..body_trimmed.len()-1];
+        for pair in inner.split(',') {
+            if let Some((key, val)) = pair.split_once(':') {
+                let key = key.trim().trim_matches('"').to_string();
+                let val = val.trim();
+                let val_str = if val.starts_with('"') && val.ends_with('"') {
+                    val[1..val.len()-1].to_string()
+                } else { val.to_string() };
+                set_parts.push(format!("{} = ?{}", key, idx));
+                values.push(val_str);
+                idx += 1;
+            }
+        }
+    }
+    (set_parts, values)
 }
 
 fn handle_connection(mut stream: TcpStream, routes: &[(String, String, Arc<HandlerFn>)], static_dir: &str) {
@@ -419,32 +442,4 @@ fn send_response(stream: &mut TcpStream, status: u16, content_type: &str, body: 
     let _ = stream.write_all(response.as_bytes());
 }
 
-fn extract_json_string(json: &str, key: &str) -> String {
-    let pattern = format!("\"{}\"", key);
-    if let Some(start) = json.find(&pattern) {
-        let after_key = &json[start + pattern.len()..];
-        if let Some(colon_pos) = after_key.find(':') {
-            let after_colon = after_key[colon_pos + 1..].trim_start();
-            if after_colon.starts_with('"') {
-                let value_start = 1;
-                if let Some(end) = after_colon[value_start..].find('"') {
-                    return after_colon[value_start..value_start + end].to_string();
-                }
-            }
-        }
-    }
-    String::new()
-}
 
-fn extract_json_number(json: &str, key: &str) -> i64 {
-    let pattern = format!("\"{}\"", key);
-    if let Some(start) = json.find(&pattern) {
-        let after_key = &json[start + pattern.len()..];
-        if let Some(colon_pos) = after_key.find(':') {
-            let after_colon = after_key[colon_pos + 1..].trim_start();
-            let num_str: String = after_colon.chars().take_while(|c| c.is_ascii_digit()).collect();
-            return num_str.parse().unwrap_or(0);
-        }
-    }
-    0
-}

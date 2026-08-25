@@ -131,8 +131,20 @@ pub fn sys_arch(_args: &[Value]) -> Result<Value, PrimitiveError> {
 pub fn process_run(args: &[Value]) -> Result<Value, PrimitiveError> {
     let cmd = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None })
         .ok_or_else(|| PrimitiveError("process_run requires cmd:string".into()))?;
-    let output = std::process::Command::new(cmd)
-        .output()
+    let mut command = std::process::Command::new(cmd);
+    // Optional second arg: list of string arguments
+    if let Some(Value::List(arg_list)) = args.get(1) {
+        for a in arg_list {
+            if let Value::String(s) = a {
+                command.arg(s.as_str());
+            }
+        }
+    }
+    // Optional third arg: working directory
+    if let Some(Value::String(dir)) = args.get(2) {
+        command.current_dir(dir);
+    }
+    let output = command.output()
         .map_err(|e| PrimitiveError(format!("process_run: {e}")))?;
     Ok(Value::Map(vec![
         (Value::String("stdout".into()), Value::String(String::from_utf8_lossy(&output.stdout).to_string())),

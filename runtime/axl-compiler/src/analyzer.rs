@@ -94,8 +94,19 @@ pub fn analyze(app: AxlApp) -> Result<AnalyzedApp> {
     Ok(analyzed)
 }
 
+fn pluralize(word: &str) -> String {
+    let lower = word.to_lowercase();
+    if lower.ends_with('y') && !lower.ends_with("ay") && !lower.ends_with("ey") && !lower.ends_with("oy") && !lower.ends_with("uy") {
+        format!("{}ies", &lower[..lower.len()-1])
+    } else if lower.ends_with('s') || lower.ends_with("sh") || lower.ends_with("ch") || lower.ends_with("x") || lower.ends_with("z") {
+        format!("{}es", lower)
+    } else {
+        format!("{}s", lower)
+    }
+}
+
 fn analyze_entity(entity: &crate::parser::Entity) -> Result<AnalyzedEntity> {
-    let table_name = format!("{}s", entity.name.to_lowercase());
+    let table_name = pluralize(&entity.name);
     
     let mut fields = Vec::new();
     
@@ -130,7 +141,7 @@ fn analyze_entity(entity: &crate::parser::Entity) -> Result<AnalyzedEntity> {
     fields.push(AnalyzedField {
         name: "created_at".to_string(),
         field_type: "DateTime".to_string(),
-        rust_type: "DateTime".to_string(),
+        rust_type: "chrono::NaiveDateTime".to_string(),
         ts_type: "string".to_string(),
         optional: false,
         default: Some("CURRENT_TIMESTAMP".to_string()),
@@ -141,7 +152,7 @@ fn analyze_entity(entity: &crate::parser::Entity) -> Result<AnalyzedEntity> {
     fields.push(AnalyzedField {
         name: "updated_at".to_string(),
         field_type: "DateTime".to_string(),
-        rust_type: "DateTime".to_string(),
+        rust_type: "chrono::NaiveDateTime".to_string(),
         ts_type: "string".to_string(),
         optional: false,
         default: Some("CURRENT_TIMESTAMP".to_string()),

@@ -226,10 +226,14 @@ fn generate_model(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Re
     for field in &entity.fields {
         let optional = if field.optional { "Option<" } else { "" };
         let close = if field.optional { ">" } else { "" };
-        fields.push_str(&format!(
-            "    pub {}: {}{}{},\n",
-            field.name, optional, field.rust_type, close
-        ));
+        
+        // Skip id field - it's added explicitly with primary_key annotation
+        if field.name != "id" {
+            fields.push_str(&format!(
+                "    pub {}: {}{}{},\n",
+                field.name, optional, field.rust_type, close
+            ));
+        }
         
         if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
             create_fields.push_str(&format!(
@@ -257,6 +261,8 @@ use serde::{{Deserialize, Serialize}};
 #[derive(Clone, Debug, PartialEq, DeriveEntityModel, Serialize, Deserialize)]
 #[sea_orm(table_name = "{table_name}")]
 pub struct Model {{
+    #[sea_orm(primary_key, auto_increment = true)]
+    pub id: i32,
 {fields}}}
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

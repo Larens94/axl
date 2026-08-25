@@ -115,6 +115,7 @@ dependencies = [
 name = "axl-core"
 version = "0.0.3"
 dependencies = [
+ "axl-compiler",
  "base64",
  "blake3",
  "getrandom",

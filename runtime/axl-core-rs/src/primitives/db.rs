@@ -1,10 +1,17 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use crate::ir::Value;
-use rusqlite::{Connection, params};
+use rusqlite::Connection;
+
+pub type SharedConnection = Arc<Mutex<Connection>>;
 
 lazy_static::lazy_static! {
-    static ref CONNECTIONS: Arc<Mutex<HashMap<String, Connection>>> = Arc::new(Mutex::new(HashMap::new()));
+    static ref CONNECTIONS: Mutex<HashMap<String, SharedConnection>> = Mutex::new(HashMap::new());
+}
+
+/// Get a shared connection handle for use by other modules (e.g., HTTP server).
+pub fn get_shared_connection(db_id: &str) -> Option<SharedConnection> {
+    CONNECTIONS.lock().unwrap().get(db_id).cloned()
 }
 
 pub fn db_connect(args: &[Value]) -> Result<Value, String> {
@@ -12,13 +19,12 @@ pub fn db_connect(args: &[Value]) -> Result<Value, String> {
         Value::String(s) => Some(s.as_str()),
         _ => None,
     }).unwrap_or(":memory:");
-    
+
     let conn = Connection::open(path).map_err(|e| format!("db_connect: {e}"))?;
     let db_id = format!("db_{}", path.replace('/', "_").replace('.', "_").replace(':', "_").replace(' ', "_"));
-    
-    // Store connection in global state
-    CONNECTIONS.lock().unwrap().insert(db_id.clone(), conn);
-    
+
+    CONNECTIONS.lock().unwrap().insert(db_id.clone(), Arc::new(Mutex::new(conn)));
+
     Ok(Value::String(db_id))
 }
 
@@ -27,17 +33,18 @@ pub fn db_execute(args: &[Value]) -> Result<Value, String> {
         Value::String(s) => Some(s.as_str()),
         _ => None,
     }).ok_or("db_execute: missing db_id")?;
-    
+
     let sql = args.get(1).and_then(|v| match v {
         Value::String(s) => Some(s.as_str()),
         _ => None,
     }).ok_or("db_execute: missing SQL")?;
-    
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_execute: unknown db '{db_id}'"))?;
-    
+
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_execute: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
+
     conn.execute_batch(sql).map_err(|e| format!("db_execute: {e}"))?;
-    
+
     Ok(Value::Map(vec![
         (Value::String("status".into()), Value::String("ok".into())),
         (Value::String("sql".into()), Value::String(sql.into())),
@@ -49,15 +56,16 @@ pub fn db_query(args: &[Value]) -> Result<Value, String> {
         Value::String(s) => Some(s.as_str()),
         _ => None,
     }).ok_or("db_query: missing db_id")?;
-    
+
     let sql = args.get(1).and_then(|v| match v {
         Value::String(s) => Some(s.as_str()),
         _ => None,
     }).ok_or("db_query: missing SQL")?;
-    
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_query: unknown db '{db_id}'"))?;
-    
+
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_query: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
+
     let mut stmt = conn.prepare(sql).map_err(|e| format!("db_query prepare: {e}"))?;
     let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
     
@@ -89,9 +97,10 @@ pub fn db_begin(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).ok_or("db_begin: missing db_id")?;
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_begin: unknown db '{db_id}'"))?;
-    
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_begin: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
+
     conn.execute_batch("BEGIN TRANSACTION").map_err(|e| format!("db_begin: {e}"))?;
     
     Ok(Value::String(format!("tx_{db_id}")))
@@ -103,9 +112,10 @@ pub fn db_commit(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).ok_or("db_commit: missing db_id")?;
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_commit: unknown db '{db_id}'"))?;
-    
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_commit: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
+
     conn.execute_batch("COMMIT").map_err(|e| format!("db_commit: {e}"))?;
     
     Ok(Value::Bool(true))
@@ -117,9 +127,10 @@ pub fn db_rollback(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).ok_or("db_rollback: missing db_id")?;
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_rollback: unknown db '{db_id}'"))?;
-    
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_rollback: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
+
     conn.execute_batch("ROLLBACK").map_err(|e| format!("db_rollback: {e}"))?;
     
     Ok(Value::Bool(true))
@@ -131,8 +142,9 @@ pub fn db_tables(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).ok_or("db_tables: missing db_id")?;
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_tables: unknown db '{db_id}'"))?;
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_tables: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
     
     let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").map_err(|e| format!("db_tables: {e}"))?;
     let mut tables = Vec::new();
@@ -157,8 +169,9 @@ pub fn db_columns(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).ok_or("db_columns: missing table name")?;
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_columns: unknown db '{db_id}'"))?;
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_columns: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
     
     let sql = format!("PRAGMA table_info({table})");
     let mut stmt = conn.prepare(&sql).map_err(|e| format!("db_columns: {e}"))?;
@@ -188,8 +201,9 @@ pub fn db_count(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).ok_or("db_count: missing table name")?;
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_count: unknown db '{db_id}'"))?;
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_count: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
     
     let sql = format!("SELECT COUNT(*) FROM {table}");
     let mut stmt = conn.prepare(&sql).map_err(|e| format!("db_count: {e}"))?;
@@ -214,8 +228,9 @@ pub fn db_insert(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).ok_or("db_insert: missing data map")?;
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_insert: unknown db '{db_id}'"))?;
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_insert: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
     
     // Build INSERT statement from map
     let columns: Vec<String> = data.iter().filter_map(|(k, _)| {
@@ -267,8 +282,9 @@ pub fn db_update(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).unwrap_or("1=1");
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_update: unknown db '{db_id}'"))?;
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_update: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
     
     // Build SET clause
     let set_parts: Vec<String> = data.iter().filter_map(|(k, _)| {
@@ -313,8 +329,9 @@ pub fn db_delete(args: &[Value]) -> Result<Value, String> {
         _ => None,
     }).unwrap_or("1=1");
     
-    let conn = CONNECTIONS.lock().unwrap();
-    let conn = conn.get(db_id).ok_or_else(|| format!("db_delete: unknown db '{db_id}'"))?;
+    let connections = CONNECTIONS.lock().unwrap();
+    let shared = connections.get(db_id).ok_or_else(|| format!("db_delete: unknown db '{db_id}'"))?;
+    let conn = shared.lock().unwrap();
     
     let sql = format!("DELETE FROM {table} WHERE {where_clause}");
     conn.execute_batch(&sql).map_err(|e| format!("db_delete: {e}"))?;

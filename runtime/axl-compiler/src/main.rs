@@ -1,9 +1,6 @@
 use std::path::PathBuf;
 use anyhow::Result;
-
-mod parser;
-mod analyzer;
-mod codegen;
+use axl_compiler::{parser, analyzer, codegen};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();

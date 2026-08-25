@@ -79,7 +79,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/api': 'http://localhost:3000'
+      '/api': 'http://localhost:8080'
     }
   }
 })
@@ -114,6 +114,21 @@ fn generate_tsconfig(output: &Path) -> Result<()> {
 "#;
     
     fs::write(output.join("tsconfig.json"), content)?;
+    
+    // Generate tsconfig.node.json
+    let node_content = r#"{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+"#;
+    fs::write(output.join("tsconfig.node.json"), node_content)?;
+    
     Ok(())
 }
 
@@ -204,7 +219,7 @@ fn generate_app_tsx(app: &AnalyzedApp, output: &Path) -> Result<()> {
     
     let content = format!(
         r#"import {{ Refine }} from "@refinedev/core";
-import {{ RefineThemes, useNotificationProvider }} from "@refinedev/mui";
+import {{ useNotificationProvider }} from "@refinedev/mui";
 import {{ CssBaseline, GlobalStyles }} from "@mui/material";
 import {{ BrowserRouter, Outlet, Route, Routes }} from "react-router-dom";
 import routerProvider from "@refinedev/react-router-v6";
@@ -216,7 +231,7 @@ const App: React.FC = () => {{
   return (
     <BrowserRouter>
       <Refine
-        dataProvider={{dataProvider("http://localhost:3000/api")}}
+        dataProvider={{dataProvider("/api")}}
         routerProvider={{routerProvider}}
         notificationProvider={{useNotificationProvider}}
         resources={{[
@@ -341,9 +356,8 @@ export const {entity_name}Create: React.FC = () => {{
     saveButtonProps,
     refineCore: {{ formLoading }},
     register,
-    formState: {{ errors }},
   }} = useForm({{
-    resource: "{entity_lower}s",
+    refineCoreProps: {{ resource: "{entity_lower}s" }},
   }});
 
   return (
@@ -388,11 +402,10 @@ import {{ TextField, Box }} from "@mui/material";
 export const {entity_name}Edit: React.FC = () => {{
   const {{
     saveButtonProps,
-    refineCore: {{ formLoading, queryResult }},
+    refineCore: {{ formLoading }},
     register,
-    formState: {{ errors }},
   }} = useForm({{
-    resource: "{entity_lower}s",
+    refineCoreProps: {{ resource: "{entity_lower}s" }},
   }});
 
   return (
@@ -431,7 +444,7 @@ fn generate_show_page(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -
     
     let content = format!(
         r#"import {{ useShow }} from "@refinedev/core";
-import {{ Show, TextFieldComponent as TextField, NumberField }} from "@refinedev/mui";
+import {{ Show }} from "@refinedev/mui";
 import {{ Typography, Stack }} from "@mui/material";
 
 export const {entity_name}Show: React.FC = () => {{

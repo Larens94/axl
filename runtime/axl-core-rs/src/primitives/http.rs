@@ -330,15 +330,25 @@ pub fn http_server_state_set(args: &[Value]) -> Result<Value, String> {
     Ok(Value::Bool(true))
 }
 
+/// Start a non-blocking HTTP server with CRUD API routes.
+/// Usage: axl_server_start(db_id, tables_list, static_dir, addr)
+/// - db_id: connection ID from db_connect (e.g., "db__tmp_crm_db")
+/// - tables_list: list of table names (e.g., ["customers", "leads"])
+/// - static_dir: path to static files (e.g., "./public")
+/// - addr: listen address (e.g., "127.0.0.1:8080")
 pub fn axl_server_start(args: &[Value]) -> Result<Value, String> {
-    let addr = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("127.0.0.1:8080");
-    let static_dir = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("./public");
-    let db_path = args.get(2).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or(":memory:");
+    let tables = args.first().and_then(|v| match v { Value::List(l) => Some(l), _ => None });
+    let db_id = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None })
+        .ok_or("axl_server_start: missing db_id")?;
+    let static_dir = args.get(2).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("./public");
+    let addr = args.get(3).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("127.0.0.1:8080");
 
-    let mut server = crate::server::AxlServer::new(addr, static_dir, db_path);
+    let shared_conn = crate::primitives::db::get_shared_connection(db_id)
+        .ok_or_else(|| format!("axl_server_start: unknown db '{db_id}'"))?;
 
-    // If a 4th arg is a list of table names, add generic CRUD routes for each
-    if let Some(Value::List(tables)) = args.get(3) {
+    let mut server = crate::server::AxlServer::with_connection(addr, static_dir, shared_conn);
+
+    if let Some(tables) = tables {
         for table_val in tables {
             if let Value::String(table_name) = table_val {
                 server.add_table_routes(table_name);
@@ -347,10 +357,8 @@ pub fn axl_server_start(args: &[Value]) -> Result<Value, String> {
         }
     }
 
-    println!("AXL Server on {addr} | db={db_path} | static={static_dir}");
-
-    server.run().map_err(|e| format!("axl_server_start: {e}"))?;
-    Ok(Value::String(format!("server stopped on {addr}")))
+    server.run_non_blocking().map_err(|e| format!("axl_server_start: {e}"))?;
+    Ok(Value::String(format!("server started on {addr}")))
 }
 
 /// Register generic CRUD API routes for a database table.
