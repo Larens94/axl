@@ -42,6 +42,27 @@ fn text(node: &UiNode, id: i32) -> String {
         .unwrap_or_default()
 }
 
+fn text_or_bind(node: &UiNode, id: i32) -> (String, Option<String>) {
+    if let Some(prop) = node.properties.iter().find(|p| p.property_id == id) {
+        match &prop.value {
+            Expression::Literal(Value::String(s)) => (s.clone(), None),
+            Expression::Variable(name) => (String::new(), Some(name.clone())),
+            _ => (String::new(), None),
+        }
+    } else {
+        (String::new(), None)
+    }
+}
+
+fn bind_attr(node: &UiNode, id: i32) -> String {
+    let (val, bind) = text_or_bind(node, id);
+    if let Some(var_name) = bind {
+        format!(" data-bind=\"{}\"", escape_html(&var_name))
+    } else {
+        String::new()
+    }
+}
+
 fn integer(node: &UiNode, id: i32) -> i64 {
     node.properties.iter()
         .find(|p| p.property_id == id)
@@ -163,9 +184,16 @@ fn render_node(node: &UiNode) -> String {
                 format!("<button class=\"ax-btn {cls}\" data-action=\"{}\">{label}</button>", ev.action_id)
             }).collect();
             let children: String = node.children.iter().map(render_node).collect();
+            let (title, title_bind) = text_or_bind(node, 1);
+            let (subtitle, sub_bind) = text_or_bind(node, 2);
+            let (desc, desc_bind) = text_or_bind(node, 3);
+            let (badge, badge_bind) = text_or_bind(node, 4);
+            let title_html = if let Some(v) = title_bind { format!("<h1 data-bind=\"{}\"></h1>", escape_html(&v)) } else { format!("<h1>{}</h1>", escape_html(&title)) };
+            let sub_html = if let Some(v) = sub_bind { format!("<b data-bind=\"{}\"></b>", escape_html(&v)) } else { format!("<b>{}</b>", escape_html(&subtitle)) };
+            let desc_html = if let Some(v) = desc_bind { format!("<p data-bind=\"{}\"></p>", escape_html(&v)) } else { format!("<p>{}</p>", escape_html(&desc)) };
+            let badge_html = if let Some(v) = badge_bind { format!("<span class=\"ax-hero-badge\" data-bind=\"{}\"></span>", escape_html(&v)) } else { format!("<span class=\"ax-hero-badge\">{}</span>", escape_html(&badge)) };
             format!(
-                "<section class=\"ax-hero\" style=\"--ax-hero:url(&quot;{image_attr}&quot;)\"><div class=\"ax-hero-content\"><span class=\"ax-hero-badge\">{}</span><h1>{}</h1><b>{}</b><p>{}</p><div class=\"ax-hero-actions\">{buttons}</div>{children}</div></section>",
-                escape_html(&text(node, 4)), escape_html(&text(node, 1)), escape_html(&text(node, 2)), escape_html(&text(node, 3))
+                "<section class=\"ax-hero\" style=\"--ax-hero:url(&quot;{image_attr}&quot;)\"><div class=\"ax-hero-content\">{badge_html}{title_html}{sub_html}{desc_html}<div class=\"ax-hero-actions\">{buttons}</div>{children}</div></section>"
             )
         }
         31 => {
@@ -190,7 +218,12 @@ fn render_node(node: &UiNode) -> String {
             let tag = text(node, 2);
             let tag = if tag.is_empty() { "p".to_string() } else { tag };
             let class = text(node, 3);
-            format!("<{tag} class=\"ax-text {class}\">{}</{tag}>", escape_html(&text(node, 1)))
+            let (content, bind) = text_or_bind(node, 1);
+            if let Some(var_name) = bind {
+                format!("<{tag} class=\"ax-text {class}\" data-bind=\"{}\"></{tag}>", escape_html(&var_name))
+            } else {
+                format!("<{tag} class=\"ax-text {class}\">{}</{tag}>", escape_html(&content))
+            }
         }
         34 => {
             // Image
@@ -317,7 +350,12 @@ fn render_node(node: &UiNode) -> String {
             // Badge
             let variant = text(node, 2);
             let variant = if variant.is_empty() { "default".to_string() } else { variant };
-            format!("<span class=\"ax-badge ax-badge-{variant}\">{}</span>", escape_html(&text(node, 1)))
+            let (content, bind) = text_or_bind(node, 1);
+            if let Some(var_name) = bind {
+                format!("<span class=\"ax-badge ax-badge-{variant}\" data-bind=\"{}\"></span>", escape_html(&var_name))
+            } else {
+                format!("<span class=\"ax-badge ax-badge-{variant}\">{}</span>", escape_html(&content))
+            }
         }
 
         // ====================================================================
@@ -400,7 +438,171 @@ fn render_node(node: &UiNode) -> String {
     }
 }
 
-const JS: &str = "document.querySelectorAll('[data-action]').forEach(n=>n.addEventListener('click',()=>{const e=new CustomEvent('ax:action',{detail:{action:n.dataset.action}});n.dispatchEvent(e)}));document.querySelectorAll('[data-page]').forEach(n=>n.addEventListener('click',()=>{const e=new CustomEvent('ax:page',{detail:{page:parseInt(n.dataset.page)}});n.dispatchEvent(e)}));";
+const JS: &str = r#"
+// AX-UI Runtime v1.0
+(function(){
+  'use strict';
+
+  // === State ===
+  const state = { data: {}, listeners: [] };
+  window.AX = {
+    state,
+    set(key, val) { state.data[key] = val; this.notify(key); },
+    get(key) { return state.data[key]; },
+    notify(key) { state.listeners.forEach(fn => fn(key, state.data[key])); },
+    onChange(fn) { state.listeners.push(fn); }
+  };
+
+  // === Event Dispatch ===
+  document.addEventListener('click', function(e) {
+    const action = e.target.closest('[data-action]');
+    if (action) {
+      const ev = new CustomEvent('ax:action', { detail: { action: action.dataset.action, target: action } });
+      document.dispatchEvent(ev);
+    }
+  });
+
+  document.addEventListener('click', function(e) {
+    const page = e.target.closest('[data-page]');
+    if (page) {
+      const ev = new CustomEvent('ax:page', { detail: { page: parseInt(page.dataset.page) } });
+      document.dispatchEvent(ev);
+    }
+  });
+
+  // === Data Binding ===
+  document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('[data-bind]').forEach(function(el) {
+      const key = el.dataset.bind;
+      if (state.data[key] !== undefined) {
+        el.textContent = state.data[key];
+      }
+    });
+  });
+
+  AX.onChange(function(key, val) {
+    document.querySelectorAll('[data-bind="' + key + '"]').forEach(function(el) {
+      el.textContent = val;
+    });
+  });
+
+  // === Fetch API ===
+  AX.fetch = async function(endpoint, options) {
+    try {
+      const res = await fetch('/api/' + endpoint, options);
+      if (!res.ok) throw new Error('Fetch failed: ' + res.status);
+      return await res.json();
+    } catch (e) {
+      console.error('AX.fetch error:', e);
+      return null;
+    }
+  };
+
+  AX.get = async function(endpoint) { return this.fetch(endpoint); };
+  AX.post = async function(endpoint, data) {
+    return this.fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  };
+  AX.put = async function(endpoint, id, data) {
+    return this.fetch(endpoint + '/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+  };
+  AX.del = async function(endpoint, id) {
+    return this.fetch(endpoint + '/' + id, { method: 'DELETE' });
+  };
+
+  // === Table Rendering ===
+  AX.renderTable = function(selector, data, columns) {
+    const el = document.querySelector(selector);
+    if (!el || !data) return;
+    let html = '<table class="ax-table"><thead><tr>';
+    columns.forEach(function(col) { html += '<th>' + col.label + '</th>'; });
+    html += '</tr></thead><tbody>';
+    data.forEach(function(row) {
+      html += '<tr>';
+      columns.forEach(function(col) {
+        const val = row[col.key] || '';
+        html += '<td>' + val + '</td>';
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+  };
+
+  // === List Rendering ===
+  AX.renderList = function(selector, data, template) {
+    const el = document.querySelector(selector);
+    if (!el || !data) return;
+    el.innerHTML = data.map(template).join('');
+  };
+
+  // === Form Handling ===
+  AX.handleForm = function(formId, endpoint, callback) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+      const result = await AX.post(endpoint, data);
+      if (result && callback) callback(result);
+    });
+  };
+
+  // === Routing ===
+  AX.routes = {};
+  AX.route = function(path, handler) { AX.routes[path] = handler; };
+  AX.navigate = function(path) {
+    history.pushState(null, '', path);
+    AX.resolve();
+  };
+  AX.resolve = function() {
+    const path = location.pathname;
+    const handler = AX.routes[path] || AX.routes['*'];
+    if (handler) handler(path);
+  };
+  window.addEventListener('popstate', AX.resolve);
+
+  // === Toast ===
+  AX.toast = function(message, type) {
+    type = type || 'info';
+    const toast = document.createElement('div');
+    toast.className = 'ax-toast ax-toast-' + type;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(function() { toast.remove(); }, 3000);
+  };
+
+  // === Modal ===
+  AX.openModal = function(id) {
+    const modal = document.getElementById(id);
+    if (modal) modal.setAttribute('open', '');
+  };
+  AX.closeModal = function(id) {
+    const modal = document.getElementById(id);
+    if (modal) modal.removeAttribute('open');
+  };
+
+  // === Init ===
+  document.addEventListener('DOMContentLoaded', function() {
+    AX.resolve();
+    document.querySelectorAll('[data-fetch]').forEach(async function(el) {
+      const endpoint = el.dataset.fetch;
+      const data = await AX.get(endpoint);
+      if (data) {
+        if (el.dataset.template === 'table') {
+          const columns = JSON.parse(el.dataset.columns || '[]');
+          AX.renderTable('#' + el.id, data, columns);
+        } else if (el.dataset.template === 'list') {
+          AX.renderList('#' + el.id, data, function(item) {
+            return '<li>' + (item.name || item.title || JSON.stringify(item)) + '</li>';
+          });
+        }
+      }
+    });
+  });
+
+})();
+"#;
 
 const CSS: &str = r#"*{box-sizing:border-box;margin:0;padding:0}
 html{background:#090909;scroll-behavior:smooth}

@@ -64,3 +64,15 @@ generated/
 
 ## Sorgente AXL
 - `examples/crm/crm.axl` — Definizione completa dell'applicazione
+
+
+
+
+short:
+export PATH="$HOME/.cargo/bin:$PATH"
+cd /Users/fabriziocorpora/Desktop/workspaces/axl
+rm -rf generated
+cargo run -p axl-compiler -- examples/crm/crm.axl generated
+cd generated/backend && cargo build --release
+cd /Users/fabriziocorpora/Desktop/workspaces/axl/generated/frontend
+npm install && npm run buil

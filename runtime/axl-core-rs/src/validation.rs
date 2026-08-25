@@ -279,18 +279,24 @@ fn validate_ui_tree(root: &UiNode) -> Result<(), ValidationError> {
             }
             let expected = contract.properties.iter().find(|p| p.id == prop.property_id)
                 .ok_or_else(|| ValidationError(format!("property '{}' is not valid for component '{}'", prop.property_id, node.component_id)))?;
-            if let Expression::Literal(val) = &prop.value {
-                let actual = match val {
-                    Value::String(_) => "string",
-                    Value::Int(_) => "int",
-                    Value::Bool(_) => "bool",
-                    _ => return Err(ValidationError("experimental UI properties must be literal".into())),
-                };
-                if actual != expected.type_name {
-                    return Err(ValidationError(format!("property '{}' requires {}, got {}", prop.property_id, expected.type_name, actual)));
+            match &prop.value {
+                Expression::Literal(val) => {
+                    let actual = match val {
+                        Value::String(_) => "string",
+                        Value::Int(_) => "int",
+                        Value::Bool(_) => "bool",
+                        _ => return Err(ValidationError("UI property has unsupported literal type".into())),
+                    };
+                    if actual != expected.type_name {
+                        return Err(ValidationError(format!("property '{}' requires {}, got {}", prop.property_id, expected.type_name, actual)));
+                    }
                 }
-            } else {
-                return Err(ValidationError("experimental UI properties must be literal".into()));
+                Expression::Variable(_) | Expression::ToolCall { .. } | Expression::FunctionCall { .. } => {
+                    // Dynamic properties are allowed — resolved at runtime
+                }
+                _ => {
+                    return Err(ValidationError("UI property has unsupported expression type".into()));
+                }
             }
         }
         let mut event_ids = HashSet::new();
