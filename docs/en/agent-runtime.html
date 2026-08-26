@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
     <nav class="product-nav" aria-label="Documentation">
       <a class="active" href="./">Documentation</a>
+      <a href="../presentation.html">Presentation</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
@@ -23,7 +24,7 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html" aria-current="page" class="active">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact source</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html" aria-current="page" class="active">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
@@ -49,18 +50,10 @@
 
 <p><code>51</code> opens the workflow, <code>52</code> executes a runnable, and <code>99</code> closes it. The current runtime is sequential and rejects cycles. DAGs, parallelism, retries, and checkpoints are on the roadmap.</p>
 <h2 id="host-capabilities">Host capabilities</h2>
-<p>A capability declares a name, ABI, input/output, effect, target, and policy. Today, the Python bridge uses <code>Tool</code>:</p>
-<pre class="codehilite"><code class="language-python">from axl import Tool
-
-
-def tools():
-    return [
-        Tool(&quot;search&quot;, search, effect=&quot;read&quot;),
-        Tool(&quot;publish&quot;, publish, effect=&quot;write&quot;, approval=True),
-    ]
-</code></pre>
-
-<p>Future Rust/C/WASI/DOM/GPU bridges will implement the same model. Capabilities do not become vendor-specific keywords in the source language.</p>
+<p>A capability declares a name, ABI, input/output, effect, target, and policy. The
+Rust runtime registers explicit host handlers and applies grants, approval, and
+budgets before invocation. C/WASI/DOM/GPU bridges will implement the same
+contract: capabilities do not become vendor-specific source keywords.</p>
 <h2 id="fail-closed-approval">Fail-closed approval</h2>
 <p>Only the exact Boolean value <code>True</code> grants authorization. Truthy strings, numbers, exceptions, or a missing provider result in denial.</p>
 <h2 id="audit">Audit</h2>
@@ -82,11 +75,11 @@ def tools():
 <p>There is no automatic promotion between scopes. Vector, graph, or cloud backends must preserve the AM contract.</p>
 <h2 id="budgets">Budgets</h2>
 <p>Limits apply to steps/expressions, call depth, values, output, tool calls, and memory. Blocking or untrusted capabilities require host isolation, timeouts, and cancellation.</p></article>
-        
+
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/agent-runtime.md">Edit this page ↗</a></div>
         <nav class="pager" aria-label="Pagination"><a class="prev" href="language-guide.html"><small>← Previous</small><b>Language guide</b></a><a class="next" href="ax-ir.html"><small>Next →</small><b>AX-IR</b></a></nav>
       </div>
-      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#deterministic-not-probabilistic">Deterministic, not probabilistic</a><a class="toc-l2" href="#agent">Agent</a><a class="toc-l2" href="#workflow">Workflow</a><a class="toc-l2" href="#host-capabilities">Host capabilities</a><a class="toc-l2" href="#fail-closed-approval">Fail-closed approval</a><a class="toc-l2" href="#audit">Audit</a><a class="toc-l2" href="#am-memory">AM — memory</a><a class="toc-l2" href="#budgets">Budgets</a></aside>
+<aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#deterministic-not-probabilistic">Deterministic, not probabilistic</a><a class="toc-l2" href="#agent">Agent</a><a class="toc-l2" href="#workflow">Workflow</a><a class="toc-l2" href="#host-capabilities">Host capabilities</a><a class="toc-l2" href="#fail-closed-approval">Fail-closed approval</a><a class="toc-l2" href="#audit">Audit</a><a class="toc-l2" href="#am-memory">AM — memory</a><a class="toc-l2" href="#budgets">Budgets</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>

@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
     <nav class="product-nav" aria-label="Documentation">
       <a class="active" href="./">Documentation</a>
+      <a href="../presentation.html">Presentation</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
@@ -23,14 +24,15 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html" aria-current="page" class="active">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html" aria-current="page" class="active">Compact source</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
       <div class="article-column">
         <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>AXL Compact Source 2</p>
         <article class="prose"><h1 id="axl-compact-source-2">AXL Compact Source 2</h1>
-<p>AXL Compact Source 2 is the language's canonical syntax. It is designed exclusively for agents and automated systems: minimal token count, deterministic parsing, no indentation, and no line dependence.</p>
+<p>AXL Compact Source 2 is the language's compact syntax. It keeps token count low
+and parsing deterministic, while source files are normally laid out over multiple lines.</p>
 <h2 id="form">Form</h2>
 <pre class="codehilite"><code class="language-text">2;frame;frame;frame
 </code></pre>
@@ -44,8 +46,9 @@
 <li>spaces, indentation, and newlines have no structural meaning;</li>
 <li>strings use JSON escaping, so they may contain separators.</li>
 </ul>
-<p>Complete single-line example:</p>
-<pre class="codehilite"><code class="language-axl">2;10|x|#2,#3,#4,*,+|i;12|$x
+<p>Formatted example:</p>
+<pre class="codehilite"><code class="language-axl">2;
+10|x|#2,#3,#4,*,+|i; 12|$x;
 </code></pre>
 
 <p>Semantically equivalent to: compute <code>2 + 3 * 4</code>, assign it to <code>x: int</code>, emit <code>x</code>.</p>
@@ -265,21 +268,86 @@ remain later milestones.</p>
 <pre class="codehilite"><code class="language-axl">2;50|r|search;10|x|&quot;AXL&quot;,!search/1;12|$x;99;51|w;52|r;99;52|w
 </code></pre>
 
+<h2 id="compact-ui-source-3">Compact UI Source 3</h2>
+<p>Application UI uses a <code>.ui.axl</code> sidecar with header <code>3</code>. It keeps the same
+separators and multiline rule while adding frames for the semantic UI tree.</p>
+<table>
+<thead>
+<tr>
+<th style="text-align: right;">Opcode</th>
+<th>Frame</th>
+<th>Meaning</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align: right;"><code>60</code></td>
+<td><code>60|view_id</code></td>
+<td>opens a view</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>61</code></td>
+<td><code>61|node_id|component_id</code></td>
+<td>opens a component</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>62</code></td>
+<td><code>62|property_id|value</code></td>
+<td>assigns a property</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>63</code></td>
+<td><code>63|event_id|action</code></td>
+<td>binds an event</td>
+</tr>
+<tr>
+<td style="text-align: right;"><code>99</code></td>
+<td><code>99</code></td>
+<td>closes a component or view</td>
+</tr>
+</tbody>
+</table>
+<p>Components <code>64</code> and <code>65</code> define a data table and a column. The table contract
+uses resource (<code>1</code>), entity label (<code>2</code>), page size (<code>3</code>), density (<code>4</code>), and
+mobile mode (<code>5</code>). The column contract uses field (<code>1</code>), label (<code>2</code>), visual type
+(<code>3</code>), responsive priority from 1 to 3 (<code>4</code>), and minimum width from 80 to 600
+pixels (<code>5</code>).</p>
+<pre class="codehilite"><code class="language-axl">3;60|2;
+  61|1000|64;
+    62|1|&quot;customers&quot;;
+    62|2|&quot;Customers&quot;;
+    62|3|#20;
+    62|4|&quot;comfortable&quot;;
+    62|5|&quot;cards&quot;;
+    61|1001|65; 62|1|&quot;name&quot;; 62|2|&quot;Name&quot;; 62|3|&quot;text&quot;; 62|4|#1; 62|5|#180; 99;
+    61|1002|65; 62|1|&quot;status&quot;; 62|2|&quot;Status&quot;; 62|3|&quot;status&quot;; 62|4|#2; 99;
+  99;
+99;
+</code></pre>
+
+<p>The compiler rejects unknown components, out-of-contract properties, invalid
+types, and columns without fields. This keeps the format compact without losing
+semantic validation.</p>
 <h2 id="canonicalization">Canonicalization</h2>
 <p>The <code>pack</code> command converts legacy syntax to the canonical representation:</p>
 <pre class="codehilite"><code class="language-bash">axl pack legacy.axl -o packed.axl
 </code></pre>
 
-<p>The canonical writer guarantees a single normal representation for the supported program. This facilitates hashing, caching, deduplication, signing, and automated comparison.</p>
+<p><code>pack</code> produces the standard multiline format at width 100. <code>axl fmt</code> formats an
+existing file; <code>--width N</code> selects the width and <code>--check</code> validates formatting
+without changing the file.</p>
+<p>The compiler can separately derive a canonical minified representation for
+hashing, caching, deduplication, signing, and transport. Minified source is not
+the recommended format for files committed to Git.</p>
 <h2 id="legacy-format">Legacy Format</h2>
 <p>The readable text parser (<code>let</code>, <code>fn</code>, <code>agent</code>, visual indentation) remains temporarily available as a migration and debugging frontend. It is not the primary syntax and does not define AXL's future design.</p>
 <h2 id="evolution">Evolution</h2>
 <p>New opcodes can be added without making the language verbose. Future families will include collections, records, enums, tasks, events, concurrency, standard capabilities, and platform bindings. The initial version prevents ambiguous interpretations; incompatible changes require a new source header.</p></article>
-        
+
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/compact-syntax.md">Edit this page ↗</a></div>
         <nav class="pager" aria-label="Pagination"><a class="prev" href="architecture.html"><small>← Previous</small><b>Architecture</b></a><a class="next" href="language-guide.html"><small>Next →</small><b>Language guide</b></a></nav>
       </div>
-      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#form">Form</a><a class="toc-l2" href="#rpn-expressions">RPN Expressions</a><a class="toc-l2" href="#types">Types</a><a class="toc-l2" href="#opcodes">Opcodes</a><a class="toc-l3" href="#memory-with-metadata">Memory with Metadata</a><a class="toc-l3" href="#function">Function</a><a class="toc-l3" href="#control-flow">Control Flow</a><a class="toc-l3" href="#agent-and-workflow">Agent and Workflow</a><a class="toc-l2" href="#canonicalization">Canonicalization</a><a class="toc-l2" href="#legacy-format">Legacy Format</a><a class="toc-l2" href="#evolution">Evolution</a></aside>
+<aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#form">Form</a><a class="toc-l2" href="#rpn-expressions">RPN Expressions</a><a class="toc-l2" href="#types">Types</a><a class="toc-l2" href="#opcodes">Opcodes</a><a class="toc-l3" href="#memory-with-metadata">Memory with Metadata</a><a class="toc-l3" href="#function">Function</a><a class="toc-l3" href="#control-flow">Control Flow</a><a class="toc-l3" href="#agent-and-workflow">Agent and Workflow</a><a class="toc-l2" href="#compact-ui-source-3">Compact UI Source 3</a><a class="toc-l2" href="#canonicalization">Canonicalization</a><a class="toc-l2" href="#legacy-format">Legacy Format</a><a class="toc-l2" href="#evolution">Evolution</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>

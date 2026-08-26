@@ -52,6 +52,8 @@ name = "{name}"
 version = "0.1.0"
 edition = "2021"
 
+[workspace]
+
 [dependencies]
 axum = {{ version = "0.8", features = ["macros"] }}
 tokio = {{ version = "1", features = ["full"] }}
@@ -340,15 +342,45 @@ fn generate_handler(api: &crate::analyzer::AnalyzedApi, entities: &[crate::analy
 
     let mut create_assignments = String::new();
     let mut update_assignments = String::new();
+    let mut search_terms = String::new();
+    let mut filter_arms = String::new();
+    let mut sort_arms = String::new();
+    if let Some(entity) = entity {
+        for field in &entity.fields {
+            let column = sea_orm_column(&field.name);
+            if field.rust_type == "String" && !field.is_primary_key {
+                search_terms.push_str(&format!(".add(Column::{column}.contains(needle))"));
+                filter_arms.push_str(&format!(
+                    "            \"{}\" => query.filter(Column::{column}.eq(value.to_string())),\n",
+                    field.name
+                ));
+            }
+            sort_arms.push_str(&format!(
+                "        (\"{}\", true) => query.order_by_desc(Column::{column}),\n        (\"{}\", false) => query.order_by_asc(Column::{column}),\n",
+                field.name, field.name
+            ));
+        }
+    }
     let (axum_query_import, sea_query_imports, query_struct, list_signature, list_query) = if let Some(query) = &api.query {
         let column = sea_orm_column(&query.sort_field);
         let ordering = if query.descending { "order_by_desc" } else { "order_by_asc" };
+        let default_descending = if query.descending { "true" } else { "false" };
+        let search_filter = if search_terms.is_empty() {
+            String::new()
+        } else {
+            format!("    if let Some(needle) = params.q.as_deref().map(str::trim).filter(|value| !value.is_empty()) {{\n        query = query.filter(Condition::any(){search_terms});\n    }}\n")
+        };
+        let exact_filter = if filter_arms.is_empty() {
+            String::new()
+        } else {
+            format!("    if let (Some(field), Some(value)) = (params.filter_field.as_deref(), params.filter_value.as_deref()) {{\n        query = match field {{\n{filter_arms}            _ => query,\n        }};\n    }}\n")
+        };
         (
             ", Query",
-            ", QuerySelect, PaginatorTrait",
-            "#[derive(Debug, serde::Deserialize)]\nstruct ListQuery { page: Option<u64>, per_page: Option<u64> }\n",
+            ", QuerySelect, PaginatorTrait, QueryFilter, ColumnTrait, Condition",
+            "#[derive(Debug, serde::Deserialize)]\nstruct ListQuery {\n    page: Option<u64>,\n    per_page: Option<u64>,\n    q: Option<String>,\n    filter_field: Option<String>,\n    filter_value: Option<String>,\n    sort: Option<String>,\n    order: Option<String>,\n}\n",
             ", Query(params): Query<ListQuery>".to_string(),
-            format!("    let page = params.page.unwrap_or(1).max(1);\n    let per_page = params.per_page.unwrap_or({}).clamp(1, {});\n    let total = Entity::find().count(&state.db).await.unwrap_or(0);\n    let items = Entity::find()\n        .{}(Column::{})\n        .offset((page - 1) * per_page)\n        .limit(per_page)\n        .all(&state.db)\n        .await\n        .unwrap_or_default();", query.page_size, query.max_page_size, ordering, column),
+            format!("    let page = params.page.unwrap_or(1).max(1);\n    let per_page = params.per_page.unwrap_or({}).clamp(1, {});\n    let mut query = Entity::find();\n{search_filter}{exact_filter}    let total = query.clone().count(&state.db).await.unwrap_or(0);\n    let descending = params.order.as_deref().map(|value| value.eq_ignore_ascii_case(\"desc\")).unwrap_or({default_descending});\n    let requested_sort = params.sort.as_deref().unwrap_or(\"{}\");\n    query = match (requested_sort, descending) {{\n{sort_arms}        _ => query.{}(Column::{}),\n    }};\n    let items = query\n        .offset((page - 1) * per_page)\n        .limit(per_page)\n        .all(&state.db)\n        .await\n        .unwrap_or_default();", query.page_size, query.max_page_size, query.sort_field, ordering, column),
         )
     } else {
         (

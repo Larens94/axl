@@ -4,7 +4,7 @@
 Rust, React/TypeScript, SQL, WebAssembly e i bridge hardware sono target o dettagli
 di runtime: lo sviluppatore descrive sistema, dati, API, UI e agenti in AXL.
 
-**Sito:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Docs:** [`docs/`](docs/) · **Specifica:** [`SPEC.md`](SPEC.md)
+**Sito:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Presentazione:** [AXL Claude × Apple](https://larens94.github.io/axl/presentation.html) · **Docs:** [`docs/`](docs/) · **Specifica:** [`SPEC.md`](SPEC.md)
 
 ```text
 AXL Source
@@ -27,13 +27,21 @@ entity Customer {
 }
 
 api Customer {
-  GET /api/customers -> list
-  POST /api/customers -> create
+  GET /api/customers → list
+  POST /api/customers → create
 }
+```
 
-ui Customers {
-  table: Customer[name, email]
-}
+La UI usa frame numerici compatti, separati su più righe per restare leggibili:
+
+```axl
+3;60|2;
+  61|1000|64;
+    62|1|"customers"; 62|3|#25; 62|5|"cards";
+    61|1001|65; 62|1|"name"; 62|2|"Nome"; 62|4|#1; 99;
+    61|1002|65; 62|1|"email"; 62|2|"Email"; 62|4|#2; 99;
+  99;
+99;
 ```
 
 La build produce backend Rust, frontend React/TypeScript e migrazioni SQL.
@@ -111,7 +119,9 @@ runtime/
 
 ## Esempi
 
-- **CRM** — definizione AXL di entità, API e interfaccia, compilabile nei target applicativi
+- **CRM** — 6 entità, 30 operazioni CRUD, 7 viste compatte e target Rust/React/SQL
+
+AXL `0.1.0-alpha.1` è una proof of concept funzionante: la demo è completa, mentre compatibilità del linguaggio, sicurezza e deployment di produzione restano in evoluzione.
 
 ## Licenza
 

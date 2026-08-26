@@ -4,6 +4,14 @@ Esempio full-stack definito da [`crm.axl`](crm.axl). AXL è il sorgente; il
 compilatore genera backend Rust/Axum/SeaORM, frontend React/Refine/MUI e schema
 SQLite.
 
+Il layout della dashboard non usa più i vecchi blocchi `ui { ... }`: è
+programmato in [`crm.ui.axl`](crm.ui.axl) tramite Compact Source v3. Gli opcode
+`60`, `61`, `62`, `63` e `99` descrivono rispettivamente view, nodi, proprietà,
+eventi e chiusure. I componenti numerici `64` e `65` definiscono data table e
+colonne: page size, densità, modalità mobile, tipo visuale, priorità responsive e
+larghezza vengono validati dal compilatore. I binding come `$customers.total`
+diventano query React reali.
+
 ## Build
 
 La demo completa parte con un comando (genera Rust, React e SQL, installa le
@@ -53,8 +61,9 @@ build/crm/smoke-test.sh
 ```
 
 Il test verifica il rifiuto delle API senza token, registrazione, JWT e lettura
-dei dati CRM seed. Verifica inoltre il contratto paginato `{data,total}` prodotto
-dalla primitiva `query page ... max ... sort ...`. Le API CRUD sono protette dal middleware `jwt_required`
+dei dati CRM seed. Verifica inoltre pagination, ricerca full-text sui campi
+testuali, filtri esatti e ordinamento server-side prodotti dalla primitiva
+`query page ... max ... sort ...`. Le API CRUD sono protette dal middleware `jwt_required`
 dichiarato in AXL; il client React allega automaticamente il Bearer token.
 
 ## Sezioni
@@ -76,12 +85,15 @@ Il CRM le copre tutte, quindi la copertura è **100%** (oltre il gate del 70%).
 
 | Categoria | Componenti coperti |
 |---|---|
-| Layout | app shell, sidebar, drawer responsive, topbar, breadcrumb |
-| Dati | stat card, card, data table, pagination, badge, progress |
+| Layout | app shell, sidebar, bottom navigation, bottom sheet, topbar |
+| Dati | stat card, card mobile, TanStack data table, pagination, badge, progress |
 | Controlli | search, select/filter, text input, button |
 | Feedback | alert, tabs, skeleton, empty state, snackbar/notification provider |
 
-Dialog, checkbox, textarea e date input completano inoltre i flussi di form.
+Dialog, checkbox, textarea e date input completano inoltre i flussi di form. Le
+icone sono token semantici AXL tradotti dal renderer nel set Lucide; il sorgente
+non contiene nomi di componenti React. Le preferenze di colonne e densità sono
+persistenti per risorsa.
 Le pagine sono caricate on demand; il bundle framework condiviso viene separato
 dal piccolo entrypoint e dalle route CRM.
 

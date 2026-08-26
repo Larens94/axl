@@ -2,6 +2,17 @@
 
 [Italiano](CHANGELOG.md) · [English](CHANGELOG.en.md)
 
+## 0.1.0-alpha.1 — 26 agosto 2026
+
+- Aggiunto il compilatore applicativo AXL con generazione di backend Rust/Axum/SeaORM, frontend React/Refine/MUI e migrazioni SQL.
+- Pubblicata la demo CRM full-stack con 6 entità, CRUD REST, dashboard, report, impostazioni e 7 viste Compact UI.
+- Aggiunti i frame Compact UI Source 3 per viste, componenti, proprietà, eventi, tabelle dati e colonne tipizzate.
+- Aggiunti layout responsive, icone semantiche, menu mobile inferiore, tabelle desktop e card adattive.
+- Aggiunti query server-side per ricerca, filtri, ordinamento e paginazione.
+- Aggiornati documentazione bilingue, GitHub Pages e presentazione interattiva Claude × Apple.
+- Allineate le versioni dei crate alla pre-release e verificati 43 test Rust.
+- Rimossa una credenziale MiMo hardcoded: il backend ora richiede `MIMO_API_KEY` dall'ambiente e fallisce in modo sicuro se assente.
+
 ## 2.0.0 — in sviluppo
 
 - Aggiunto Compact Source 2 come sintassi canonica destinata esclusivamente agli agenti.

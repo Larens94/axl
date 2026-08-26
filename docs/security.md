@@ -13,7 +13,7 @@ Sono considerati non fidati:
 Sono considerati infrastruttura fidata nella reference implementation:
 
 - processo host;
-- plugin Python caricati esplicitamente;
+- handler e adapter Rust registrati esplicitamente;
 - callback di approvazione;
 - adapter memoria configurati dall'host.
 
@@ -36,7 +36,7 @@ Sono considerati infrastruttura fidata nella reference implementation:
 
 La reference implementation non fornisce ancora:
 
-- sandbox del codice Python dei plugin;
+- sandbox dei plugin o handler host non fidati;
 - preemption di handler bloccanti;
 - isolamento OS/container;
 - limiti CPU/RAM imposti dal kernel;
@@ -44,11 +44,11 @@ La reference implementation non fornisce ancora:
 - attestazione delle build;
 - rete filtrata per capability a livello OS.
 
-Questi controlli devono essere aggiunti dal deployment host e, in seguito, dal runtime Rust.
+Questi controlli devono essere aggiunti dal deployment host e dal futuro sandbox del runtime.
 
 ## Modello target
 
-Il runtime Rust dovrà associare ogni effetto a una capability non falsificabile:
+Il runtime Rust deve associare ogni effetto a una capability non falsificabile:
 
 ```text
 principal agente

@@ -24,7 +24,7 @@ pub fn axl_compile_frontend(args: &[Value]) -> Result<Value, PrimitiveError> {
         .map_err(|e| PrimitiveError(format!("axl_compile_frontend analyze: {e}")))?;
 
     // Generate React frontend
-    axl_compiler::codegen::react::generate(&analyzed, output_path)
+    axl_compiler::codegen::react::generate(&analyzed, None, output_path)
         .map_err(|e| PrimitiveError(format!("axl_compile_frontend codegen: {e}")))?;
 
     Ok(Value::Bool(true))

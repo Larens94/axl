@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
     <nav class="product-nav" aria-label="Documentation">
       <a class="active" href="./">Documentation</a>
+      <a href="../presentation.html">Presentation</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
@@ -23,7 +24,7 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html" aria-current="page" class="active">Glossary</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact source</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html" aria-current="page" class="active">Glossary</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
@@ -43,17 +44,17 @@
 <li><strong>Capability:</strong> limited authorization to perform a class of effects.</li>
 <li><strong>Approval:</strong> pre-effect consent required by a policy.</li>
 <li><strong>Audit:</strong> a record of capability/approval decisions and outcomes.</li>
-<li><strong>Reference runtime:</strong> the Python implementation used to establish semantics.</li>
-<li><strong>Rust runtime:</strong> the target implementation for VM, native, WASM, and platforms.</li>
+<li><strong>Reference runtime:</strong> the Rust implementation executing Compact Source and AX-IR.</li>
+<li><strong>Application compiler:</strong> the Rust frontend generating Rust, React, and SQL targets.</li>
 <li><strong>Memory scope:</strong> a host-controlled boundary that isolates persistent records.</li>
 <li><strong>Budget:</strong> a limit applied to steps, values, output, tools, memory, or depth.</li>
 <li><strong>Provider:</strong> an external implementation of a model, memory, database, or service; it is not part of the grammar.</li>
 </ul></article>
-        
+
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/glossary.md">Edit this page ↗</a></div>
         <nav class="pager" aria-label="Pagination"><a class="prev" href="development.html"><small>← Previous</small><b>Development</b></a></nav>
       </div>
-      
+
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>

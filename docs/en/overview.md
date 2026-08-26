@@ -1,82 +1,64 @@
-# AXL Vision
+# AXL vision
 
-[Italiano](../overview.md)
+## The primary source
 
-## For agents only
+AXL — **Agent eXecution Language** — aims to be the language in which an agent
+describes a complete system. Rust, React, SQL, and future bridges must not replace
+AXL in source; they implement its semantic model.
 
-AXL — **Agent eXecution Language** — is a general-purpose language designed exclusively for software agents. It does not seek familiarity with Python, Rust, or JavaScript. Its priority is to reduce tokens, ambiguity, and generation cost.
-
-The canonical source is a versioned stream:
-
-```axl
-2;10|x|#2,#3,#4,*,+|i;12|$x
+```text
+AXL intent
+→ deterministic analysis
+→ typed model
+→ backend · frontend · data · runtime · bridges
 ```
 
-It requires no newlines, indentation, or long keywords. Numeric opcodes describe instructions; RPN expressions eliminate parentheses and syntactic precedence.
+## Why compact
+
+Numeric syntax removes repeated keywords, implicit precedence, and decorative
+structure. Compact does not mean single-line: the formatter lays frames out over
+multiple lines for review and diffs, while minified form serves caching, hashing,
+signing, and transport.
+
+We do not claim token percentages or speed multipliers without a reproducible
+benchmark. The demonstrated advantage today is structural: one AXL contract
+generates several coherent targets.
 
 ## General-purpose goal
 
-Compact does not mean limited. AXL must be able to express:
+The architecture must be able to cover:
 
-- backends, APIs, services, and distributed applications;
-- browsers and frontends through WASM/DOM;
-- native desktop and mobile applications;
-- CLIs, automation, and system software;
-- GPU, graphics, audio, and games;
-- agents, workflows, memory, tasks, events, and models;
-- reusable libraries and components.
+- backends, APIs, services, databases, and networking;
+- web, desktop, and mobile frontends;
+- CLIs, automation, systems, and IoT;
+- AI, agents, workflows, memory, tools, and events;
+- graphics, GPU, audio, and specialist applications.
 
-## Backends and bridges
-
-Rust is the first low-level runtime/compiler, chosen for security, performance, and portability. AXL is not tied to Rust: AX-HIR/AX-MIR and a versioned ABI will enable multiple backends and bridges.
-
-```text
-AXL → AX-HIR → AX-MIR → Rust/native
-                       → VM
-                       → WASM/WASI
-                       → C ABI
-                       → DOM/WebGPU
-                       → mobile/desktop/OS bridge
-                       → future backends
-```
-
-The AXL source does not change when the target changes.
-
-## Principles
-
-1. **Agent-only:** token efficiency before human readability.
-2. **General-purpose:** no category of software is excluded from the architecture.
-3. **Determinism:** parsing and compilation do not depend on LLMs.
-4. **Canonical form:** a normal representation facilitates hashing, caching, and signing.
-5. **Capability security:** external effects are denied by default.
-6. **Versioned IR:** source, HIR, MIR, and ABI evolve through explicit contracts.
-7. **Portability:** the same results, effects, and errors across different backends.
-8. **Machine diagnostics:** stable, localizable, and automatically correctable errors.
-
-## Actual status
+## `0.1.0-alpha.1` status
 
 ### Available
 
-- single-line Compact Source 2;
-- canonical writer and `axl pack`;
-- deterministic parser and RPN;
-- basic types, functions, and modules;
-- control flow;
-- agents, workflows, and tools;
-- scoped AM with SQLite, TTL, and metadata;
-- policy, approval, audit, and budgets;
-- versioned AX-IR JSON;
-- Python reference runtime and CLI.
+- Rust runtime and CLI;
+- Compact Source 2, RPN, AX-IR, functions, memory, agents, and workflows;
+- application compiler for entities, APIs, auth, and seeds;
+- Compact UI Source 3 and component/property registry;
+- Rust/Axum/SeaORM, React/Refine/MUI/TanStack, and SQL/SQLite targets;
+- responsive, tested full-stack CRM.
 
-### To be built
+### Not yet guaranteed
 
-- collections, records, enums, option/result, and pattern matching;
-- tasks, events, async, and structured concurrency;
-- AX-HIR/AX-MIR and capability ABI;
-- Rust runtime/compiler;
-- VM, native, WASM/WASI;
-- filesystem, network, HTTP, database, DOM, GPU, and desktop/mobile bridges;
-- package manager, LSP, debugger, and profiler;
-- application frameworks.
+- stable format compatibility across alpha releases;
+- production-ready hardening and deployment;
+- async scheduler and structured concurrency;
+- WASM/native mobile/desktop targets;
+- package manager, LSP, debugger, and public SDKs;
+- real LLM backends and sandboxing for untrusted capabilities.
 
-The Python reference implementation establishes semantics and conformance; it is not the final runtime.
+## Principles
+
+1. **AXL first:** semantics live in AXL source.
+2. **Agent native:** deterministic form and machine-readable diagnostics.
+3. **Standard targets:** generated code uses real, inspectable ecosystems.
+4. **Capability security:** external effects are explicit and bounded.
+5. **Portability:** the language does not copy one framework's APIs.
+6. **Evidence:** demos, tests, and benchmarks must be reproducible.

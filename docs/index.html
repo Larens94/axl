@@ -1,106 +1,91 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="it">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AXL — Linguaggio Agent-Native</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#ffffff">
+  <meta name="description" content="AXL Documentazione: Documentazione AXL">
+  <title>Documentazione AXL · AXL Documentazione</title>
   <link rel="stylesheet" href="docs.css">
+  <script defer src="docs.js"></script>
 </head>
-<body>
+<body data-lang="it" data-page="welcome">
+  <a class="skip" href="#content">Vai al contenuto</a>
   <header class="docs-header">
-    <a class="brand" href="./"><span>A</span><b>AXL</b><i>0.0.3</i></a>
-    <nav class="product-nav">
-      <a href="primitives.html">Primitiva</a>
-      <a href="llm-integration.html">LLM</a>
-      <a href="examples.html">Esempi</a>
-      <a href="architecture.html">Architettura</a>
+    <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
+    <nav class="product-nav" aria-label="Documentazione">
+      <a class="active" href="./">Documentazione</a>
+      <a href="presentation.html">Presentazione</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
-    <button class="menu-trigger" onclick="document.querySelector('.sidebar').classList.toggle('open')" aria-label="Menu">☰</button>
+    <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
+    <a class="language" href="en/" hreflang="en">English</a>
+    <button class="menu-trigger" type="button" aria-label="Menu" aria-expanded="false" data-menu>☰</button>
   </header>
-
   <div class="docs-shell">
-    <aside class="sidebar">
-      <div class="sidebar-scroll">
-        <div class="nav-group">
-          <p>Introduzione</p>
-          <a href="./" class="active">Benvenuto</a>
-          <a href="overview.html">Visione</a>
-          <a href="architecture.html">Architettura</a>
-        </div>
-        <div class="nav-group">
-          <p>Linguaggio</p>
-          <a href="compact-syntax.html">Compact Source</a>
-          <a href="ax-ir.html">AX-IR</a>
-          <a href="primitives.html">Primitiva Native</a>
-        </div>
-        <div class="nav-group">
-          <p>Agenti</p>
-          <a href="agent-runtime.html">Runtime Agenti</a>
-          <a href="llm-integration.html">Integrazione LLM</a>
-          <a href="security.html">Sicurezza</a>
-        </div>
-        <div class="nav-group">
-          <p>Toolchain</p>
-          <a href="toolchain.html">CLI e Build</a>
-          <a href="development.html">Sviluppo</a>
-          <a href="roadmap.html">Roadmap</a>
-        </div>
-        <div class="nav-group">
-          <p>Esempi</p>
-          <a href="examples.html">Esempi AXL</a>
-        </div>
-      </div>
+    <aside class="sidebar" data-sidebar>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./" aria-current="page" class="active">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Sorgente compatto</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
     </aside>
-
-    <main class="content-wrap">
+    <main id="content" class="content-wrap">
       <div class="article-column">
-        <h1>AXL — Linguaggio Agent-Native</h1>
-        
-        <p>AXL è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare. Gli agenti combinano primitiva native per costruire qualsiasi software.</p>
+        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>Documentazione AXL</p>
+        <article class="prose"><h1 id="documentazione-axl">Documentazione AXL</h1>
+<p><strong>AXL — Agent eXecution Language</strong> è il linguaggio sorgente principale per
+descrivere dominio, dati, API, interfaccia e agenti. Rust, React/TypeScript e SQL
+sono i primi target applicativi; il runtime Rust esegue inoltre Compact Source e
+le primitive native.</p>
+<blockquote>
+<p>Release corrente: <code>0.1.0-alpha.1</code>. È una proof of concept funzionante, non una
+promessa di compatibilità stabile o di deployment production-ready.</p>
+</blockquote>
+<p><a href="presentation.html">Apri la presentazione interattiva Claude × Apple</a></p>
+<h2 id="cosa-e-disponibile">Cosa è disponibile</h2>
+<ul>
+<li>parser, analisi e generazione applicativa in Rust;</li>
+<li>backend Axum + SeaORM con SQLite, migrazioni e API CRUD;</li>
+<li>frontend React + Refine + Material UI + TanStack Table + Lucide;</li>
+<li>Compact UI Source 3 con frame numerici per viste, componenti e proprietà;</li>
+<li>runtime Rust per Compact Source 2, primitive, memoria, policy e rendering web;</li>
+<li>demo CRM con 6 entità, 30 operazioni CRUD e 7 viste compatte;</li>
+<li>portale documentale bilingue e 43 test Rust verificati per la release.</li>
+</ul>
+<h2 id="pipeline">Pipeline</h2>
+<pre class="codehilite"><code class="language-text">crm.axl + crm.ui.axl
+→ parser e modello semantico tipizzato
+→ Rust/Axum/SeaORM + React/Refine/MUI + SQL
+→ applicazione CRM eseguibile
+</code></pre>
 
-        <h2>Cos'è AXL</h2>
-        <ul>
-          <li><strong>Linguaggio agent-native</strong> — l'agente è la prima classe, non la funzione</li>
-          <li><strong>194 primitiva native</strong> — ogni capability di Rust è esponibile</li>
-          <li><strong>LLM integrato</strong> — reason, classify, extract, generate, embed sono native</li>
-          <li><strong>Rust-backed</strong> — performance, sicurezza, portabilità</li>
-        </ul>
-
-        <h2>Esempio</h2>
-        <pre><code>2;10|result|"hello world",!text_upper/1|s;12|$result</code></pre>
-        <p>Output: <code>"HELLO WORLD"</code></p>
-
-        <h2>Primitiva</h2>
-        <ul>
-          <li><strong>I/O:</strong> file_read, file_write, file_exists, dir_list</li>
-          <li><strong>Text:</strong> text_upper, text_lower, text_split, text_find</li>
-          <li><strong>Collections:</strong> list_push, list_sort, map_get, map_set</li>
-          <li><strong>Math:</strong> math_add, math_mul, math_random</li>
-          <li><strong>Crypto:</strong> hash_sha256, encode_base64, crypto_random_bytes</li>
-          <li><strong>JSON:</strong> json_parse, json_stringify, json_validate</li>
-          <li><strong>Network:</strong> http_get, http_post, http_server_listen</li>
-          <li><strong>System:</strong> env_get, time_now, path_join, process_run</li>
-          <li><strong>LLM:</strong> llm_generate, llm_reason, llm_classify, llm_extract</li>
-          <li><strong>DB:</strong> db_connect, db_execute, db_query</li>
-          <li><strong>Auth:</strong> auth_hash_password, validate_email</li>
-        </ul>
-
-        <h2>Avvio Rapido</h2>
-        <pre><code>cargo build --workspace
-cargo test --workspace
-cargo run -p axl-cli -- run examples/crm/serve.axl</code></pre>
-
-        <h2>Documentazione</h2>
-        <ul>
-          <li><a href="primitives.html">Primitiva Native</a> — 194 primitiva complete</li>
-          <li><a href="llm-integration.html">Integrazione LLM</a> — MiMo, reasoning, classify</li>
-          <li><a href="examples.html">Esempi</a> — Backend, Data Pipeline, Frontend</li>
-          <li><a href="architecture.html">Architettura</a> — Stack Rust completo</li>
-          <li><a href="compact-syntax.html">Sintassi Compatta</a> — Format RPN</li>
-        </ul>
+<h2 id="indice">Indice</h2>
+<ol>
+<li><a href="ax-ecosystem.html">AX: ecosistema e tassonomia</a></li>
+<li><a href="overview.html">Visione e obiettivi</a></li>
+<li><a href="architecture.html">Architettura dello stack</a></li>
+<li><a href="compact-syntax.html">Sorgente compatto</a></li>
+<li><a href="language-guide.html">Guida al linguaggio</a></li>
+<li><a href="agent-runtime.html">Agenti, workflow, tool e memoria</a></li>
+<li><a href="ax-ir.html">AX-IR e compatibilità</a></li>
+<li><a href="security.html">Sicurezza e capability</a></li>
+<li><a href="toolchain.html">Toolchain e utilizzo</a></li>
+<li><a href="roadmap.html">Roadmap</a></li>
+<li><a href="platform-demo-analysis.html">CRM e copertura UI</a></li>
+<li><a href="development.html">Sviluppo e contribuzione</a></li>
+<li><a href="glossary.html">Glossario</a></li>
+</ol>
+<p>La specifica normativa rimane in <a href="https://github.com/Larens94/axl/blob/main/SPEC.md"><code>../SPEC.md</code></a>. In caso di conflitto
+sul comportamento implementato prevalgono codice, schema AX-IR e test.</p></article>
+<section class="start-grid"><h2>Da dove iniziare</h2><div><a class="start-card" href="compact-syntax.html"><span>01</span><b>Sintassi compatta</b><p>Opcode, frame e formule RPN.</p><em>→</em></a><a class="start-card" href="architecture.html"><span>02</span><b>Architettura</b><p>Dal sorgente ai runtime e ai bridge.</p><em>→</em></a><a class="start-card" href="agent-runtime.html"><span>03</span><b>Agenti e memoria</b><p>Capability, workflow, policy e AM.</p><em>→</em></a><a class="start-card" href="roadmap.html"><span>04</span><b>Roadmap</b><p>Il percorso verso Rust, WASM e app native.</p><em>→</em></a></div></section>
+        <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/README.md">Modifica questa pagina ↗</a></div>
+        <nav class="pager" aria-label="Paginazione"><a class="next" href="ax-ecosystem.html"><small>Successivo →</small><b>Ecosistema AX</b></a></nav>
       </div>
+<aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#cosa-e-disponibile">Cosa è disponibile</a><a class="toc-l2" href="#pipeline">Pipeline</a><a class="toc-l2" href="#indice">Indice</a></aside>
     </main>
   </div>
+  <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>
+    <form method="dialog"><button aria-label="Chiudi">×</button></form>
+    <div class="search-box"><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><input type="search" aria-label="Cerca nella documentazione" placeholder="Cerca nella documentazione" autocomplete="off" data-search-input></div>
+    <div class="search-results" data-search-results></div>
+  </dialog>
 </body>
 </html>

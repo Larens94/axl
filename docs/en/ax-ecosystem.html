@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
     <nav class="product-nav" aria-label="Documentation">
       <a class="active" href="./">Documentation</a>
+      <a href="../presentation.html">Presentation</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
@@ -23,7 +24,7 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html" aria-current="page" class="active">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html" aria-current="page" class="active">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact source</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
@@ -31,7 +32,7 @@
         <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>AX — Agent eXecution</p>
         <article class="prose"><h1 id="ax-agent-execution">AX — Agent eXecution</h1>
 <h2 id="role">Role</h2>
-<p><strong>AX</strong> is the umbrella ecosystem for defining, compiling, and executing agent-native software. Today, the AXL repository contains the executable reference core: Compact Source 2, parser, validation, type-checking, AX-IR, and the Python runtime.</p>
+<p><strong>AX</strong> is the umbrella ecosystem for defining, compiling, and executing agent-native software. Today, the AXL repository contains the Rust runtime and compiler, Compact Source 2, Compact UI Source 3, AX-IR, and the first Rust/React/SQL application targets.</p>
 <p>The specialized surfaces listed here define the target taxonomy. They are not declared implemented until they have their own parser, lowering, and conformance tests.</p>
 <h2 id="languages-and-modules">Languages and Modules</h2>
 <table>
@@ -109,7 +110,7 @@
 <li>audit, tracing, and evals;</li>
 <li>versioning and compatibility;</li>
 <li>registry and package manager;</li>
-<li>Python and TypeScript SDKs;</li>
+<li>TypeScript, Python, and C SDKs and bindings;</li>
 <li>Rust core and WASM target;</li>
 <li>CLI and APIs;</li>
 <li>web, mobile, desktop, and server adapters.</li>
@@ -132,16 +133,18 @@ web | mobile | desktop | server | existing systems
 <ul>
 <li>AXL Compact Source 2;</li>
 <li>AX-IR 1.0, 1.1, and 1.2;</li>
-<li>synchronous Python reference runtime;</li>
+<li>Rust runtime and CLI;</li>
+<li>Rust application compiler targeting Axum/SeaORM, React/Refine/MUI, and SQL;</li>
+<li>Compact UI Source 3 and the full-stack CRM;</li>
 <li>scalar types and homogeneous <code>list&lt;T&gt;</code>;</li>
 <li>functions, modules, initial AM, agents, workflows, tools, and policies.</li>
 </ul>
-<p>The async scheduler, Rust/WASM runtime, complete routers, registry, SDKs, and cross-platform adapters remain later milestones.</p></article>
-        
+<p>The async scheduler, WASM/native targets, complete routers, registry, SDKs, and cross-platform adapters remain later milestones.</p></article>
+
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/ax-ecosystem.md">Edit this page ↗</a></div>
         <nav class="pager" aria-label="Pagination"><a class="prev" href="./"><small>← Previous</small><b>Welcome</b></a><a class="next" href="overview.html"><small>Next →</small><b>Vision and goals</b></a></nav>
       </div>
-      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#role">Role</a><a class="toc-l2" href="#languages-and-modules">Languages and Modules</a><a class="toc-l2" href="#shared-core">Shared Core</a><a class="toc-l2" href="#platform-services">Platform Services</a><a class="toc-l2" href="#pipeline">Pipeline</a><a class="toc-l2" href="#implemented-status">Implemented Status</a></aside>
+<aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#role">Role</a><a class="toc-l2" href="#languages-and-modules">Languages and Modules</a><a class="toc-l2" href="#shared-core">Shared Core</a><a class="toc-l2" href="#platform-services">Platform Services</a><a class="toc-l2" href="#pipeline">Pipeline</a><a class="toc-l2" href="#implemented-status">Implemented Status</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>

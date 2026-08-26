@@ -4,7 +4,7 @@
 
 ## Role
 
-**AX** is the umbrella ecosystem for defining, compiling, and executing agent-native software. Today, the AXL repository contains the executable reference core: Compact Source 2, parser, validation, type-checking, AX-IR, and the Python runtime.
+**AX** is the umbrella ecosystem for defining, compiling, and executing agent-native software. Today, the AXL repository contains the Rust runtime and compiler, Compact Source 2, Compact UI Source 3, AX-IR, and the first Rust/React/SQL application targets.
 
 The specialized surfaces listed here define the target taxonomy. They are not declared implemented until they have their own parser, lowering, and conformance tests.
 
@@ -42,7 +42,7 @@ The specialized surfaces listed here define the target taxonomy. They are not de
 - audit, tracing, and evals;
 - versioning and compatibility;
 - registry and package manager;
-- Python and TypeScript SDKs;
+- TypeScript, Python, and C SDKs and bindings;
 - Rust core and WASM target;
 - CLI and APIs;
 - web, mobile, desktop, and server adapters.
@@ -69,8 +69,10 @@ In the current development version, the following are real and tested:
 
 - AXL Compact Source 2;
 - AX-IR 1.0, 1.1, and 1.2;
-- synchronous Python reference runtime;
+- Rust runtime and CLI;
+- Rust application compiler targeting Axum/SeaORM, React/Refine/MUI, and SQL;
+- Compact UI Source 3 and the full-stack CRM;
 - scalar types and homogeneous `list<T>`;
 - functions, modules, initial AM, agents, workflows, tools, and policies.
 
-The async scheduler, Rust/WASM runtime, complete routers, registry, SDKs, and cross-platform adapters remain later milestones.
+The async scheduler, WASM/native targets, complete routers, registry, SDKs, and cross-platform adapters remain later milestones.

@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
     <nav class="product-nav" aria-label="Documentazione">
       <a class="active" href="./">Documentazione</a>
+      <a href="presentation.html">Presentazione</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
@@ -23,7 +24,7 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html" aria-current="page" class="active">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Sorgente compatto</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html" aria-current="page" class="active">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
@@ -42,7 +43,7 @@
 <p>Sono considerati infrastruttura fidata nella reference implementation:</p>
 <ul>
 <li>processo host;</li>
-<li>plugin Python caricati esplicitamente;</li>
+<li>handler e adapter Rust registrati esplicitamente;</li>
 <li>callback di approvazione;</li>
 <li>adapter memoria configurati dall'host.</li>
 </ul>
@@ -64,7 +65,7 @@
 <h2 id="confini-non-coperti">Confini non coperti</h2>
 <p>La reference implementation non fornisce ancora:</p>
 <ul>
-<li>sandbox del codice Python dei plugin;</li>
+<li>sandbox dei plugin o handler host non fidati;</li>
 <li>preemption di handler bloccanti;</li>
 <li>isolamento OS/container;</li>
 <li>limiti CPU/RAM imposti dal kernel;</li>
@@ -72,9 +73,9 @@
 <li>attestazione delle build;</li>
 <li>rete filtrata per capability a livello OS.</li>
 </ul>
-<p>Questi controlli devono essere aggiunti dal deployment host e, in seguito, dal runtime Rust.</p>
+<p>Questi controlli devono essere aggiunti dal deployment host e dal futuro sandbox del runtime.</p>
 <h2 id="modello-target">Modello target</h2>
-<p>Il runtime Rust dovrà associare ogni effetto a una capability non falsificabile:</p>
+<p>Il runtime Rust deve associare ogni effetto a una capability non falsificabile:</p>
 <pre class="codehilite"><code class="language-text">principal agente
   + capability
   + scope risorsa
@@ -87,11 +88,11 @@
 <p>File, rete, database, shell, GPU, modelli e memoria saranno capability distinte. Le capability non dovranno essere rappresentate come stringhe liberamente costruibili dal programma.</p>
 <h2 id="errori-e-audit">Errori e audit</h2>
 <p>Gli errori devono rimanere espliciti e machine-readable. L'audit registra decisioni, non segreti. In produzione ogni approvazione dovrebbe essere legata a run, principal, hash degli argomenti, policy, timestamp e scadenza.</p></article>
-        
+
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/security.md">Modifica questa pagina ↗</a></div>
         <nav class="pager" aria-label="Paginazione"><a class="prev" href="ax-ir.html"><small>← Precedente</small><b>AX-IR</b></a><a class="next" href="toolchain.html"><small>Successivo →</small><b>Toolchain</b></a></nav>
       </div>
-      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#modello-delle-minacce">Modello delle minacce</a><a class="toc-l2" href="#regole-fondamentali">Regole fondamentali</a><a class="toc-l2" href="#confini-non-coperti">Confini non coperti</a><a class="toc-l2" href="#modello-target">Modello target</a><a class="toc-l2" href="#errori-e-audit">Errori e audit</a></aside>
+<aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#modello-delle-minacce">Modello delle minacce</a><a class="toc-l2" href="#regole-fondamentali">Regole fondamentali</a><a class="toc-l2" href="#confini-non-coperti">Confini non coperti</a><a class="toc-l2" href="#modello-target">Modello target</a><a class="toc-l2" href="#errori-e-audit">Errori e audit</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>

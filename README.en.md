@@ -2,30 +2,47 @@
 
 # AX / AXL — Agent eXecution
 
-**AXL** is a programming language for agents that wraps Rust and everything Rust can do.
+**AXL** is the primary source language for building complete applications. Rust,
+React/TypeScript, SQL, WebAssembly, and hardware bridges are compilation targets
+or runtime details: system, data, API, UI, and agent semantics stay in AXL.
 
-**Website:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Docs:** [`docs/`](docs/) · **Specification:** [`SPEC.md`](SPEC.md)
+**Website:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Presentation:** [AXL Claude × Apple](https://larens94.github.io/axl/presentation.html) · **Docs:** [`docs/`](docs/) · **Specification:** [`SPEC.md`](SPEC.md)
 
 ```text
-AXL Compact Source 3.0
-→ deterministic parser
-→ AX-IR 2.0 (agent-centric)
-→ type-check
-→ interpreter
-  ├─ 90+ native primitives (Rust)
-  ├─ LLM backend (reason, classify, extract)
-  ├─ tool system (policy, approval, audit)
-  ├─ memory (in-memory, SQLite)
-  └─ web server (HTTP, static, API)
+AXL Source
+→ parser and static analysis
+→ typed semantic model
+  ├─ Rust/Axum/SeaORM  backend
+  ├─ React/Refine/MUI  frontend
+  ├─ SQL               schema and migrations
+  └─ runtime/bridges   agents, tools, AI, and devices
 ```
 
-## Example
+## Full-stack application
 
 ```axl
-2;10|result|"hello world",!text_upper/1|s;12|$result
+entity Customer {
+  field name: String
+  field email: String
+}
+
+api Customer {
+  GET /api/customers → list
+  POST /api/customers → create
+}
 ```
 
-→ `"HELLO WORLD"`
+The UI uses compact numeric frames, formatted across lines for reviewable source:
+
+```axl
+3;60|2;
+  61|1000|64;
+    62|1|"customers"; 62|3|#25; 62|5|"cards";
+    61|1001|65; 62|1|"name"; 62|2|"Name"; 62|4|#1; 99;
+    61|1002|65; 62|1|"email"; 62|2|"Email"; 62|4|#2; 99;
+  99;
+99;
+```
 
 ## Native Primitives (90+)
 
@@ -63,28 +80,24 @@ AXL Compact Source 3.0
 ```bash
 cargo build --workspace
 cargo test --workspace
-cargo run -p axl-cli -- run examples/compact.axl
-cargo run -p netflix-server
-cargo run -p ai-platform
+cargo run -p axl-cli -- build examples/crm/crm.axl -o build/crm
 ```
 
 ## Workspace
 
 ```text
 runtime/
-├── axl-core-rs/    # Core library (3500 LOC)
-├── axl-cli/        # CLI binary
-├── netflix-server/ # Netflix demo
-└── ai-platform/    # AI Platform demo
+├── axl-core-rs/    # IR, runtime, primitives, and AX-UI
+├── axl-cli/        # `axl` CLI
+└── axl-compiler/   # Rust/React/SQL application targets
 ```
 
 ## Examples
 
-- **Netflix** — Streaming platform with 20 titles
-- **AI Platform** — Content analysis with 6 LLM APIs
-- **API Server** — REST CRUD with auth and caching
-- **Data Pipeline** — ETL with parsing and transformation
-- **Multi-Agent** — Collaborative agents with reasoning
+- **CRM** — 6 entities, 30 CRUD operations, 7 compact views, and Rust/React/SQL targets
+
+AXL `0.1.0-alpha.1` is a working proof of concept: the demo is complete, while
+language compatibility, security, and production deployment remain under active development.
 
 ## License
 

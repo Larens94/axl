@@ -126,6 +126,43 @@ Use `-` when TTL is absent:
 2;50|r|search;10|x|"AXL",!search/1;12|$x;99;51|w;52|r;99;52|w
 ```
 
+## Compact UI Source 3
+
+Application UI uses a `.ui.axl` sidecar with header `3`. It keeps the same
+separators and multiline rule while adding frames for the semantic UI tree.
+
+| Opcode | Frame | Meaning |
+|---:|---|---|
+| `60` | `60|view_id` | opens a view |
+| `61` | `61|node_id|component_id` | opens a component |
+| `62` | `62|property_id|value` | assigns a property |
+| `63` | `63|event_id|action` | binds an event |
+| `99` | `99` | closes a component or view |
+
+Components `64` and `65` define a data table and a column. The table contract
+uses resource (`1`), entity label (`2`), page size (`3`), density (`4`), and
+mobile mode (`5`). The column contract uses field (`1`), label (`2`), visual type
+(`3`), responsive priority from 1 to 3 (`4`), and minimum width from 80 to 600
+pixels (`5`).
+
+```axl
+3;60|2;
+  61|1000|64;
+    62|1|"customers";
+    62|2|"Customers";
+    62|3|#20;
+    62|4|"comfortable";
+    62|5|"cards";
+    61|1001|65; 62|1|"name"; 62|2|"Name"; 62|3|"text"; 62|4|#1; 62|5|#180; 99;
+    61|1002|65; 62|1|"status"; 62|2|"Status"; 62|3|"status"; 62|4|#2; 99;
+  99;
+99;
+```
+
+The compiler rejects unknown components, out-of-contract properties, invalid
+types, and columns without fields. This keeps the format compact without losing
+semantic validation.
+
 ## Canonicalization
 
 The `pack` command converts legacy syntax to the canonical representation:

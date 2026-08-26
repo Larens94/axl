@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="AXL Documentation: Stack Architecture">
-  <title>Stack Architecture · AXL Documentation</title>
+  <meta name="description" content="AXL Documentation: Architecture">
+  <title>Architecture · AXL Documentation</title>
   <link rel="stylesheet" href="../docs.css">
   <script defer src="../docs.js"></script>
 </head>
@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
     <nav class="product-nav" aria-label="Documentation">
       <a class="active" href="./">Documentation</a>
+      <a href="../presentation.html">Presentation</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
@@ -23,105 +24,102 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html" aria-current="page" class="active">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact source</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html" aria-current="page" class="active">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
       <div class="article-column">
-        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>Stack Architecture</p>
-        <article class="prose"><h1 id="stack-architecture">Stack Architecture</h1>
-<h2 id="stable-pipeline">Stable pipeline</h2>
-<p>The complete AA/AM/AW/AP/AT/AE/AS/AD/AI taxonomy is defined in <a href="ax-ecosystem.html">AX — Agent eXecution</a>. All surfaces converge on AX-IR before execution.</p>
-<pre class="codehilite"><code class="language-text">Compact Source 2
-      │
-      ▼
-deterministic parser
-      │
-      ▼
-AST + resolver + type-checker
-      │
-      ▼
-AX-HIR ── general-purpose + agent primitives
-      │
-      ▼
-AX-MIR ── CFG, lowered types, effects, capability ABI
-      │
-      ├── VM
-      ├── Rust/native
-      ├── WASM/WASI
-      └── platform bridge
-             ├── filesystem/network/HTTP/database
-             ├── DOM/browser/WebGPU
-             ├── desktop/mobile/OS
-             └── future backends
+        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>Architecture</p>
+        <article class="prose"><h1 id="architecture">Architecture</h1>
+<p>AXL separates application semantics from the technologies used to execute them.
+AXL source remains the primary contract; Rust, React, and SQL are generated,
+inspectable targets.</p>
+<h2 id="two-complementary-frontends">Two complementary frontends</h2>
+<pre class="codehilite"><code class="language-text">crm.axl                 crm.ui.axl
+domain + APIs           compact numeric UI
+        \               /
+         parser + analysis
+                ↓
+        typed semantic model
+        ├─ Rust/Axum/SeaORM
+        ├─ React/Refine/MUI
+        └─ SQL migrations
 </code></pre>
 
-<h2 id="source-layer">Source layer</h2>
-<p>The canonical source is optimized for agents: numeric opcodes, delimited frames, RPN expressions, and no indentation. It is compact but versioned and fully deterministic.</p>
-<p>The existing verbose frontend is used only for migration, debugging, and conversion with <code>axl pack</code>.</p>
-<h2 id="source-analysis">Source analysis</h2>
-<p>Responsibilities:</p>
-<ul>
-<li>strict framing and parsing;</li>
-<li>per-frame/token diagnostics;</li>
-<li>module and namespace resolution;</li>
-<li>static type-checking;</li>
-<li>construction of valid HIR;</li>
-<li>no runtime effects.</li>
-</ul>
-<p>Today, the frontend/reference runtime is written in Python. The test corpus makes its semantics transferable.</p>
-<h2 id="ax-ir-hir-and-mir">AX-IR, HIR, and MIR</h2>
-<ul>
-<li><strong>AX-IR JSON 1.x:</strong> the current interoperable contract.</li>
-<li><strong>AX-HIR:</strong> functions, types, agents, workflows, memory, and high-level effects.</li>
-<li><strong>AX-MIR:</strong> basic blocks, control flow, value layouts, and lowered calls and capabilities.</li>
-</ul>
-<p>Keeping the layers separate enables optimization and multiple targets without contaminating the source language.</p>
-<h2 id="execution-engine">Execution engine</h2>
-<p>The runtime governs:</p>
-<ul>
-<li>execution, scheduling, and cancellation;</li>
-<li>AM memory and scopes;</li>
-<li>capabilities, policies, and approvals;</li>
-<li>audit and budgets;</li>
-<li>bridges to hosts and platforms.</li>
-</ul>
-<p>Rust is the first planned definitive implementation for safety and performance. It is not part of the syntax, nor is it the only permitted backend.</p>
-<h2 id="capability-abi-and-bridges">Capability ABI and bridges</h2>
-<p>Each bridge exposes typed, versioned contracts:</p>
-<pre class="codehilite"><code class="language-text">capability id + ABI version + input/output types + effects + target + cancellation
+<p><code>crm.axl</code> describes the application, entities, fields, and CRUD resources. The
+<code>crm.ui.axl</code> sidecar describes views and components without embedding JSX, CSS,
+or framework APIs in the language.</p>
+<h2 id="rust-workspace">Rust workspace</h2>
+<pre class="codehilite"><code class="language-text">runtime/
+├── axl-core-rs/       # AX-IR, interpreter, primitives, memory, policy, AX-UI
+├── axl-cli/           # check, build, dev, and fmt commands
+└── axl-compiler/      # application parser and Rust/React/SQL generators
 </code></pre>
 
-<p>This allows the same AXL program to use different implementations for Linux, Windows, macOS, browsers, Android, iOS, GPUs, or the cloud.</p>
-<p>The concrete application design, including AX-UI, modern networking, renderers, and vertical demos, is described in <a href="platform-demo-analysis.html">Application Demo and Platform Analysis</a>.</p>
-<h2 id="current-components">Current components</h2>
-<pre class="codehilite"><code class="language-text">axl/compact.py        Compact Source 2 parser/writer
-axl/parser.py         dispatcher + legacy frontend
-axl/compiler.py       modules and namespaces
-axl/ir.py             current typed IR
-axl/typechecker.py    type-checker
-axl/validation.py     semantic validation
-axl/serialization.py  AX-IR JSON
-axl/interpreter.py    reference runtime
-axl/memory.py         AM
-axl/policy.py         capability policy/audit
-axl/__main__.py       CLI
-</code></pre>
+<h2 id="application-compilation">Application compilation</h2>
+<ol>
+<li>The parser reads application source and the optional UI sidecar.</li>
+<li>Analysis checks identifiers, types, resources, and UI contracts.</li>
+<li>One semantic model feeds every generator.</li>
+<li>The Rust target emits Axum routers, SeaORM models, and server-side queries.</li>
+<li>The React target emits the responsive shell, CRUD pages, and data tables.</li>
+<li>The SQL target emits the SQLite schema and migrations.</li>
+<li>The smoke test starts generated backend and frontend and exercises real APIs.</li>
+</ol>
+<h2 id="compact-runtime">Compact runtime</h2>
+<p>The <code>axl-core-rs</code> runtime remains separate from the application compiler. It
+executes Compact Source 2 and AX-IR for bindings, flow, functions, agents,
+workflows, memory, and primitives. This separation lets the application model
+evolve without coupling syntax to host libraries.</p>
+<h2 id="technology-boundaries">Technology boundaries</h2>
+<table>
+<thead>
+<tr>
+<th>Layer</th>
+<th>AXL contract</th>
+<th>Current implementation</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Data</td>
+<td>entities, fields, relationships</td>
+<td>SQLite + SeaORM</td>
+</tr>
+<tr>
+<td>Network</td>
+<td>resources and CRUD operations</td>
+<td>Axum + Tower HTTP</td>
+</tr>
+<tr>
+<td>UI</td>
+<td>views, components, properties</td>
+<td>React + Refine + MUI</td>
+</tr>
+<tr>
+<td>Tables</td>
+<td>columns, priority, density</td>
+<td>TanStack Table</td>
+</tr>
+<tr>
+<td>Icons</td>
+<td>semantic meaning</td>
+<td>Lucide React</td>
+</tr>
+<tr>
+<td>Agents</td>
+<td>capabilities, memory, workflows</td>
+<td>Rust runtime</td>
+</tr>
+</tbody>
+</table>
+<p>Host libraries are replaceable. AXL preserves semantics, types, and intent
+instead of copying their APIs into the language.</p></article>
 
-<h2 id="compatibility">Compatibility</h2>
-<ul>
-<li>versioned source;</li>
-<li>stable canonical output;</li>
-<li>immutable published IR schemas;</li>
-<li>tested legacy decoder;</li>
-<li>observational equivalence between the reference runtime, VM, native, and WASM;</li>
-<li>replaceable bridges that do not require changing the program.</li>
-</ul></article>
-        
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/architecture.md">Edit this page ↗</a></div>
-        <nav class="pager" aria-label="Pagination"><a class="prev" href="overview.html"><small>← Previous</small><b>Vision and goals</b></a><a class="next" href="compact-syntax.html"><small>Next →</small><b>Compact Source 2</b></a></nav>
+        <nav class="pager" aria-label="Pagination"><a class="prev" href="overview.html"><small>← Previous</small><b>Vision and goals</b></a><a class="next" href="compact-syntax.html"><small>Next →</small><b>Compact source</b></a></nav>
       </div>
-      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#stable-pipeline">Stable pipeline</a><a class="toc-l2" href="#source-layer">Source layer</a><a class="toc-l2" href="#source-analysis">Source analysis</a><a class="toc-l2" href="#ax-ir-hir-and-mir">AX-IR, HIR, and MIR</a><a class="toc-l2" href="#execution-engine">Execution engine</a><a class="toc-l2" href="#capability-abi-and-bridges">Capability ABI and bridges</a><a class="toc-l2" href="#current-components">Current components</a><a class="toc-l2" href="#compatibility">Compatibility</a></aside>
+<aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#two-complementary-frontends">Two complementary frontends</a><a class="toc-l2" href="#rust-workspace">Rust workspace</a><a class="toc-l2" href="#application-compilation">Application compilation</a><a class="toc-l2" href="#compact-runtime">Compact runtime</a><a class="toc-l2" href="#technology-boundaries">Technology boundaries</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>

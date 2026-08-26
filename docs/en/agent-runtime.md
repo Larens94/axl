@@ -30,20 +30,10 @@ A tool registered by the host but not granted to the agent is denied.
 
 ## Host capabilities
 
-A capability declares a name, ABI, input/output, effect, target, and policy. Today, the Python bridge uses `Tool`:
-
-```python
-from axl import Tool
-
-
-def tools():
-    return [
-        Tool("search", search, effect="read"),
-        Tool("publish", publish, effect="write", approval=True),
-    ]
-```
-
-Future Rust/C/WASI/DOM/GPU bridges will implement the same model. Capabilities do not become vendor-specific keywords in the source language.
+A capability declares a name, ABI, input/output, effect, target, and policy. The
+Rust runtime registers explicit host handlers and applies grants, approval, and
+budgets before invocation. C/WASI/DOM/GPU bridges will implement the same
+contract: capabilities do not become vendor-specific source keywords.
 
 ## Fail-closed approval
 

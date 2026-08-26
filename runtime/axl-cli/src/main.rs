@@ -76,7 +76,8 @@ fn check_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let api_count = app.apis.len();
     let ui_count = app.ui.len();
     axl_compiler::analyzer::analyze(app)?;
-    println!("AXL application is valid: {entity_count} entities, {api_count} APIs, {ui_count} UI components");
+    let compact_view_count = axl_compiler::load_compact_ui(Path::new(file))?.map(|views| views.len()).unwrap_or(0);
+    println!("AXL application is valid: {entity_count} entities, {api_count} APIs, {ui_count} legacy UI blocks, {compact_view_count} compact UI views");
     Ok(())
 }
 

@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
     <nav class="product-nav" aria-label="Documentazione">
       <a class="active" href="./">Documentazione</a>
+      <a href="presentation.html">Presentazione</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
@@ -23,105 +24,73 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html" aria-current="page" class="active">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Sorgente compatto</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html" aria-current="page" class="active">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
       <div class="article-column">
         <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>Toolchain e utilizzo</p>
         <article class="prose"><h1 id="toolchain-e-utilizzo">Toolchain e utilizzo</h1>
-<h2 id="requisiti-correnti">Requisiti correnti</h2>
+<h2 id="requisiti">Requisiti</h2>
 <ul>
-<li>Python 3.11 o superiore;</li>
-<li>package <code>axl-lang</code> installabile con pip;</li>
-<li>SQLite incluso in Python per la memoria persistente.</li>
+<li>Rust e Cargo stabili;</li>
+<li>Node.js e npm per compilare il frontend generato;</li>
+<li>SQLite per l'esecuzione locale del CRM, incorporato dal backend Rust.</li>
 </ul>
-<p>Rust/Cargo non sono ancora richiesti dalla reference implementation.</p>
-<h2 id="installazione">Installazione</h2>
-<pre class="codehilite"><code class="language-bash">python3 -m pip install .
-axl --help
+<h2 id="costruire-la-cli">Costruire la CLI</h2>
+<pre class="codehilite"><code class="language-bash">cargo build -p axl-cli
+cargo test --workspace
 </code></pre>
 
-<p>Per sviluppo:</p>
-<pre class="codehilite"><code class="language-bash">python3 -m pip install --no-deps -e .
+<p>Il binario risultante è <code>target/debug/axl</code>.</p>
+<h2 id="controllo-e-formattazione">Controllo e formattazione</h2>
+<pre class="codehilite"><code class="language-bash">target/debug/axl check examples/crm/crm.axl
+target/debug/axl fmt examples/crm/crm.ui.axl --width 100 --check
 </code></pre>
 
-<h2 id="esecuzione-sorgente-canonico">Esecuzione sorgente canonico</h2>
-<pre class="codehilite"><code class="language-bash">axl run examples/crm/serve.axl
+<p><code>fmt</code> mantiene il sorgente compatto multilinea: newline e indentazione non hanno
+semantica, ma rendono diff e revisione più affidabili. La forma su una riga è
+riservata a hashing, cache e trasporto.</p>
+<h2 id="generare-il-crm">Generare il CRM</h2>
+<pre class="codehilite"><code class="language-bash">target/debug/axl build examples/crm/crm.axl -o build/crm
 </code></pre>
 
-<h2 id="canonicalizzazione">Canonicalizzazione</h2>
-<pre class="codehilite"><code class="language-bash">axl pack legacy.axl -o compact.axl
+<p>La build legge automaticamente <code>examples/crm/crm.ui.axl</code> e produce:</p>
+<pre class="codehilite"><code class="language-text">build/crm/
+├── backend/       # crate Rust Axum + SeaORM
+├── frontend/      # app React + Vite + Refine + MUI
+└── migrations/    # schema SQL SQLite
 </code></pre>
 
-<p><code>pack</code> accetta il frontend legacy o compact, esegue validazione e type-check e produce Compact Source 2 normalizzato su una riga.</p>
-<h2 id="esecuzione-sorgente-con-capability-host">Esecuzione sorgente con capability host</h2>
-<pre class="codehilite"><code class="language-bash">axl run examples/crm/app.axl
+<h2 id="avvio-sviluppo">Avvio sviluppo</h2>
+<pre class="codehilite"><code class="language-bash">target/debug/axl dev examples/crm/crm.axl -o build/crm
 </code></pre>
 
-<p>Con memoria e plugin:</p>
-<pre class="codehilite"><code class="language-bash">axl run examples/crm/server.axl \
-  --plugin examples.demo_tools \
-  --approve-tool publish \
-  --memory .axl-memory.sqlite \
-  --scope project:demo
+<p>In alternativa i target possono essere avviati separatamente:</p>
+<pre class="codehilite"><code class="language-bash">cargo run --manifest-path build/crm/backend/Cargo.toml
+npm install --prefix build/crm/frontend
+npm run dev --prefix build/crm/frontend
 </code></pre>
 
-<h2 id="compilare-ed-eseguire-ax-ir">Compilare ed eseguire AX-IR</h2>
-<pre class="codehilite"><code class="language-bash">axl compile examples/crm/app.axl -o crm.axlir.json
-axl exec crm.axlir.json
-</code></pre>
-
-<p><code>compile</code> risolve moduli, valida e type-checka prima di produrre AX-IR. <code>exec</code> valida nuovamente il documento prima degli effetti.</p>
-<p>La CLI usa come <strong>module root</strong> la directory del file di ingresso. Gli import devono essere relativi, top-level, con estensione <code>.axl</code>, senza <code>..</code>, e restare entro tale root. L'API Python consente di restringere o definire esplicitamente il confine:</p>
-<pre class="codehilite"><code class="language-python">from axl import compile_file
-
-program = compile_file(&quot;src/app.axl&quot;, module_root=&quot;src&quot;)
-</code></pre>
-
-<p>Il resolver limita inoltre profondità, numero di moduli e byte sorgente aggregati.</p>
-<h2 id="budget-cli">Budget CLI</h2>
-<p>Sono disponibili:</p>
-<pre class="codehilite"><code class="language-text">--max-steps
---max-output-bytes
---max-value-bytes
---max-value-nodes
---max-value-depth
---max-tool-calls
---max-memory-ops
---max-function-depth
-</code></pre>
-
-<h2 id="test-e-qualita">Test e qualità</h2>
-<pre class="codehilite"><code class="language-bash">python3 -m unittest discover -s tests -v
-python3 -m ruff check .
-python3 -m ruff format --check .
-python3 -m compileall -q axl tests examples
-python3 -m json.tool schema/axl-ir-1.0.schema.json &gt;/dev/null
-python3 -m json.tool schema/axl-ir-1.1.schema.json &gt;/dev/null
-python3 -m json.tool schema/axl-ir-1.2.schema.json &gt;/dev/null
+<p>Il backend ascolta su <code>http://127.0.0.1:3000</code>; Vite pubblica il frontend su
+<code>http://localhost:5173</code> e inoltra <code>/api</code> al backend.</p>
+<h2 id="verifica-proporzionata-alla-release">Verifica proporzionata alla release</h2>
+<pre class="codehilite"><code class="language-bash">cargo test --workspace
+cargo check --manifest-path build/crm/backend/Cargo.toml
+npm run build --prefix build/crm/frontend
+build/crm/smoke-test.sh
+python3 docs/build_docs.py
 git diff --check
 </code></pre>
 
-<h2 id="toolchain-target">Toolchain target</h2>
-<p>La futura CLI unificata dovrà offrire comandi equivalenti a:</p>
-<pre class="codehilite"><code class="language-text">axl new
-axl check
-axl build
-axl run
-axl test
-axl fmt
-axl doc
-axl package
-axl lsp
-</code></pre>
+<p>Il frontend generato è intenzionalmente ispezionabile. Rust, React e SQL non sono
+una seconda sorgente da mantenere manualmente: sono artefatti rigenerabili dal
+contratto AXL.</p></article>
 
-<p>Il compilatore Rust dovrà supportare inizialmente interprete/VM e WASM, poi native AOT. Il corpus di test corrente fungerà da base della suite di conformità cross-runtime.</p></article>
-        
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/toolchain.md">Modifica questa pagina ↗</a></div>
         <nav class="pager" aria-label="Paginazione"><a class="prev" href="security.html"><small>← Precedente</small><b>Sicurezza</b></a><a class="next" href="roadmap.html"><small>Successivo →</small><b>Roadmap</b></a></nav>
       </div>
-      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#requisiti-correnti">Requisiti correnti</a><a class="toc-l2" href="#installazione">Installazione</a><a class="toc-l2" href="#esecuzione-sorgente-canonico">Esecuzione sorgente canonico</a><a class="toc-l2" href="#canonicalizzazione">Canonicalizzazione</a><a class="toc-l2" href="#esecuzione-sorgente-con-capability-host">Esecuzione sorgente con capability host</a><a class="toc-l2" href="#compilare-ed-eseguire-ax-ir">Compilare ed eseguire AX-IR</a><a class="toc-l2" href="#budget-cli">Budget CLI</a><a class="toc-l2" href="#test-e-qualita">Test e qualità</a><a class="toc-l2" href="#toolchain-target">Toolchain target</a></aside>
+<aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#requisiti">Requisiti</a><a class="toc-l2" href="#costruire-la-cli">Costruire la CLI</a><a class="toc-l2" href="#controllo-e-formattazione">Controllo e formattazione</a><a class="toc-l2" href="#generare-il-crm">Generare il CRM</a><a class="toc-l2" href="#avvio-sviluppo">Avvio sviluppo</a><a class="toc-l2" href="#verifica-proporzionata-alla-release">Verifica proporzionata alla release</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>

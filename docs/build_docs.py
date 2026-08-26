@@ -6,6 +6,7 @@ from __future__ import annotations
 import html
 import json
 import re
+import shutil
 from pathlib import Path
 
 import markdown
@@ -18,7 +19,7 @@ PAGES = [
     ("ax-ecosystem.md", "ax-ecosystem", "Ecosistema AX", "AX ecosystem"),
     ("overview.md", "overview", "Visione e obiettivi", "Vision and goals"),
     ("architecture.md", "architecture", "Architettura", "Architecture"),
-    ("compact-syntax.md", "compact-syntax", "Compact Source 2", "Compact Source 2"),
+    ("compact-syntax.md", "compact-syntax", "Sorgente compatto", "Compact source"),
     ("language-guide.md", "language-guide", "Guida al linguaggio", "Language guide"),
     ("agent-runtime.md", "agent-runtime", "Agenti e runtime", "Agents and runtime"),
     ("ax-ir.md", "ax-ir", "AX-IR", "AX-IR"),
@@ -222,6 +223,7 @@ def page_template(
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>{breadcrumb}</i></a>
     <nav class="product-nav" aria-label="{breadcrumb}">
       <a class="active" href="./">{breadcrumb}</a>
+      <a href="{prefix}presentation.html">{"Presentazione" if italian else "Presentation"}</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="{search_label}" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>{search_label}</span><kbd>⌘ K</kbd></button>
@@ -237,11 +239,11 @@ def page_template(
       <div class="article-column">
         <p class="breadcrumb"><a href="./">{breadcrumb}</a><span>/</span>{html.escape(title)}</p>
         <article class="prose">{content}</article>
-        {cards}
+{cards}
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/{source_path}">{edit_label} ↗</a></div>
         {pager(slug, lang)}
       </div>
-      {toc_html(toc, lang)}
+{toc_html(toc, lang)}
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="{search_label}" data-search-dialog>
@@ -301,6 +303,7 @@ def build_language(lang: str) -> list[dict[str, str]]:
 def main() -> None:
     it = build_language("it")
     en = build_language("en")
+    shutil.copyfile(REPO / "presentation.html", ROOT / "presentation.html")
     print(f"built {len(it)} Italian and {len(en)} English pages")
 
 

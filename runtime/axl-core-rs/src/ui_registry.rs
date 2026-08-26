@@ -433,6 +433,34 @@ lazy_static::lazy_static! {
             children: false,
         });
 
+        // 64: Data Table — resource-backed responsive table
+        m.insert(64, ComponentContract {
+            name: "data-table",
+            properties: vec![
+                PropertyContract { id: 1, type_name: "string" }, // resource
+                PropertyContract { id: 2, type_name: "string" }, // entity label
+                PropertyContract { id: 3, type_name: "int" },    // page size
+                PropertyContract { id: 4, type_name: "string" }, // density
+                PropertyContract { id: 5, type_name: "string" }, // mobile mode
+            ],
+            events: vec![1, 2], // on_row_click, on_create
+            children: true,
+        });
+
+        // 65: Table Column — semantic column definition
+        m.insert(65, ComponentContract {
+            name: "table-column",
+            properties: vec![
+                PropertyContract { id: 1, type_name: "string" }, // field
+                PropertyContract { id: 2, type_name: "string" }, // label
+                PropertyContract { id: 3, type_name: "string" }, // text|number|money|date|status
+                PropertyContract { id: 4, type_name: "int" },    // responsive priority 1-3
+                PropertyContract { id: 5, type_name: "int" },    // minimum width
+            ],
+            events: vec![],
+            children: false,
+        });
+
         // ====================================================================
         // DISPLAY
         // ====================================================================

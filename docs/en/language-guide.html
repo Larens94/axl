@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
     <nav class="product-nav" aria-label="Documentation">
       <a class="active" href="./">Documentation</a>
+      <a href="../presentation.html">Presentation</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
@@ -23,13 +24,25 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html" aria-current="page" class="active">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact source</a><a href="language-guide.html" aria-current="page" class="active">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
       <div class="article-column">
         <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>Compact Source Guide</p>
         <article class="prose"><h1 id="compact-source-guide">Compact Source Guide</h1>
+<h2 id="application-query-policies">Application query policies</h2>
+<p>Application APIs can enforce pagination and ordering from AXL source:</p>
+<pre class="codehilite"><code class="language-axl">api Customer {
+  query page 25 max 100 sort updated_at desc
+  GET /api/customers -&gt; list
+}
+</code></pre>
+
+<p>The backend accepts <code>page</code> and <code>per_page</code>, caps <code>per_page</code> at the declared
+maximum, and returns <code>data</code> and <code>total</code>. The compiler rejects zero sizes,
+defaults above the maximum, limits above 1000, unknown fields, and policies
+without a <code>GET ... -&gt; list</code> route.</p>
 <p>AXL Compact Source 2 is the canonical format. For the complete normative table, see <a href="compact-syntax.html"><code>compact-syntax.md</code></a>.</p>
 <h2 id="structure">Structure</h2>
 <pre class="codehilite"><code class="language-text">2;frame;frame;frame
@@ -42,7 +55,9 @@
 <li><code>,</code>: RPN token separator;</li>
 <li><code>99</code>: end of block.</li>
 </ul>
-<p>Newlines are optional and non-structural. The canonical form produced by <code>axl pack</code> is a single line.</p>
+<p>Newlines are optional and non-structural. In source files, <code>axl pack</code> and
+<code>axl fmt</code> lay frames out over multiple lines and indent blocks. The minified
+form is reserved for internal uses such as hashing, caching, and transport.</p>
 <h2 id="atoms">Atoms</h2>
 <pre class="codehilite"><code class="language-text">#42       integer
 &quot;AXL&quot;     JSON string
@@ -112,11 +127,11 @@ $x        variable
 </code></pre>
 
 <p>The keyword-based frontend remains only for migration and debugging. New features must have a canonical compact encoding before they are considered part of the language.</p></article>
-        
+
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/language-guide.md">Edit this page ↗</a></div>
-        <nav class="pager" aria-label="Pagination"><a class="prev" href="compact-syntax.html"><small>← Previous</small><b>Compact Source 2</b></a><a class="next" href="agent-runtime.html"><small>Next →</small><b>Agents and runtime</b></a></nav>
+        <nav class="pager" aria-label="Pagination"><a class="prev" href="compact-syntax.html"><small>← Previous</small><b>Compact source</b></a><a class="next" href="agent-runtime.html"><small>Next →</small><b>Agents and runtime</b></a></nav>
       </div>
-      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#structure">Structure</a><a class="toc-l2" href="#atoms">Atoms</a><a class="toc-l2" href="#rpn">RPN</a><a class="toc-l2" href="#bindings-and-output">Bindings and output</a><a class="toc-l2" href="#if-and-while">If and while</a><a class="toc-l2" href="#functions">Functions</a><a class="toc-l2" href="#modules">Modules</a><a class="toc-l2" href="#am-memory">AM memory</a><a class="toc-l2" href="#agents-tools-and-workflows">Agents, tools, and workflows</a><a class="toc-l2" href="#legacy-conversion">Legacy conversion</a></aside>
+<aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#application-query-policies">Application query policies</a><a class="toc-l2" href="#structure">Structure</a><a class="toc-l2" href="#atoms">Atoms</a><a class="toc-l2" href="#rpn">RPN</a><a class="toc-l2" href="#bindings-and-output">Bindings and output</a><a class="toc-l2" href="#if-and-while">If and while</a><a class="toc-l2" href="#functions">Functions</a><a class="toc-l2" href="#modules">Modules</a><a class="toc-l2" href="#am-memory">AM memory</a><a class="toc-l2" href="#agents-tools-and-workflows">Agents, tools, and workflows</a><a class="toc-l2" href="#legacy-conversion">Legacy conversion</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>

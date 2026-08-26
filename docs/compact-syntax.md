@@ -124,6 +124,43 @@ Per TTL assente si usa `-`:
 2;50|r|search;10|x|"AXL",!search/1;12|$x;99;51|w;52|r;99;52|w
 ```
 
+## Compact UI Source 3
+
+La UI applicativa usa un sidecar `.ui.axl` con header `3`. Conserva gli stessi
+separatori e la stessa regola multilinea, ma ha frame dedicati al semantic UI tree.
+
+| Opcode | Frame | Semantica |
+|---:|---|---|
+| `60` | `60|view_id` | apre una vista |
+| `61` | `61|node_id|component_id` | apre un componente |
+| `62` | `62|property_id|value` | assegna una proprietà |
+| `63` | `63|event_id|action` | collega un evento |
+| `99` | `99` | chiude componente o vista |
+
+I componenti `64` e `65` definiscono rispettivamente una data table e una
+colonna. Il contratto della table usa: risorsa (`1`), label entità (`2`), page
+size (`3`), densità (`4`) e modalità mobile (`5`). Il contratto column usa:
+campo (`1`), label (`2`), tipo visuale (`3`), priorità responsive da 1 a 3 (`4`)
+e larghezza minima da 80 a 600 pixel (`5`).
+
+```axl
+3;60|2;
+  61|1000|64;
+    62|1|"customers";
+    62|2|"Clienti";
+    62|3|#20;
+    62|4|"comfortable";
+    62|5|"cards";
+    61|1001|65; 62|1|"name"; 62|2|"Nome"; 62|3|"text"; 62|4|#1; 62|5|#180; 99;
+    61|1002|65; 62|1|"status"; 62|2|"Stato"; 62|3|"status"; 62|4|#2; 99;
+  99;
+99;
+```
+
+Il compilatore rifiuta componenti sconosciuti, proprietà fuori contratto, tipi
+errati e colonne senza campo. Questo mantiene il formato compatto senza perdere
+validazione semantica.
+
 ## Canonicalizzazione
 
 Il comando `pack` converte la sintassi legacy nella rappresentazione canonica:

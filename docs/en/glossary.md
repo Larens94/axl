@@ -14,8 +14,8 @@
 - **Capability:** limited authorization to perform a class of effects.
 - **Approval:** pre-effect consent required by a policy.
 - **Audit:** a record of capability/approval decisions and outcomes.
-- **Reference runtime:** the Python implementation used to establish semantics.
-- **Rust runtime:** the target implementation for VM, native, WASM, and platforms.
+- **Reference runtime:** the Rust implementation executing Compact Source and AX-IR.
+- **Application compiler:** the Rust frontend generating Rust, React, and SQL targets.
 - **Memory scope:** a host-controlled boundary that isolates persistent records.
 - **Budget:** a limit applied to steps, values, output, tools, memory, or depth.
 - **Provider:** an external implementation of a model, memory, database, or service; it is not part of the grammar.

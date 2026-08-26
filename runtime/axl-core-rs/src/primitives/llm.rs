@@ -2,13 +2,20 @@ use crate::ir::Value;
 use crate::mimo::MiMoBackend;
 use crate::llm::LlmBackend;
 
-const MIMO_API_KEY: &str = "sk-ejmpfhhrc5eyh9n1bwp2yn0dt1vtghqclesto54fnju5my9c";
+fn mimo_backend() -> Result<MiMoBackend, String> {
+    let api_key = std::env::var("MIMO_API_KEY")
+        .map_err(|_| "MiMo backend requires the MIMO_API_KEY environment variable".to_string())?;
+    if api_key.trim().is_empty() {
+        return Err("MiMo backend requires a non-empty MIMO_API_KEY".to_string());
+    }
+    Ok(MiMoBackend::new(api_key))
+}
 
 pub fn llm_generate(args: &[Value]) -> Result<Value, String> {
     let system = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     let user_msg = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     
-    let backend = MiMoBackend::new(MIMO_API_KEY.to_string());
+    let backend = mimo_backend()?;
     let messages = vec![("user".to_string(), user_msg.to_string())];
     
     match backend.generate(system, &messages) {
@@ -21,7 +28,7 @@ pub fn llm_reason(args: &[Value]) -> Result<Value, String> {
     let instruction = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     let input = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     
-    let backend = MiMoBackend::new(MIMO_API_KEY.to_string());
+    let backend = mimo_backend()?;
     let system = format!("You are a careful reasoning assistant. {instruction}\n\nThink step by step. Show your reasoning. Then give a final answer.");
     let messages = vec![("user".to_string(), input.to_string())];
     
@@ -36,7 +43,7 @@ pub fn llm_classify(args: &[Value]) -> Result<Value, String> {
     let input = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     let labels = args.get(2).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     
-    let backend = MiMoBackend::new(MIMO_API_KEY.to_string());
+    let backend = mimo_backend()?;
     let system = format!("{instruction}\n\nClassify into exactly one: [{labels}]\nReply with ONLY the category name.");
     let messages = vec![("user".to_string(), input.to_string())];
     
@@ -50,7 +57,7 @@ pub fn llm_extract(args: &[Value]) -> Result<Value, String> {
     let schema = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     let input = args.get(1).and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     
-    let backend = MiMoBackend::new(MIMO_API_KEY.to_string());
+    let backend = mimo_backend()?;
     let system = format!("Extract {schema} from the text. One per line.");
     let messages = vec![("user".to_string(), input.to_string())];
     
@@ -69,7 +76,7 @@ pub fn llm_extract(args: &[Value]) -> Result<Value, String> {
 pub fn llm_embed(args: &[Value]) -> Result<Value, String> {
     let text = args.first().and_then(|v| match v { Value::String(s) => Some(s.as_str()), _ => None }).unwrap_or("");
     
-    let backend = MiMoBackend::new(MIMO_API_KEY.to_string());
+    let backend = mimo_backend()?;
     
     match backend.embed(text) {
         Ok(embedding) => Ok(Value::List(embedding.into_iter().map(|v| Value::Int(v)).collect())),

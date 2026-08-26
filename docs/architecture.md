@@ -1,67 +1,63 @@
 # Architettura
 
-## Stack AXL 3.0
+AXL separa la semantica dell'applicazione dalle tecnologie usate per eseguirla.
+Il sorgente AXL resta il contratto principale; Rust, React e SQL sono target
+generati e ispezionabili.
+
+## Due frontend complementari
 
 ```text
-AXL Compact Source 3
-→ parser deterministico
-→ AX-IR 2.0 (agent-centric)
-→ type-check
-→ interpreter
-  ├─ primitive native (90+)
-  ├─ LLM backend (reason, classify, extract)
-  ├─ tool system (policy, approval, audit)
-  ├─ memory (in-memory, SQLite, semantic)
-  └─ bridge (native, WASM, VM)
+crm.axl                 crm.ui.axl
+dominio + API           UI numerica compatta
+        \               /
+         parser + analisi
+                ↓
+       modello semantico tipizzato
+        ├─ Rust/Axum/SeaORM
+        ├─ React/Refine/MUI
+        └─ SQL migrations
 ```
 
-## Rust Workspace
+`crm.axl` descrive applicazione, entità, campi e risorse CRUD. Il sidecar
+`crm.ui.axl` descrive viste e componenti senza introdurre JSX, CSS o API di un
+framework nel linguaggio.
+
+## Workspace Rust
 
 ```text
 runtime/
-├── axl-core-rs/          # Libreria principale
-│   ├── ir.rs             # Tipi IR
-│   ├── compact.rs        # Parser compatto
-│   ├── interpreter.rs    # Esecuzione
-│   ├── primitives/       # 90+ primitiva native
-│   │   ├── io.rs         # File I/O
-│   │   ├── text.rs       # Elaborazione testo
-│   │   ├── collections.rs # List/Map/Set
-│   │   ├── math.rs       # Operazioni matematiche
-│   │   ├── crypto.rs     # Hash, encoding, random
-│   │   ├── system.rs     # Env, time, path, process
-│   │   ├── serialize.rs  # JSON parsing
-│   │   └── net.rs        # HTTP client
-│   ├── llm.rs            # LLM backend trait
-│   ├── memory.rs         # Memory stores
-│   ├── policy.rs         # Tool policy
-│   ├── validation.rs     # Validazione programma
-│   ├── typechecker.rs    # Type-checking
-│   ├── serialization.rs  # JSON IR
-│   └── render_web.rs     # Renderer HTML
-├── axl-cli/              # CLI binario
-├── netflix-server/       # Netflix demo
-└── ai-platform/          # AI Platform demo
+├── axl-core-rs/       # AX-IR, interprete, primitive, memoria, policy e AX-UI
+├── axl-cli/           # comandi check, build, dev e fmt
+└── axl-compiler/      # parser applicativo e generatori Rust/React/SQL
 ```
 
-## Pipeline di Esecuzione
+## Compilazione applicativa
 
-1. **Parser** — converte sorgente compact in AST
-2. **Validation** — verifica struttura programma
-3. **Type-check** — verifica tipi
-4. **Interpreter** — esegue con:
-   - Primitive native (chiamate dirette Rust)
-   - Tool utente (handler custom)
-   - Memory store (scoped, TTL)
-   - Policy system (approval, audit)
-   - Budget limits (steps, bytes, depth)
+1. Il parser legge il sorgente applicativo e il sidecar UI opzionale.
+2. L'analisi verifica identificatori, tipi, risorse e contratti UI.
+3. Un modello semantico unico alimenta tutti i generatori.
+4. Il target Rust produce router Axum, modelli SeaORM e query server-side.
+5. Il target React produce shell responsive, pagine CRUD e data table.
+6. Il target SQL produce lo schema e le migrazioni SQLite.
+7. Lo smoke test avvia backend e frontend generati e verifica le API reali.
 
-## Primitive vs Tools
+## Runtime compatto
 
-| Aspetto | Primitive Native | Tool Utente |
+Il runtime in `axl-core-rs` rimane distinto dal compilatore applicativo. Esegue
+Compact Source 2 e AX-IR per binding, flow, funzioni, agenti, workflow, memoria e
+primitive. La separazione consente di evolvere il modello applicativo senza
+accoppiare la sintassi alle librerie host.
+
+## Confini tecnologici
+
+| Livello | Contratto AXL | Implementazione corrente |
 |---|---|---|
-| Implementazione | Rust statically linked | Closure dinamica |
-| Performance | Ottimale | Overhead chiamata |
-| Sicurezza | Safe Rust | Sandbox necessario |
-| Numero | 90+ | Illimitato |
-| Esempio | `!file_read/1` | `!search_catalog/1` |
+| Dati | entità, campi, relazioni | SQLite + SeaORM |
+| Rete | risorse e operazioni CRUD | Axum + Tower HTTP |
+| UI | viste, componenti, proprietà | React + Refine + MUI |
+| Tabelle | colonne, priorità, densità | TanStack Table |
+| Icone | significato semantico | Lucide React |
+| Agenti | capability, memoria, workflow | runtime Rust |
+
+Le librerie host sono sostituibili. AXL deve conservare semantica, tipi e
+intenzione, non replicare direttamente le loro API.

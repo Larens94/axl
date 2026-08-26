@@ -28,20 +28,10 @@ Un tool registrato dall'host ma non concesso viene negato.
 
 ## Capability host
 
-Una capability dichiara nome, ABI, input/output, effetto, target e policy. Oggi il bridge Python usa `Tool`:
-
-```python
-from axl import Tool
-
-
-def tools():
-    return [
-        Tool("search", search, effect="read"),
-        Tool("publish", publish, effect="write", approval=True),
-    ]
-```
-
-I futuri bridge Rust/C/WASI/DOM/GPU implementeranno lo stesso modello. Le capability non diventano keyword vendor-specific nel sorgente.
+Una capability dichiara nome, ABI, input/output, effetto, target e policy. Il
+runtime Rust registra handler host espliciti e applica grants, approval e budget
+prima dell'invocazione. I bridge C/WASI/DOM/GPU implementeranno lo stesso
+contratto: le capability non diventano keyword vendor-specific nel sorgente.
 
 ## Approvazione a chiusura sicura
 

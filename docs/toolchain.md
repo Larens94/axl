@@ -1,117 +1,74 @@
 # Toolchain e utilizzo
 
-## Requisiti correnti
+## Requisiti
 
-- Python 3.11 o superiore;
-- package `axl-lang` installabile con pip;
-- SQLite incluso in Python per la memoria persistente.
+- Rust e Cargo stabili;
+- Node.js e npm per compilare il frontend generato;
+- SQLite per l'esecuzione locale del CRM, incorporato dal backend Rust.
 
-Rust/Cargo non sono ancora richiesti dalla reference implementation.
-
-## Installazione
+## Costruire la CLI
 
 ```bash
-python3 -m pip install .
-axl --help
+cargo build -p axl-cli
+cargo test --workspace
 ```
 
-Per sviluppo:
+Il binario risultante è `target/debug/axl`.
+
+## Controllo e formattazione
 
 ```bash
-python3 -m pip install --no-deps -e .
+target/debug/axl check examples/crm/crm.axl
+target/debug/axl fmt examples/crm/crm.ui.axl --width 100 --check
 ```
 
-## Esecuzione sorgente canonico
+`fmt` mantiene il sorgente compatto multilinea: newline e indentazione non hanno
+semantica, ma rendono diff e revisione più affidabili. La forma su una riga è
+riservata a hashing, cache e trasporto.
+
+## Generare il CRM
 
 ```bash
-axl run examples/compact.axl
+target/debug/axl build examples/crm/crm.axl -o build/crm
 ```
 
-## Canonicalizzazione
-
-```bash
-axl pack legacy.axl -o compact.axl
-```
-
-`pack` accetta il frontend legacy o compact, esegue validazione e type-check e produce Compact Source 2 normalizzato su una riga.
-
-## Esecuzione sorgente con capability host
-
-```bash
-axl run examples/functions.axl
-```
-
-Con memoria e plugin:
-
-```bash
-axl run examples/agent_workflow.axl \
-  --plugin examples.demo_tools \
-  --approve-tool publish \
-  --memory .axl-memory.sqlite \
-  --scope project:demo
-```
-
-## Compilare ed eseguire AX-IR
-
-```bash
-axl compile examples/functions.axl -o functions.axlir.json
-axl exec functions.axlir.json
-```
-
-`compile` risolve moduli, valida e type-checka prima di produrre AX-IR. `exec` valida nuovamente il documento prima degli effetti.
-
-La CLI usa come **module root** la directory del file di ingresso. Gli import devono essere relativi, top-level, con estensione `.axl`, senza `..`, e restare entro tale root. L'API Python consente di restringere o definire esplicitamente il confine:
-
-```python
-from axl import compile_file
-
-program = compile_file("src/app.axl", module_root="src")
-```
-
-Il resolver limita inoltre profondità, numero di moduli e byte sorgente aggregati.
-
-## Budget CLI
-
-Sono disponibili:
+La build legge automaticamente `examples/crm/crm.ui.axl` e produce:
 
 ```text
---max-steps
---max-output-bytes
---max-value-bytes
---max-value-nodes
---max-value-depth
---max-tool-calls
---max-memory-ops
---max-function-depth
+build/crm/
+├── backend/       # crate Rust Axum + SeaORM
+├── frontend/      # app React + Vite + Refine + MUI
+└── migrations/    # schema SQL SQLite
 ```
 
-## Test e qualità
+## Avvio sviluppo
 
 ```bash
-python3 -m unittest discover -s tests -v
-python3 -m ruff check .
-python3 -m ruff format --check .
-python3 -m compileall -q axl tests examples
-python3 -m json.tool schema/axl-ir-1.0.schema.json >/dev/null
-python3 -m json.tool schema/axl-ir-1.1.schema.json >/dev/null
-python3 -m json.tool schema/axl-ir-1.2.schema.json >/dev/null
+target/debug/axl dev examples/crm/crm.axl -o build/crm
+```
+
+In alternativa i target possono essere avviati separatamente:
+
+```bash
+cargo run --manifest-path build/crm/backend/Cargo.toml
+npm install --prefix build/crm/frontend
+npm run dev --prefix build/crm/frontend
+```
+
+Il backend ascolta su `http://127.0.0.1:3000`; Vite pubblica il frontend su
+`http://localhost:5173` e inoltra `/api` al backend.
+
+## Verifica proporzionata alla release
+
+```bash
+cargo test --workspace
+cargo check --manifest-path build/crm/backend/Cargo.toml
+npm run build --prefix build/crm/frontend
+build/crm/smoke-test.sh
+python3 docs/build_docs.py
 git diff --check
 ```
 
-## Toolchain target
-
-La futura CLI unificata dovrà offrire comandi equivalenti a:
-
-```text
-axl new
-axl check
-axl build
-axl run
-axl test
-axl fmt
-axl doc
-axl package
-axl lsp
-```
-
-Il compilatore Rust dovrà supportare inizialmente interprete/VM e WASM, poi native AOT. Il corpus di test corrente fungerà da base della suite di conformità cross-runtime.
+Il frontend generato è intenzionalmente ispezionabile. Rust, React e SQL non sono
+una seconda sorgente da mantenere manualmente: sono artefatti rigenerabili dal
+contratto AXL.

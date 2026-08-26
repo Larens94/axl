@@ -15,7 +15,7 @@ The following are considered untrusted:
 The following are considered trusted infrastructure in the reference implementation:
 
 - the host process;
-- explicitly loaded Python plugins;
+- explicitly registered Rust handlers and adapters;
 - approval callbacks;
 - memory adapters configured by the host.
 
@@ -38,7 +38,7 @@ The following are considered trusted infrastructure in the reference implementat
 
 The reference implementation does not yet provide:
 
-- sandboxing of Python plugin code;
+- sandboxing of untrusted host plugins or handlers;
 - preemption of blocking handlers;
 - OS/container isolation;
 - kernel-enforced CPU/RAM limits;
@@ -46,11 +46,11 @@ The reference implementation does not yet provide:
 - build attestation;
 - OS-level capability-filtered networking.
 
-These controls must be added by the deployment host and, later, by the Rust runtime.
+These controls must be added by the deployment host and the future runtime sandbox.
 
 ## Target model
 
-The Rust runtime must associate every effect with an unforgeable capability:
+The Rust runtime associates every effect with an unforgeable capability:
 
 ```text
 agent principal

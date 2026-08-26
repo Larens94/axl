@@ -1,108 +1,63 @@
-# Stack Architecture
+# Architecture
 
-[Italiano](../architecture.md)
+AXL separates application semantics from the technologies used to execute them.
+AXL source remains the primary contract; Rust, React, and SQL are generated,
+inspectable targets.
 
-## Stable pipeline
-
-The complete AA/AM/AW/AP/AT/AE/AS/AD/AI taxonomy is defined in [AX — Agent eXecution](../ax-ecosystem.md). All surfaces converge on AX-IR before execution.
-
-```text
-Compact Source 2
-      │
-      ▼
-deterministic parser
-      │
-      ▼
-AST + resolver + type-checker
-      │
-      ▼
-AX-HIR ── general-purpose + agent primitives
-      │
-      ▼
-AX-MIR ── CFG, lowered types, effects, capability ABI
-      │
-      ├── VM
-      ├── Rust/native
-      ├── WASM/WASI
-      └── platform bridge
-             ├── filesystem/network/HTTP/database
-             ├── DOM/browser/WebGPU
-             ├── desktop/mobile/OS
-             └── future backends
-```
-
-## Source layer
-
-The canonical source is optimized for agents: numeric opcodes, delimited frames, RPN expressions, and no indentation. It is compact but versioned and fully deterministic.
-
-The existing verbose frontend is used only for migration, debugging, and conversion with `axl pack`.
-
-## Source analysis
-
-Responsibilities:
-
-- strict framing and parsing;
-- per-frame/token diagnostics;
-- module and namespace resolution;
-- static type-checking;
-- construction of valid HIR;
-- no runtime effects.
-
-Today, the frontend/reference runtime is written in Python. The test corpus makes its semantics transferable.
-
-## AX-IR, HIR, and MIR
-
-- **AX-IR JSON 1.x:** the current interoperable contract.
-- **AX-HIR:** functions, types, agents, workflows, memory, and high-level effects.
-- **AX-MIR:** basic blocks, control flow, value layouts, and lowered calls and capabilities.
-
-Keeping the layers separate enables optimization and multiple targets without contaminating the source language.
-
-## Execution engine
-
-The runtime governs:
-
-- execution, scheduling, and cancellation;
-- AM memory and scopes;
-- capabilities, policies, and approvals;
-- audit and budgets;
-- bridges to hosts and platforms.
-
-Rust is the first planned definitive implementation for safety and performance. It is not part of the syntax, nor is it the only permitted backend.
-
-## Capability ABI and bridges
-
-Each bridge exposes typed, versioned contracts:
+## Two complementary frontends
 
 ```text
-capability id + ABI version + input/output types + effects + target + cancellation
+crm.axl                 crm.ui.axl
+domain + APIs           compact numeric UI
+        \               /
+         parser + analysis
+                ↓
+        typed semantic model
+        ├─ Rust/Axum/SeaORM
+        ├─ React/Refine/MUI
+        └─ SQL migrations
 ```
 
-This allows the same AXL program to use different implementations for Linux, Windows, macOS, browsers, Android, iOS, GPUs, or the cloud.
+`crm.axl` describes the application, entities, fields, and CRUD resources. The
+`crm.ui.axl` sidecar describes views and components without embedding JSX, CSS,
+or framework APIs in the language.
 
-The concrete application design, including AX-UI, modern networking, renderers, and vertical demos, is described in [Application Demo and Platform Analysis](../platform-demo-analysis.md).
-
-## Current components
+## Rust workspace
 
 ```text
-axl/compact.py        Compact Source 2 parser/writer
-axl/parser.py         dispatcher + legacy frontend
-axl/compiler.py       modules and namespaces
-axl/ir.py             current typed IR
-axl/typechecker.py    type-checker
-axl/validation.py     semantic validation
-axl/serialization.py  AX-IR JSON
-axl/interpreter.py    reference runtime
-axl/memory.py         AM
-axl/policy.py         capability policy/audit
-axl/__main__.py       CLI
+runtime/
+├── axl-core-rs/       # AX-IR, interpreter, primitives, memory, policy, AX-UI
+├── axl-cli/           # check, build, dev, and fmt commands
+└── axl-compiler/      # application parser and Rust/React/SQL generators
 ```
 
-## Compatibility
+## Application compilation
 
-- versioned source;
-- stable canonical output;
-- immutable published IR schemas;
-- tested legacy decoder;
-- observational equivalence between the reference runtime, VM, native, and WASM;
-- replaceable bridges that do not require changing the program.
+1. The parser reads application source and the optional UI sidecar.
+2. Analysis checks identifiers, types, resources, and UI contracts.
+3. One semantic model feeds every generator.
+4. The Rust target emits Axum routers, SeaORM models, and server-side queries.
+5. The React target emits the responsive shell, CRUD pages, and data tables.
+6. The SQL target emits the SQLite schema and migrations.
+7. The smoke test starts generated backend and frontend and exercises real APIs.
+
+## Compact runtime
+
+The `axl-core-rs` runtime remains separate from the application compiler. It
+executes Compact Source 2 and AX-IR for bindings, flow, functions, agents,
+workflows, memory, and primitives. This separation lets the application model
+evolve without coupling syntax to host libraries.
+
+## Technology boundaries
+
+| Layer | AXL contract | Current implementation |
+|---|---|---|
+| Data | entities, fields, relationships | SQLite + SeaORM |
+| Network | resources and CRUD operations | Axum + Tower HTTP |
+| UI | views, components, properties | React + Refine + MUI |
+| Tables | columns, priority, density | TanStack Table |
+| Icons | semantic meaning | Lucide React |
+| Agents | capabilities, memory, workflows | Rust runtime |
+
+Host libraries are replaceable. AXL preserves semantics, types, and intent
+instead of copying their APIs into the language.

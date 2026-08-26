@@ -1,51 +1,65 @@
 # Roadmap
 
-## Completato
+AXL evolve per vertical slice dimostrabili. Ogni milestone richiede sorgente AXL,
+artefatti eseguibili, test e limiti dichiarati.
 
-### v3.0 — Agent-Native (attuale)
-- [x] Parser compact (Source 2/3)
-- [x] IR con primitive LLM definite
-- [x] Validation + type-checking
-- [x] Interpreter con tool policy, memory, budget
-- [x] 90+ primitiva native Rust
-- [x] LLM backend trait + MockBackend
-- [x] Memory store (in-memory, SQLite)
-- [x] CLI completo (run, compile, exec, pack, build, serve)
-- [x] Serializzazione JSON IR 1.0/1.1/1.2
-- [x] Renderer HTML/CSS/JS
-- [x] 28 test passanti
-- [x] Netflix demo applicazione
-- [x] AI Content Platform demo
-- [x] SPEC-3.0.md completa
-- [x] PRIMITIVES.md (500+ primitiva taxonomy)
+## Completato — `0.1.0-alpha.1`
 
-## In Lavorazione
+- [x] runtime e CLI Rust;
+- [x] Compact Source 2, RPN e formatter multilinea;
+- [x] Compact UI Source 3 con component registry;
+- [x] compilatore di entità, API, auth, seed e query;
+- [x] backend Rust/Axum/SeaORM e migrazioni SQLite;
+- [x] frontend React/Refine/MUI/TanStack/Lucide;
+- [x] CRM con 6 entità, 30 CRUD e 7 viste;
+- [x] navigazione responsive, bottom menu e table-to-card;
+- [x] documentazione bilingue e presentazione pubblicabile.
 
-### v3.1 — Runtime Completo
-- [ ] Integrazione primitiva native nell'interpreter (in corso)
-- [ ] Compiler con supporto moduli/import
-- [ ] LLM backend reali (OpenAI, Anthropic)
-- [ ] Streaming output LLM
+## M1 — Stabilizzare il compilatore applicativo
 
-### v3.2 — Agent Avanzati
-- [ ] Comunicazione inter-agenti completa
-- [ ] Event-driven execution
-- [ ] Semantic memory con embedding
-- [ ] Tool discovery dinamico
-- [ ] Observability (trace, metric)
+- manifest applicativo e contratti di target versionati;
+- diagnostica con span e codici errore stabili;
+- relazioni, enum, option/result e validazione form;
+- OpenAPI generata e suite E2E browser/API;
+- benchmark riproducibile di dimensione, token e tempo di generazione.
 
-## Futuro
+**Gate:** il CRM si rigenera da zero e passa test Rust, API ed E2E su CI.
 
-### v4.0 — Backend Multipli
-- [ ] WASM target
-- [ ] Native binary target
-- [ ] VM interpreter
-- [ ] C ABI bridge
-- [ ] Mobile/Desktop bridge
+## M2 — Backend production-oriented
 
-### v4.1 — Ecosistema
-- [ ] Package manager (AXL packages)
-- [ ] LSP server
-- [ ] Debugger
-- [ ] Profiler
-- [ ] Framework applicativi
+- PostgreSQL, transazioni e pool;
+- autenticazione, RBAC, secret management e rate limit;
+- SSE/WebSocket, upload bounded e job async;
+- logging, metriche e tracing OpenTelemetry;
+- container, health/readiness e graceful shutdown.
+
+**Gate:** servizio distribuibile con threat model e osservabilità verificati.
+
+## M3 — AX-UI oltre il web
+
+- stato, eventi, form, accessibilità e design token semantici;
+- renderer DOM stabile e test visuali;
+- desktop WebView come bootstrap;
+- adapter nativi SwiftUI e Jetpack Compose;
+- renderer canvas/WebGPU per grafica specialistica.
+
+**Gate:** lo stesso semantic UI tree passa la suite di conformità su due renderer.
+
+## M4 — Runtime agentico
+
+- scheduler async e concorrenza strutturata;
+- capability ABI versionata, cancellazione e deadline;
+- backend modello reali, routing ed eval;
+- memoria semantica e provider esterni;
+- audit e sandbox degli handler non fidati.
+
+**Gate:** workflow multi-agente riproducibile con policy e trace end-to-end.
+
+## M5 — Ecosistema
+
+- AX-HIR/AX-MIR, VM e target WASM/native;
+- package manager, registry, lockfile e firma;
+- LSP, formatter, debugger, profiler e documentazione API;
+- SDK e bridge per TypeScript, Python, C, IoT e servizi esterni.
+
+**Gate:** package riproducibile e stessa suite semantica su runtime multipli.

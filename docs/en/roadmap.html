@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="AXL Documentation: AXL Roadmap">
-  <title>AXL Roadmap · AXL Documentation</title>
+  <meta name="description" content="AXL Documentation: Roadmap">
+  <title>Roadmap · AXL Documentation</title>
   <link rel="stylesheet" href="../docs.css">
   <script defer src="../docs.js"></script>
 </head>
@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentation</i></a>
     <nav class="product-nav" aria-label="Documentation">
       <a class="active" href="./">Documentation</a>
+      <a href="../presentation.html">Presentation</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Search documentation" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Search documentation</span><kbd>⌘ K</kbd></button>
@@ -23,175 +24,76 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html" aria-current="page" class="active">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Get started</p><a href="./">Welcome</a><a href="ax-ecosystem.html">AX ecosystem</a><a href="overview.html">Vision and goals</a></div><div class="nav-group"><p>Language</p><a href="compact-syntax.html">Compact source</a><a href="language-guide.html">Language guide</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Platform</p><a href="architecture.html">Architecture</a><a href="agent-runtime.html">Agents and runtime</a><a href="security.html">Security</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Project</p><a href="roadmap.html" aria-current="page" class="active">Roadmap</a><a href="platform-demo-analysis.html">Demos and platforms</a><a href="development.html">Development</a><a href="glossary.html">Glossary</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs/en">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
       <div class="article-column">
-        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>AXL Roadmap</p>
-        <article class="prose"><h1 id="axl-roadmap">AXL Roadmap</h1>
-<p>AXL progresses through vertical slices: compact source → HIR/MIR → runtime → observable result.</p>
-<p>The complete strategy for web, desktop, mobile, AX-UI, backend, and networking is defined in <a href="platform-demo-analysis.html">Application Demo and Platform Analysis</a>. The shared demonstration product is Syncboard, supported by Network Lab and UI Gallery: not six independent codebases or mockups.</p>
-<h2 id="status">Status</h2>
-<table>
-<thead>
-<tr>
-<th>Area</th>
-<th>Status</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Compact Source 2 + RPN</td>
-<td>working</td>
-</tr>
-<tr>
-<td>Canonical writer + <code>axl pack</code></td>
-<td>working</td>
-</tr>
-<tr>
-<td>Python reference runtime</td>
-<td>working</td>
-</tr>
-<tr>
-<td>AX-IR JSON 1.0/1.1/1.2</td>
-<td>working</td>
-</tr>
-<tr>
-<td>Functions, modules, AM, agents</td>
-<td>working, initial core</td>
-</tr>
-<tr>
-<td>Homogeneous <code>list&lt;T&gt;</code></td>
-<td>working, first collection</td>
-</tr>
-<tr>
-<td><code>map&lt;K,V&gt;</code> Compact/runtime slice</td>
-<td>working locally; IR/persistence next</td>
-</tr>
-<tr>
-<td>Records, option/result, and user-defined types</td>
-<td>next</td>
-</tr>
-<tr>
-<td>AX-HIR/AX-MIR</td>
-<td>planned</td>
-</tr>
-<tr>
-<td>Rust runtime/compiler</td>
-<td>planned</td>
-</tr>
-<tr>
-<td>Native/VM/WASM</td>
-<td>planned</td>
-</tr>
-<tr>
-<td>Platform bridge</td>
-<td>planned</td>
-</tr>
-</tbody>
-</table>
-<h2 id="m1-compact-core">M1 — Compact Core</h2>
+        <p class="breadcrumb"><a href="./">Documentation</a><span>/</span>Roadmap</p>
+        <article class="prose"><h1 id="roadmap">Roadmap</h1>
+<p>AXL evolves through demonstrable vertical slices. Every milestone requires AXL
+source, runnable artifacts, tests, and declared limitations.</p>
+<h2 id="completed-010-alpha1">Completed — <code>0.1.0-alpha.1</code></h2>
 <ul>
-<li>stabilize Source 2 opcodes;</li>
-<li>source spans for frames/tokens;</li>
-<li>lists, maps, tuples;</li>
-<li>records/structs, enums;</li>
-<li>option/result, pattern matching;</li>
-<li>defined iteration and mutability.</li>
+<li>[x] Rust runtime and CLI;</li>
+<li>[x] Compact Source 2, RPN, and multiline formatter;</li>
+<li>[x] Compact UI Source 3 with component registry;</li>
+<li>[x] entities, APIs, auth, seeds, and query compiler;</li>
+<li>[x] Rust/Axum/SeaORM backend and SQLite migrations;</li>
+<li>[x] React/Refine/MUI/TanStack/Lucide frontend;</li>
+<li>[x] CRM with 6 entities, 30 CRUD operations, and 7 views;</li>
+<li>[x] responsive navigation, bottom menu, and table-to-card;</li>
+<li>[x] bilingual documentation and publishable presentation.</li>
 </ul>
-<p><strong>Gate:</strong> non-trivial general-purpose programs exclusively in compact format.</p>
-<h2 id="m2-modules-and-packages">M2 — Modules and Packages</h2>
+<h2 id="m1-stabilize-the-application-compiler">M1 — Stabilize the application compiler</h2>
 <ul>
-<li>compact export/import;</li>
-<li>machine-first manifest and lockfile;</li>
-<li>deterministic resolver;</li>
-<li>signed packages and content-addressed cache.</li>
+<li>application manifest and versioned target contracts;</li>
+<li>diagnostics with spans and stable error codes;</li>
+<li>relationships, enums, option/result, and form validation;</li>
+<li>generated OpenAPI and browser/API E2E suite;</li>
+<li>reproducible size, token, and generation-time benchmark.</li>
 </ul>
-<p><strong>Gate:</strong> reproducible offline multi-package application.</p>
-<h2 id="m3-ax-hir-ax-mir-and-abi">M3 — AX-HIR, AX-MIR, and ABI</h2>
+<p><strong>Gate:</strong> the CRM regenerates from scratch and passes Rust, API, and E2E tests in CI.</p>
+<h2 id="m2-production-oriented-backend">M2 — Production-oriented backend</h2>
 <ul>
-<li>typed HIR;</li>
-<li>lowering to CFG MIR;</li>
-<li>ABI for values, effects, and capabilities;</li>
-<li>source mapping to compact frames;</li>
-<li>equivalence with the reference runtime.</li>
+<li>PostgreSQL, transactions, and pooling;</li>
+<li>authentication, RBAC, secret management, and rate limiting;</li>
+<li>SSE/WebSocket, bounded uploads, and async jobs;</li>
+<li>OpenTelemetry logging, metrics, and tracing;</li>
+<li>containers, health/readiness, and graceful shutdown.</li>
 </ul>
-<p><strong>Gate:</strong> same corpus on tree-walk and MIR.</p>
-<h2 id="m4-rust-runtime-and-vm">M4 — Rust Runtime and VM</h2>
+<p><strong>Gate:</strong> deployable service with a verified threat model and observability.</p>
+<h2 id="m3-ax-ui-beyond-the-web">M3 — AX-UI beyond the web</h2>
 <ul>
-<li>Rust workspace;</li>
-<li>decoder/validator;</li>
-<li>budgeted, cancellable VM;</li>
-<li>compatible AM, policy, approval, and audit;</li>
-<li>isolated capability adapters.</li>
+<li>state, events, forms, accessibility, and semantic design tokens;</li>
+<li>stable DOM renderer and visual tests;</li>
+<li>desktop WebView bootstrap;</li>
+<li>native SwiftUI and Jetpack Compose adapters;</li>
+<li>Canvas/WebGPU renderer for specialist graphics.</li>
 </ul>
-<p><strong>Gate:</strong> Python/Rust suite without divergences.</p>
-<h2 id="m5-backend-and-base-bridge">M5 — Backend and Base Bridge</h2>
+<p><strong>Gate:</strong> one semantic UI tree passes conformance on two renderers.</p>
+<h2 id="m4-agent-runtime">M4 — Agent runtime</h2>
 <ul>
-<li>native and WASM/WASI;</li>
-<li>Rust/C ABI;</li>
-<li>filesystem, processes, clock, random, and networking;</li>
-<li>versioned bridge system and target discovery.</li>
+<li>async scheduler and structured concurrency;</li>
+<li>versioned capability ABI, cancellation, and deadlines;</li>
+<li>real model backends, routing, and evals;</li>
+<li>semantic memory and external providers;</li>
+<li>audit and sandboxing for untrusted handlers.</li>
 </ul>
-<p><strong>Gate:</strong> same CLI on VM, native, and WASM.</p>
-<h2 id="m6-application-backend">M6 — Application Backend</h2>
+<p><strong>Gate:</strong> reproducible multi-agent workflow with end-to-end policy and traces.</p>
+<h2 id="m5-ecosystem">M5 — Ecosystem</h2>
 <ul>
-<li>HTTP client/server;</li>
-<li>routing and middleware;</li>
-<li>databases and transactions;</li>
-<li>serialization, config, and observability.</li>
-<li>Network Lab demo: HTTP/1.1-2, SSE, WebSocket, timeouts, cancellation, and backpressure;</li>
-<li>Syncboard backend demo: PostgreSQL, auth, OpenAPI, and OpenTelemetry.</li>
+<li>AX-HIR/AX-MIR, VM, and WASM/native targets;</li>
+<li>package manager, registry, lockfile, and signing;</li>
+<li>LSP, formatter, debugger, profiler, and API docs;</li>
+<li>TypeScript, Python, C, IoT, and external-service SDKs and bridges.</li>
 </ul>
-<p><strong>Gate:</strong> deployable backend service written in AXL.</p>
-<h2 id="m7-web">M7 — Web</h2>
-<ul>
-<li>DOM/Web APIs bridge;</li>
-<li>component model and state;</li>
-<li>WASM/browser build;</li>
-<li>storage, workers, and WebGPU.</li>
-<li>AX-UI semantic IR with DOM renderer;</li>
-<li>accessible, real-time UI Gallery and Syncboard Web demos.</li>
-</ul>
-<p><strong>Gate:</strong> full-stack web app primarily in AXL.</p>
-<h2 id="m8-native-mobile-and-graphics">M8 — Native, Mobile, and Graphics</h2>
-<ul>
-<li>windowing, input, audio;</li>
-<li>GPU/rendering;</li>
-<li>desktop packaging;</li>
-<li>Android/iOS bridge;</li>
-<li>asset pipeline.</li>
-<li>Tauri 2 desktop bootstrap, explicitly declared as WebView;</li>
-<li>native SwiftUI and Jetpack Compose mobile renderers;</li>
-<li>builds/smoke tests on Windows, macOS, iOS, and Android runners.</li>
-</ul>
-<p><strong>Gate:</strong> cross-platform graphical app.</p>
-<h2 id="m9-agentic-platform">M9 — Agentic Platform</h2>
-<ul>
-<li>tasks, events, and DAG scheduler;</li>
-<li>structured concurrency;</li>
-<li>checkpoint/suspend/resume;</li>
-<li>model provider capability;</li>
-<li>semantic/vector/graph memory;</li>
-<li>distributed policies.</li>
-</ul>
-<p><strong>Gate:</strong> durable, auditable workflow.</p>
-<h2 id="m10-ecosystem">M10 — Ecosystem</h2>
-<ul>
-<li>token/source and MIR optimizer;</li>
-<li>machine-oriented LSP;</li>
-<li>debugger, profiler, and tracing;</li>
-<li>package/bridge registry;</li>
-<li>progressive self-hosting.</li>
-</ul>
-<h2 id="rule">Rule</h2>
-<p>Every feature requires a canonical opcode, RED→GREEN tests, specification, source/IR round trip, a real example, and backend compatibility.</p></article>
-        
+<p><strong>Gate:</strong> reproducible packages and the same semantic suite on multiple runtimes.</p></article>
+
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/en/roadmap.md">Edit this page ↗</a></div>
         <nav class="pager" aria-label="Pagination"><a class="prev" href="toolchain.html"><small>← Previous</small><b>Toolchain</b></a><a class="next" href="platform-demo-analysis.html"><small>Next →</small><b>Demos and platforms</b></a></nav>
       </div>
-      <aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#status">Status</a><a class="toc-l2" href="#m1-compact-core">M1 — Compact Core</a><a class="toc-l2" href="#m2-modules-and-packages">M2 — Modules and Packages</a><a class="toc-l2" href="#m3-ax-hir-ax-mir-and-abi">M3 — AX-HIR, AX-MIR, and ABI</a><a class="toc-l2" href="#m4-rust-runtime-and-vm">M4 — Rust Runtime and VM</a><a class="toc-l2" href="#m5-backend-and-base-bridge">M5 — Backend and Base Bridge</a><a class="toc-l2" href="#m6-application-backend">M6 — Application Backend</a><a class="toc-l2" href="#m7-web">M7 — Web</a><a class="toc-l2" href="#m8-native-mobile-and-graphics">M8 — Native, Mobile, and Graphics</a><a class="toc-l2" href="#m9-agentic-platform">M9 — Agentic Platform</a><a class="toc-l2" href="#m10-ecosystem">M10 — Ecosystem</a><a class="toc-l2" href="#rule">Rule</a></aside>
+<aside class="page-toc"><p>On this page</p><a class="toc-l2" href="#completed-010-alpha1">Completed — 0.1.0-alpha.1</a><a class="toc-l2" href="#m1-stabilize-the-application-compiler">M1 — Stabilize the application compiler</a><a class="toc-l2" href="#m2-production-oriented-backend">M2 — Production-oriented backend</a><a class="toc-l2" href="#m3-ax-ui-beyond-the-web">M3 — AX-UI beyond the web</a><a class="toc-l2" href="#m4-agent-runtime">M4 — Agent runtime</a><a class="toc-l2" href="#m5-ecosystem">M5 — Ecosystem</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Search documentation" data-search-dialog>

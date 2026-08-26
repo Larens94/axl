@@ -2,6 +2,17 @@
 
 # Changelog
 
+## 0.1.0-alpha.1 — August 26, 2026
+
+- Added the AXL application compiler generating a Rust/Axum/SeaORM backend, a React/Refine/MUI frontend, and SQL migrations.
+- Published the full-stack CRM demo with 6 entities, REST CRUD, dashboard, reports, settings, and 7 Compact UI views.
+- Added Compact UI Source 3 frames for views, components, properties, events, data tables, and typed columns.
+- Added responsive layouts, semantic icons, mobile bottom navigation, desktop tables, and adaptive cards.
+- Added server-side search, filtering, sorting, and pagination queries.
+- Updated the bilingual documentation, GitHub Pages, and the interactive Claude × Apple presentation.
+- Aligned crate versions with the pre-release and verified 43 Rust tests.
+- Removed a hardcoded MiMo credential: the backend now requires `MIMO_API_KEY` from the environment and fails closed when absent.
+
 ## 2.0.0 — in development
 
 - Added Compact Source 2 as the canonical syntax intended exclusively for agents.

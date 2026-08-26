@@ -12,8 +12,8 @@
 - **Capability:** autorizzazione limitata a compiere una classe di effetti.
 - **Approval:** consenso pre-effetto richiesto da una policy.
 - **Audit:** traccia delle decisioni e degli esiti di capability/approval.
-- **Reference runtime:** implementazione Python usata per fissare la semantica.
-- **Runtime Rust:** implementazione target per VM, native, WASM e piattaforme.
+- **Runtime di riferimento:** implementazione Rust che esegue Compact Source e AX-IR.
+- **Compilatore applicativo:** frontend Rust che genera target Rust, React e SQL.
 - **Scope memoria:** confine host-controlled che isola record persistenti.
 - **Budget:** limite applicato a step, valori, output, tool, memoria o profondità.
 - **Provider:** implementazione esterna di modello, memoria, database o servizio; non fa parte della grammatica.

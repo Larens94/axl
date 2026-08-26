@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <meta name="description" content="AXL Documentazione: Analisi demo applicative e piattaforme">
-  <title>Analisi demo applicative e piattaforme · AXL Documentazione</title>
+  <meta name="description" content="AXL Documentazione: CRM dimostrativo e copertura UI">
+  <title>CRM dimostrativo e copertura UI · AXL Documentazione</title>
   <link rel="stylesheet" href="docs.css">
   <script defer src="docs.js"></script>
 </head>
@@ -15,6 +15,7 @@
     <a class="brand" href="./"><span>A</span><b>AXL</b><i>Documentazione</i></a>
     <nav class="product-nav" aria-label="Documentazione">
       <a class="active" href="./">Documentazione</a>
+      <a href="presentation.html">Presentazione</a>
       <a href="https://github.com/Larens94/axl">GitHub</a>
     </nav>
     <button class="search-trigger" type="button" aria-label="Cerca nella documentazione" aria-haspopup="dialog" aria-controls="docs-search" data-open-search><svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.35-4.35m2.35-5.65a8 8 0 1 1-16 0 8 8 0 0 1 16 0Z"/></svg><span>Cerca nella documentazione</span><kbd>⌘ K</kbd></button>
@@ -23,462 +24,122 @@
   </header>
   <div class="docs-shell">
     <aside class="sidebar" data-sidebar>
-      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Compact Source 2</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html" aria-current="page" class="active">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
+      <div class="sidebar-scroll"><div class="nav-group"><p>Inizia</p><a href="./">Benvenuto</a><a href="ax-ecosystem.html">Ecosistema AX</a><a href="overview.html">Visione e obiettivi</a></div><div class="nav-group"><p>Linguaggio</p><a href="compact-syntax.html">Sorgente compatto</a><a href="language-guide.html">Guida al linguaggio</a><a href="ax-ir.html">AX-IR</a></div><div class="nav-group"><p>Piattaforma</p><a href="architecture.html">Architettura</a><a href="agent-runtime.html">Agenti e runtime</a><a href="security.html">Sicurezza</a><a href="toolchain.html">Toolchain</a></div><div class="nav-group"><p>Progetto</p><a href="roadmap.html">Roadmap</a><a href="platform-demo-analysis.html" aria-current="page" class="active">Demo e piattaforme</a><a href="development.html">Sviluppo</a><a href="glossary.html">Glossario</a></div></div>
       <a class="sidebar-github" href="https://github.com/Larens94/axl/tree/main/docs">GitHub <span>↗</span></a>
     </aside>
     <main id="content" class="content-wrap">
       <div class="article-column">
-        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>Analisi demo applicative e piattaforme</p>
-        <article class="prose"><h1 id="analisi-demo-applicative-e-piattaforme">Analisi demo applicative e piattaforme</h1>
+        <p class="breadcrumb"><a href="./">Documentazione</a><span>/</span>CRM dimostrativo e copertura UI</p>
+        <article class="prose"><h1 id="crm-dimostrativo-e-copertura-ui">CRM dimostrativo e copertura UI</h1>
 <blockquote>
-<p>Stato dell'analisi: 20 agosto 2026. Questo documento distingue capacità implementate, prerequisiti e target dimostrabili. Non dichiara come disponibili backend o bridge ancora inesistenti.</p>
+<p>Stato verificato: 26 agosto 2026, release <code>0.1.0-alpha.1</code>.</p>
 </blockquote>
-<h2 id="1-decisione">1. Decisione</h2>
-<p>AXL non deve creare sei demo scollegate né delegare tutta la logica a wrapper host. Deve costruire una <strong>vertical slice condivisa</strong>:</p>
-<pre class="codehilite"><code class="language-text">AXL Compact Source
-→ frontend + tipi
-→ AX-HIR applicativa
-→ AX-MIR/effect IR
-→ runtime Rust
-→ capability ABI
-   ├─ backend HTTP/database
-   ├─ browser DOM/WASM
-   ├─ desktop WebView/native host
-   └─ iOS SwiftUI / Android Compose
-</code></pre>
-
-<p>Il primo prodotto dimostrativo sarà <strong>AXL Syncboard</strong>: una board collaborativa con account locali, progetti, task, aggiornamenti realtime, cache offline, audit e notifiche. La stessa logica di dominio e lo stesso contratto API alimentano tutti i client.</p>
-<p>Due demo di supporto impediscono che il prodotto nasconda lacune:</p>
-<ol>
-<li><strong>AXL UI Gallery</strong> — componenti, token, layout adattivo, input, focus, accessibilità, temi e snapshot visuali;</li>
-<li><strong>AXL Network Lab</strong> — HTTP client/server, streaming, SSE, WebSocket, timeout, cancellazione, backpressure e reconnect.</li>
-</ol>
-<h2 id="2-baseline-reale">2. Baseline reale</h2>
+<p>Il CRM è la vertical slice canonica di AXL: lo stesso modello genera persistenza,
+API e interfaccia. Serve a dimostrare il compilatore applicativo, non a dichiarare
+che il linguaggio sia già pronto per carichi di produzione.</p>
+<h2 id="copertura-funzionale">Copertura funzionale</h2>
 <table>
 <thead>
 <tr>
 <th>Area</th>
-<th>Disponibile oggi</th>
-<th>Gap bloccante</th>
+<th>Implementazione</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td>Source</td>
-<td>Compact Source 2, writer canonico, legacy pack</td>
-<td>nuovi tipi e opcode/versione compatibile</td>
+<td>Dominio</td>
+<td>customer, lead, deal, activity, task, note</td>
 </tr>
 <tr>
-<td>Core</td>
-<td><code>string</code>, <code>integer</code>, <code>boolean</code>, <code>list&lt;T&gt;</code>, binding, flow, funzioni</td>
-<td>bytes, float/decimal, option/result, map/record/enum</td>
+<td>Database</td>
+<td>6 tabelle SQLite e migrazione generata</td>
 </tr>
 <tr>
-<td>Moduli</td>
-<td>import confinati e namespace</td>
-<td>package, manifest, lockfile, export pubblico</td>
+<td>API</td>
+<td>5 operazioni CRUD per risorsa, 30 in totale</td>
 </tr>
 <tr>
-<td>Runtime</td>
-<td>interprete Python sincrono e budgeted</td>
-<td>async, task, stream, cancellazione, runtime Rust</td>
+<td>Navigazione</td>
+<td>dashboard, 6 risorse, report, impostazioni</td>
 </tr>
 <tr>
-<td>IR</td>
-<td>AX-IR JSON 1.0/1.1/1.2</td>
-<td>HIR/MIR, effect IR, ABI valori/risorse</td>
+<td>CRUD UI</td>
+<td>lista, creazione, modifica e dettaglio per risorsa</td>
 </tr>
 <tr>
-<td>Capability</td>
-<td>tool host deny-by-default, policy/audit</td>
-<td>capability tipizzate, resource handles, lifecycle async</td>
+<td>Tabelle</td>
+<td>ricerca, filtri, sorting, paginazione e densità</td>
 </tr>
 <tr>
-<td>Backend</td>
-<td>nessuno</td>
-<td>socket, HTTP, routing, DB, config, observability</td>
+<td>Responsive</td>
+<td>drawer desktop, menu bottom mobile, table-to-card</td>
 </tr>
 <tr>
-<td>UI</td>
-<td>nessuna</td>
-<td>UI IR, stato, eventi, layout, accessibilità, renderer</td>
+<td>Feedback</td>
+<td>loading, empty state, errori, conferme e notifiche</td>
 </tr>
 <tr>
-<td>Packaging</td>
-<td>wheel Python/CLI</td>
-<td>WASM, exe/app bundle, APK/AAB, Xcode app</td>
+<td>Visual</td>
+<td>Material UI, icone Lucide, token e tema AXL</td>
 </tr>
 </tbody>
 </table>
-<p>Conclusione: oggi è possibile prototipare adapter host, ma non chiamarli ancora “app scritte in AXL”. Una demo supera il gate solo quando struttura, stato, eventi e logica applicativa sono rappresentati in AXL/HIR; l'host implementa esclusivamente ABI e integrazione piattaforma.</p>
-<h2 id="3-prerequisiti-del-linguaggio">3. Prerequisiti del linguaggio</h2>
-<h3 id="p0-algebra-valori-general-purpose">P0 — Algebra valori general-purpose</h3>
-<p>Prima di UI e rete servono:</p>
+<h2 id="ui-kit-coperto">UI kit coperto</h2>
+<p>La demo copre le fondamenta tipiche di un admin panel/CRM:</p>
 <ul>
-<li><code>bytes</code>, <code>float</code> o decimal esplicito;</li>
-<li><code>list&lt;T&gt;</code>, <code>map&lt;K,V&gt;</code>, tuple e record;</li>
-<li>enum, <code>option&lt;T&gt;</code>, <code>result&lt;T,E&gt;</code>;</li>
-<li>errori strutturati;</li>
-<li>ownership/lifetime dei resource handle;</li>
-<li>serializzazione deterministica JSON e bytes.</li>
+<li>app shell, sidebar, breadcrumb, top bar e bottom navigation;</li>
+<li>KPI card, progress, stato e dashboard riepilogativa;</li>
+<li>data table desktop con colonne tipizzate e azioni contestuali;</li>
+<li>card list mobile con priorità delle informazioni;</li>
+<li>search, filter, sort, pagination e page-size server-side;</li>
+<li>form create/edit, detail view, dialog e notification;</li>
+<li>avatar, chip/status, menu, button, icon button e tooltip;</li>
+<li>empty, loading ed error state;</li>
+<li>tema responsive e breakpoints.</li>
 </ul>
-<p>Senza collezioni non esistono request headers, liste di task, alberi UI o righe database tipizzate.</p>
-<h3 id="p1-effetti-asincroni">P1 — Effetti asincroni</h3>
-<p>Il modello deve essere semantico, non copiato da Tokio, JavaScript o Swift:</p>
-<ul>
-<li><code>future&lt;T&gt;</code> e <code>stream&lt;T&gt;</code>;</li>
-<li>task group strutturati;</li>
-<li>cancellation token e deadline;</li>
-<li>channel bounded;</li>
-<li>backpressure;</li>
-<li><code>select</code> deterministico dove applicabile;</li>
-<li>cleanup garantito delle risorse;</li>
-<li>errori timeout/cancel distinti.</li>
-</ul>
-<p>Tokio può implementare il primo backend Rust, ma non deve comparire nella grammatica o nell'ABI pubblica.</p>
-<h3 id="p2-hir-mir-e-capability-abi">P2 — HIR, MIR e Capability ABI</h3>
-<p>Contratto minimo:</p>
-<pre class="codehilite"><code class="language-text">capability-id
-abi-version
-input/output type-id
-resource handles
-future/stream result
-required effects
-limits + deadline + cancellation
-platform targets
-stable error code
+<p>Il 70% è un obiettivo di copertura qualitativa del kit amministrativo, non una
+percentuale calcolata contro un catalogo universale. Componenti specialistici
+come calendario avanzato, editor rich-text, upload, kanban drag-and-drop e chart
+interattivi restano estensioni successive.</p>
+<h2 id="compact-ui-source-3">Compact UI Source 3</h2>
+<p>Le decisioni UI importanti sono nel sidecar numerico, non hardcoded nel template:</p>
+<pre class="codehilite"><code class="language-axl">3;60|2;
+  61|1000|64;
+    62|1|&quot;customers&quot;;
+    62|3|#25;
+    62|4|&quot;comfortable&quot;;
+    62|5|&quot;cards&quot;;
+    61|1001|65; 62|1|&quot;name&quot;; 62|2|&quot;Nome&quot;; 62|3|&quot;text&quot;; 62|4|#1; 99;
+    61|1002|65; 62|1|&quot;email&quot;; 62|2|&quot;Email&quot;; 62|3|&quot;text&quot;; 62|4|#2; 99;
+  99;
+99;
 </code></pre>
 
-<p>Le capability devono essere granulari: <code>net.client</code>, <code>net.listen</code>, <code>db.query</code>, <code>ui.window</code>, <code>ui.notify</code>; non un grant globale <code>network</code> o <code>system</code>.</p>
-<h2 id="4-framework-uiux-axl">4. Framework UI/UX AXL</h2>
-<h3 id="41-modello-raccomandato">4.1 Modello raccomandato</h3>
-<p>Creare <strong>AX-UI</strong>, un modello dichiarativo indipendente dal renderer:</p>
-<pre class="codehilite"><code class="language-text">state + reducer/event
-→ immutable semantic UI tree
-→ keyed diff
-→ renderer adapter
-</code></pre>
-
-<p>AX-UI possiede:</p>
-<ul>
-<li>component tree e identity stabile;</li>
-<li>state binding e one-way data flow;</li>
-<li>event dispatch;</li>
-<li>layout constraints/adaptive breakpoints;</li>
-<li>design token semantici;</li>
-<li>navigation e deep link;</li>
-<li>form/validation;</li>
-<li>animation timeline;</li>
-<li>accessibility semantics;</li>
-<li>focus, keyboard, pointer e touch;</li>
-<li>localization, RTL, dynamic type;</li>
-<li>test tree e snapshot semantici.</li>
-</ul>
-<p>Non deve possedere DOM, CSS, SwiftUI, Compose, WinUI o GPU API. Questi sono renderer/bridge.</p>
-<h3 id="42-renderer-e-ordine">4.2 Renderer e ordine</h3>
-<table>
-<thead>
-<tr>
-<th>Target</th>
-<th>Primo renderer</th>
-<th>Natura reale</th>
-<th>Decisione</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>Browser</td>
-<td>DOM + CSS + Web APIs</td>
-<td>web nativo</td>
-<td>primo target UI</td>
-</tr>
-<tr>
-<td>Windows/macOS</td>
-<td>Tauri 2 + WebView di sistema</td>
-<td>binario nativo, UI web</td>
-<td>bootstrap desktop rapido</td>
-</tr>
-<tr>
-<td>iOS</td>
-<td>adapter SwiftUI/UIKit</td>
-<td>app e controlli nativi</td>
-<td>target mobile canonico</td>
-</tr>
-<tr>
-<td>Android</td>
-<td>adapter Jetpack Compose</td>
-<td>app e UI native</td>
-<td>target mobile canonico</td>
-</tr>
-<tr>
-<td>Desktop avanzato</td>
-<td>WinUI/AppKit/SwiftUI adapter</td>
-<td>controlli nativi</td>
-<td>dopo conformance AX-UI</td>
-</tr>
-<tr>
-<td>Grafica/giochi</td>
-<td><code>wgpu</code>/WebGPU renderer</td>
-<td>custom GPU UI</td>
-<td>non per il primo framework app</td>
-</tr>
-</tbody>
-</table>
-<p>Tauri 2 dichiara supporto Windows, macOS, Linux, Android e iOS con logica Rust e frontend WebView. È adatto a validare packaging e bridge rapidamente, ma <strong>non equivale a controlli UI nativi</strong>. Per questo non sostituisce i renderer SwiftUI e Compose richiesti dal gate mobile.</p>
-<p>Compose Multiplatform è production-ready per mobile e desktop, con web ancora indicato come beta. Può essere un adapter opzionale o acceleratore, non il fondamento semantico di AX-UI: renderebbe Kotlin/Compose una dipendenza architetturale di AXL.</p>
-<h3 id="43-componenti-v1">4.3 Componenti V1</h3>
-<p><code>App</code>, <code>Window</code>, <code>Screen</code>, <code>Nav</code>, <code>Stack</code>, <code>Grid</code>, <code>Scroll</code>, <code>Text</code>, <code>Image</code>, <code>Button</code>, <code>TextField</code>, <code>Toggle</code>, <code>List</code>, <code>Dialog</code>, <code>Progress</code>, <code>Canvas</code>.</p>
-<p>Ogni componente espone proprietà semantiche e accessibilità. Stile libero tipo CSS, API SwiftUI o modifier Compose non entra nel source canonico; viene normalizzato in token/layout HIR.</p>
-<h2 id="5-backend-completo">5. Backend completo</h2>
-<h3 id="51-stack-di-bootstrap">5.1 Stack di bootstrap</h3>
-<ul>
-<li>runtime Rust: Tokio;</li>
-<li>HTTP/routing: Hyper + Axum + Tower;</li>
-<li>TLS: rustls o terminazione reverse-proxy dichiarata;</li>
-<li>database: PostgreSQL in produzione, SQLite per locale/test;</li>
-<li>pool e query tipizzate dietro <code>db.*</code> ABI;</li>
-<li>migrazioni versionate;</li>
-<li>logging strutturato, metriche e trace OpenTelemetry;</li>
-<li>OpenAPI generata dal modello route/type;</li>
-<li>graceful shutdown, health/readiness e config typed;</li>
-<li>secrets risolti dall'host, mai nel source/IR/audit.</li>
-</ul>
-<p>Queste librerie sono implementazioni sostituibili. AXL definisce semantica HTTP, request/response, route, middleware, transaction e stream.</p>
-<h3 id="52-gate-backend-completo">5.2 Gate “backend completo”</h3>
-<p>Syncboard backend deve dimostrare:</p>
-<ul>
-<li>CRUD con PostgreSQL e migrazioni;</li>
-<li>transazioni e vincoli;</li>
-<li>auth session/OIDC-ready, password hashing solo tramite capability host;</li>
-<li>RBAC per workspace;</li>
-<li>REST JSON documentata OpenAPI;</li>
-<li>SSE per feed attività;</li>
-<li>WebSocket per collaborazione bidirezionale;</li>
-<li>upload bounded e content-type allowlist;</li>
-<li>pagination, idempotency key e rate limit;</li>
-<li>timeout, cancellation e graceful shutdown;</li>
-<li>log/metric/trace correlate;</li>
-<li>test unitari, integrazione DB e test protocollo end-to-end;</li>
-<li>container Linux riproducibile.</li>
-</ul>
-<h2 id="6-networking-moderno">6. Networking moderno</h2>
-<h3 id="v1-obbligatorio">V1 obbligatorio</h3>
-<table>
-<thead>
-<tr>
-<th>Capacità</th>
-<th>Motivo</th>
-</tr>
-</thead>
-<tbody>
-<tr>
-<td>DNS + TCP</td>
-<td>fondazione portabile</td>
-</tr>
-<tr>
-<td>TLS 1.3 e trust store host</td>
-<td>trasporto sicuro</td>
-</tr>
-<tr>
-<td>HTTP semantics</td>
-<td>contratto comune a HTTP/1.1, 2 e 3</td>
-</tr>
-<tr>
-<td>HTTP/1.1 + HTTP/2</td>
-<td>interoperabilità server/client immediata</td>
-</tr>
-<tr>
-<td>JSON UTF-8</td>
-<td>baseline API e debug</td>
-</tr>
-<tr>
-<td>WebSocket</td>
-<td>realtime bidirezionale diffuso</td>
-</tr>
-<tr>
-<td>SSE</td>
-<td>push server semplice, reconnect standard</td>
-</tr>
-<tr>
-<td>streaming body</td>
-<td>file/eventi senza buffering completo</td>
-</tr>
-<tr>
-<td>timeout/deadline/cancel</td>
-<td>sicurezza operativa</td>
-</tr>
-<tr>
-<td>backpressure e limiti</td>
-<td>evitare memoria/queue illimitate</td>
-</tr>
-<tr>
-<td>proxy, CORS, cookie e redirect policy</td>
-<td>funzionamento web reale</td>
-</tr>
-</tbody>
-</table>
-<h3 id="v2">V2</h3>
-<ul>
-<li>HTTP/3 su QUIC;</li>
-<li>Connect RPC e gRPC/Protobuf;</li>
-<li>CBOR per payload compatti;</li>
-<li>mTLS e service identity;</li>
-<li>retry/circuit breaker/load balancing controllati;</li>
-<li>WebTransport dopo un adapter sperimentale e con fallback.</li>
-</ul>
-<h3 id="non-baseline">Non baseline</h3>
-<ul>
-<li>MessagePack: utile ma non standard Internet; CBOR è uno standard IETF e copre lo stesso bisogno iniziale;</li>
-<li>raw UDP esposto alle app: solo capability specialistica;</li>
-<li>GraphQL integrato nella grammatica: libreria/bridge, non semantica core;</li>
-<li>protocollo realtime proprietario quando SSE/WebSocket bastano.</li>
-</ul>
-<p>HTTP/3 è standard IETF; WebTransport al 20 agosto 2026 è ancora W3C Candidate Recommendation e la stessa specifica avverte che API/protocolli possono cambiare. Quindi va isolato dietro ABI e non usato come requisito della prima demo.</p>
-<h2 id="7-demo-canoniche">7. Demo canoniche</h2>
-<h3 id="d1-network-lab">D1 — Network Lab</h3>
-<p><strong>Obiettivo:</strong> provare runtime async e capability ABI prima della UI.</p>
-<ul>
-<li>server <code>/health</code>, <code>/echo</code>, <code>/stream</code>, <code>/events</code>, <code>/socket</code>;</li>
-<li>client AXL concorrente;</li>
-<li>HTTP JSON, streaming, SSE e WebSocket;</li>
-<li>cancellazione, deadline, limiti body e reconnect;</li>
-<li>test contro reference host e runtime Rust.</li>
-</ul>
-<p><strong>Gate:</strong> nessuna route o state machine codificata nel wrapper Rust/Python; il wrapper registra soltanto capability.</p>
-<h3 id="d2-syncboard-web">D2 — Syncboard Web</h3>
-<ul>
-<li>backend D1 esteso con PostgreSQL;</li>
-<li>web app AX-UI → DOM;</li>
-<li>login locale di sviluppo;</li>
-<li>board CRUD e realtime;</li>
-<li>responsive/accessibile, keyboard e screen reader;</li>
-<li>PWA/offline cache;</li>
-<li>build WASM/browser quando il runtime è pronto.</li>
-</ul>
-<p><strong>Gate:</strong> Playwright end-to-end su due sessioni browser; un aggiornamento appare realtime e sopravvive al reload.</p>
-<h3 id="d3-syncboard-desktop">D3 — Syncboard Desktop</h3>
-<ul>
-<li>stesso dominio e AX-UI;</li>
-<li>Tauri 2 host Windows/macOS;</li>
-<li>file picker, secure storage, notifiche e deep link tramite capability;</li>
-<li>installer firmabile: MSIX/MSI e <code>.app</code>/DMG;</li>
-<li>aggiornamenti disattivati finché firma e supply chain non sono definite.</li>
-</ul>
-<p><strong>Gate:</strong> build e smoke su runner Windows e macOS. Linux non può certificare bundle, firma o comportamento OS di entrambi.</p>
-<h3 id="d4-syncboard-mobile-native">D4 — Syncboard Mobile Native</h3>
-<ul>
-<li>libreria runtime Rust con ABI stabile;</li>
-<li>host Xcode + SwiftUI su iOS;</li>
-<li>host Gradle + Jetpack Compose su Android;</li>
-<li>AX-UI semantic tree tradotto in componenti native;</li>
-<li>keychain/keystore, notifiche, lifecycle, background policy, deep link;</li>
-<li>offline SQLite e sync incrementale.</li>
-</ul>
-<p><strong>Gate:</strong> test su simulatore iOS e emulator Android, più almeno un device reale per piattaforma; <code>.ipa</code> richiede macOS/Xcode e firma Apple, AAB richiede Android SDK/Gradle e signing configurato.</p>
-<h3 id="d5-ui-gallery">D5 — UI Gallery</h3>
-<ul>
-<li>catalogo componenti e design token;</li>
-<li>light/dark, locale, RTL, dynamic text;</li>
-<li>keyboard/focus/touch;</li>
-<li>accessibility tree assertions;</li>
-<li>golden screenshots per renderer.</li>
-</ul>
-<p><strong>Gate:</strong> stesso corpus semantico su DOM, SwiftUI e Compose; differenze consentite solo se dichiarate nel profilo piattaforma.</p>
-<h2 id="8-struttura-repository-target">8. Struttura repository target</h2>
-<pre class="codehilite"><code class="language-text">runtime/
-  axl-core-rs/
-  axl-vm/
-  axl-component/
-bridges/
-  net-rust/
-  db-sql/
-  ui-dom/
-  ui-tauri/
-  ui-swiftui/
-  ui-compose/
-frameworks/
-  ax-ui/
-demos/
-  network-lab/
-  syncboard/shared/
-  syncboard/backend/
-  syncboard/web/
-  syncboard/desktop/
-  syncboard/ios/
-  syncboard/android/
-  ui-gallery/
-conformance/
-  source-ir-runtime/
-  capability-abi/
-  ax-ui/
-</code></pre>
-
-<h2 id="9-sequenza-raccomandata">9. Sequenza raccomandata</h2>
+<p>Il compilatore valida componenti, proprietà, tipi, priorità e limiti. React e
+TanStack interpretano il modello risultante; non definiscono il linguaggio.</p>
+<h2 id="gate-della-demo">Gate della demo</h2>
+<p>La demo è accettata quando:</p>
 <ol>
-<li><strong>Core types:</strong> collezioni, record, option/result, bytes, errori.</li>
-<li><strong>Async semantics:</strong> future/stream/task/cancel/backpressure.</li>
-<li><strong>HIR/MIR + ABI:</strong> resource handle ed effetti tipizzati.</li>
-<li><strong>Rust tracer:</strong> stesso corpus Python/Rust.</li>
-<li><strong>Network Lab:</strong> HTTP/1.1-2, JSON, SSE, WebSocket.</li>
-<li><strong>Backend Syncboard:</strong> DB, auth, OpenAPI, observability.</li>
-<li><strong>AX-UI + DOM:</strong> UI Gallery e Syncboard Web.</li>
-<li><strong>Tauri desktop:</strong> Windows/macOS packaging e OS bridge.</li>
-<li><strong>SwiftUI/Compose:</strong> mobile realmente nativo.</li>
-<li><strong>WASM Component/WASI e HTTP/3:</strong> conformance e ottimizzazione.</li>
-<li><strong>WebTransport/gRPC/Connect/GPU:</strong> adapter successivi, guidati da casi reali.</li>
+<li><code>axl check</code> valida entrambi i sorgenti;</li>
+<li><code>axl build</code> rigenera backend, frontend e SQL;</li>
+<li>i test Rust passano;</li>
+<li>backend e frontend generati compilano;</li>
+<li>lo smoke test esercita health, list, create, update e delete;</li>
+<li>desktop e mobile mantengono navigazione e azioni CRUD utilizzabili.</li>
 </ol>
-<p>Non iniziare contemporaneamente dai cinque target: moltiplicherebbe adapter instabili prima di fissare valori, async, ABI e UI semantics.</p>
-<h2 id="10-criteri-trasversali">10. Criteri trasversali</h2>
-<p>Ogni demo deve avere:</p>
+<h2 id="limiti-dichiarati">Limiti dichiarati</h2>
 <ul>
-<li>sorgente AXL canonico come logica primaria;</li>
-<li>build riproducibile e comando unico;</li>
-<li>zero credenziali nel repository;</li>
-<li>capability deny-by-default;</li>
-<li>test reference/Rust equivalenti;</li>
-<li>test end-to-end sul target reale;</li>
-<li>limiti input/output/connessioni/queue;</li>
-<li>cancellazione e cleanup verificati;</li>
-<li>accessibilità e keyboard/touch dove applicabili;</li>
-<li>SBOM, lockfile e artifact hash;</li>
-<li>documentazione che distingue “native binary”, “native UI” e “WebView”.</li>
-</ul>
-<h2 id="11-scelta-finale">11. Scelta finale</h2>
-<p>La strategia consigliata è ibrida e progressiva:</p>
-<ul>
-<li><strong>Rust</strong> sotto il cofano per runtime, async, networking e bridge;</li>
-<li><strong>WASM/Component Model</strong> per portabilità e sandbox, senza dipendere integralmente da WASI;</li>
-<li><strong>AX-UI semantic IR</strong> come framework UI/UX del linguaggio;</li>
-<li><strong>DOM</strong> primo renderer;</li>
-<li><strong>Tauri 2</strong> bootstrap desktop;</li>
-<li><strong>SwiftUI e Jetpack Compose</strong> renderer mobile nativi;</li>
-<li><strong>wgpu/WebGPU</strong> soltanto per canvas, grafica e futuro renderer custom;</li>
-<li><strong>HTTP + SSE + WebSocket</strong> baseline; HTTP/3, Connect/gRPC, CBOR e WebTransport dopo.</li>
-</ul>
-<p>Questa architettura produce demo vere presto senza trasformare una scelta temporanea — WebView, Kotlin, Swift, Tokio o Axum — nel linguaggio AXL.</p>
-<h2 id="fonti-principali">Fonti principali</h2>
-<ul>
-<li><a href="https://www.rfc-editor.org/rfc/rfc9110">RFC 9110 — HTTP Semantics</a></li>
-<li><a href="https://www.rfc-editor.org/rfc/rfc9114">RFC 9114 — HTTP/3</a></li>
-<li><a href="https://www.rfc-editor.org/rfc/rfc6455">RFC 6455 — WebSocket</a></li>
-<li><a href="https://html.spec.whatwg.org/multipage/server-sent-events.html">WHATWG — Server-sent events</a></li>
-<li><a href="https://www.w3.org/TR/webtransport/">W3C — WebTransport</a></li>
-<li><a href="https://wasi.dev/">WASI e WebAssembly Component Model</a></li>
-<li><a href="https://v2.tauri.app/concept/architecture/">Tauri 2 e architettura</a></li>
-<li><a href="https://developer.apple.com/documentation/swiftui">Apple — SwiftUI</a></li>
-<li><a href="https://developer.android.com/compose">Android — Jetpack Compose</a></li>
-<li><a href="https://learn.microsoft.com/en-us/windows/apps/winui/winui3/">Microsoft — WinUI 3</a></li>
-<li><a href="https://kotlinlang.org/compose-multiplatform/">Compose Multiplatform</a></li>
-<li><a href="https://tokio.rs/">Tokio</a> e <a href="https://docs.rs/axum/latest/axum/">Axum</a></li>
-<li><a href="https://spec.openapis.org/oas/latest.html">OpenAPI 3.2</a></li>
-<li><a href="https://opentelemetry.io/docs/specs/otel/">OpenTelemetry</a></li>
-<li><a href="https://www.rfc-editor.org/rfc/rfc8949">RFC 8949 — CBOR</a></li>
+<li>autenticazione e autorizzazione sono dimostrative;</li>
+<li>SQLite è il target locale, non il database production consigliato;</li>
+<li>non esistono ancora garanzie di migrazione stabile tra versioni alpha;</li>
+<li>accessibilità e browser/device matrix richiedono una suite E2E dedicata;</li>
+<li>osservabilità, rate limit, secret management e hardening sono roadmap.</li>
 </ul></article>
-        
+
         <div class="article-meta"><a href="https://github.com/Larens94/axl/edit/main/docs/platform-demo-analysis.md">Modifica questa pagina ↗</a></div>
         <nav class="pager" aria-label="Paginazione"><a class="prev" href="roadmap.html"><small>← Precedente</small><b>Roadmap</b></a><a class="next" href="development.html"><small>Successivo →</small><b>Sviluppo</b></a></nav>
       </div>
-      <aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#1-decisione">1. Decisione</a><a class="toc-l2" href="#2-baseline-reale">2. Baseline reale</a><a class="toc-l2" href="#3-prerequisiti-del-linguaggio">3. Prerequisiti del linguaggio</a><a class="toc-l3" href="#p0-algebra-valori-general-purpose">P0 — Algebra valori general-purpose</a><a class="toc-l3" href="#p1-effetti-asincroni">P1 — Effetti asincroni</a><a class="toc-l3" href="#p2-hir-mir-e-capability-abi">P2 — HIR, MIR e Capability ABI</a><a class="toc-l2" href="#4-framework-uiux-axl">4. Framework UI/UX AXL</a><a class="toc-l3" href="#41-modello-raccomandato">4.1 Modello raccomandato</a><a class="toc-l3" href="#42-renderer-e-ordine">4.2 Renderer e ordine</a><a class="toc-l3" href="#43-componenti-v1">4.3 Componenti V1</a><a class="toc-l2" href="#5-backend-completo">5. Backend completo</a><a class="toc-l3" href="#51-stack-di-bootstrap">5.1 Stack di bootstrap</a><a class="toc-l3" href="#52-gate-backend-completo">5.2 Gate “backend completo”</a><a class="toc-l2" href="#6-networking-moderno">6. Networking moderno</a></aside>
+<aside class="page-toc"><p>In questa pagina</p><a class="toc-l2" href="#copertura-funzionale">Copertura funzionale</a><a class="toc-l2" href="#ui-kit-coperto">UI kit coperto</a><a class="toc-l2" href="#compact-ui-source-3">Compact UI Source 3</a><a class="toc-l2" href="#gate-della-demo">Gate della demo</a><a class="toc-l2" href="#limiti-dichiarati">Limiti dichiarati</a></aside>
     </main>
   </div>
   <dialog id="docs-search" class="search-dialog" aria-label="Cerca nella documentazione" data-search-dialog>

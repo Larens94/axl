@@ -357,6 +357,19 @@ fn render_node(node: &UiNode) -> String {
                 format!("<span class=\"ax-badge ax-badge-{variant}\">{}</span>", escape_html(&content))
             }
         }
+        64 => {
+            // Resource-backed data table; a richer target can hydrate this shell.
+            let resource = text(node, 1);
+            let label = text(node, 2);
+            let content: String = node.children.iter().map(render_node).collect();
+            format!("<section class=\"ax-data-table\" data-resource=\"{}\"><h2>{}</h2><div class=\"ax-data-table-columns\">{content}</div></section>", escape_html(&resource), escape_html(&label))
+        }
+        65 => {
+            let field = text(node, 1);
+            let label = text(node, 2);
+            let kind = text(node, 3);
+            format!("<span class=\"ax-table-column\" data-field=\"{}\" data-kind=\"{}\">{}</span>", escape_html(&field), escape_html(&kind), escape_html(&label))
+        }
 
         // ====================================================================
         // DISPLAY
