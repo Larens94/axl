@@ -2,7 +2,8 @@
 
 [Italiano](../compact-syntax.md)
 
-AXL Compact Source 2 is the language's canonical syntax. It is designed exclusively for agents and automated systems: minimal token count, deterministic parsing, no indentation, and no line dependence.
+AXL Compact Source 2 is the language's compact syntax. It keeps token count low
+and parsing deterministic, while source files are normally laid out over multiple lines.
 
 ## Form
 
@@ -18,10 +19,11 @@ AXL Compact Source 2 is the language's canonical syntax. It is designed exclusiv
 - spaces, indentation, and newlines have no structural meaning;
 - strings use JSON escaping, so they may contain separators.
 
-Complete single-line example:
+Formatted example:
 
 ```axl
-2;10|x|#2,#3,#4,*,+|i;12|$x
+2;
+10|x|#2,#3,#4,*,+|i; 12|$x;
 ```
 
 Semantically equivalent to: compute `2 + 3 * 4`, assign it to `x: int`, emit `x`.
@@ -132,7 +134,13 @@ The `pack` command converts legacy syntax to the canonical representation:
 axl pack legacy.axl -o packed.axl
 ```
 
-The canonical writer guarantees a single normal representation for the supported program. This facilitates hashing, caching, deduplication, signing, and automated comparison.
+`pack` produces the standard multiline format at width 100. `axl fmt` formats an
+existing file; `--width N` selects the width and `--check` validates formatting
+without changing the file.
+
+The compiler can separately derive a canonical minified representation for
+hashing, caching, deduplication, signing, and transport. Minified source is not
+the recommended format for files committed to Git.
 
 ## Legacy Format
 

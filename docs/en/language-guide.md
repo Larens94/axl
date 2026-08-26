@@ -1,5 +1,21 @@
 # Compact Source Guide
 
+## Application query policies
+
+Application APIs can enforce pagination and ordering from AXL source:
+
+```axl
+api Customer {
+  query page 25 max 100 sort updated_at desc
+  GET /api/customers -> list
+}
+```
+
+The backend accepts `page` and `per_page`, caps `per_page` at the declared
+maximum, and returns `data` and `total`. The compiler rejects zero sizes,
+defaults above the maximum, limits above 1000, unknown fields, and policies
+without a `GET ... -> list` route.
+
 [Italiano](../language-guide.md)
 
 AXL Compact Source 2 is the canonical format. For the complete normative table, see [`compact-syntax.md`](../compact-syntax.md).
@@ -16,7 +32,9 @@ AXL Compact Source 2 is the canonical format. For the complete normative table, 
 - `,`: RPN token separator;
 - `99`: end of block.
 
-Newlines are optional and non-structural. The canonical form produced by `axl pack` is a single line.
+Newlines are optional and non-structural. In source files, `axl pack` and
+`axl fmt` lay frames out over multiple lines and indent blocks. The minified
+form is reserved for internal uses such as hashing, caching, and transport.
 
 ## Atoms
 

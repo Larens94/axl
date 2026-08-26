@@ -17,7 +17,7 @@ pub mod compiler;
 pub mod mimo;
 pub mod server;
 
-pub use compact::{parse_compact, is_compact_source, program_to_compact, split_compact_frames};
+pub use compact::{format_compact, is_compact_source, parse_compact, program_to_compact, split_compact_frames};
 pub use validation::validate;
 pub use typechecker::typecheck;
 pub use interpreter::{run_program, render_value, InterpreterConfig, ExecutionResult, RuntimeError};
@@ -288,5 +288,17 @@ mod tests {
             Value::String(s) => assert_eq!(s.len(), 64), // SHA256 hex is 64 chars
             other => panic!("expected string hash, got {:?}", other),
         }
+    }
+
+    #[test]
+    fn compact_formatter_is_multiline_and_roundtrips() {
+        let program = parse_compact(
+            "2;50|worker;10|x|#1|i;30|$x,#0,>;12|$x;31;12|#0;99;99",
+        ).unwrap();
+        let formatted = format_compact(&program, 60).unwrap();
+        assert!(formatted.lines().count() >= 6);
+        assert!(formatted.contains("  30|"));
+        assert!(formatted.contains("    12|"));
+        assert_eq!(parse_compact(&formatted).unwrap(), program);
     }
 }

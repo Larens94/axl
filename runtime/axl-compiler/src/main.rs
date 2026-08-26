@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use anyhow::Result;
-use axl_compiler::{parser, analyzer, codegen};
+use axl_compiler::compile_application;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
@@ -16,26 +16,7 @@ fn main() -> Result<()> {
     
     tracing::info!("Compiling {:?} to {:?}", input, output);
     
-    // Parse AXL source
-    let ast = parser::parse_file(&input)?;
-    tracing::info!("Parsed {} entities, {} APIs", ast.entities.len(), ast.apis.len());
-    
-    // Analyze
-    let analyzed = analyzer::analyze(ast)?;
-    tracing::info!("Analysis complete");
-    
-    // Generate Rust code
-    codegen::rust::generate(&analyzed, &output.join("backend"))?;
-    tracing::info!("Generated Rust backend");
-    
-    // Generate React code
-    codegen::react::generate(&analyzed, &output.join("frontend"))?;
-    tracing::info!("Generated React frontend");
-    
-    // Generate SQL migrations
-    codegen::sql::generate(&analyzed, &output.join("backend/migrations"))?;
-    tracing::info!("Generated SQL migrations");
-    
+    compile_application(&input, &output)?;
     tracing::info!("Compilation complete!");
     Ok(())
 }

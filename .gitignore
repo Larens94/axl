@@ -6,3 +6,6 @@ dist/
 target/
 *.egg-info/
 generated
+.DS_Store
+.mimocode/node_modules/
+db__*

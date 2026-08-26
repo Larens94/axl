@@ -5,11 +5,12 @@ edition.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "axl-rs"
+name = "axl"
 path = "src/main.rs"
 
 [dependencies]
 axl-core = { path = "../axl-core-rs" }
+axl-compiler = { path = "../axl-compiler" }
 
 [lints]
 workspace = true

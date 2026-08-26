@@ -1,5 +1,21 @@
 # Guida al sorgente compatto
 
+## Policy query delle applicazioni
+
+Le API applicative possono imporre paginazione e ordinamento dal sorgente AXL:
+
+```axl
+api Customer {
+  query page 25 max 100 sort updated_at desc
+  GET /api/customers -> list
+}
+```
+
+Il backend accetta `page` e `per_page`, limita `per_page` al massimo dichiarato
+e restituisce `data` e `total`. Il compilatore rifiuta dimensioni nulle, default
+superiori al massimo, limiti oltre 1000, campi inesistenti e policy senza una
+rotta `GET ... -> list`.
+
 AXL Compact Source 2 è il formato canonico. Per la tabella normativa completa vedere [`compact-syntax.md`](compact-syntax.md).
 
 ## Struttura
@@ -14,7 +30,9 @@ AXL Compact Source 2 è il formato canonico. Per la tabella normativa completa v
 - `,`: separatore token RPN;
 - `99`: fine blocco.
 
-Le newline sono opzionali e non strutturali. La forma canonica prodotta da `axl pack` è una singola riga.
+Le newline sono opzionali e non strutturali. Nei file sorgente, `axl pack` e
+`axl fmt` dispongono i frame su più righe e indentano i blocchi. La forma
+minificata è riservata agli usi interni come hash, cache e trasporto.
 
 ## Atomi
 

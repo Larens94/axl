@@ -8,6 +8,8 @@ entity Customer {
   field company: String?
   field phone: String?
   field status: String = "active"
+  field lifecycle: String = "customer"
+  field owner: String?
 }
 
 entity Lead {
@@ -18,6 +20,9 @@ entity Lead {
   field status: String = "warm"
   field value: Integer = 0
   field score: Integer = 50
+  field owner: String?
+  field next_action: String?
+  field next_action_at: String?
 }
 
 entity Deal {
@@ -26,6 +31,10 @@ entity Deal {
   field value: Integer = 0
   field stage: String = "discovery"
   field probability: Integer = 50
+  field owner: String?
+  field next_action: String?
+  field next_action_at: String?
+  field expected_close_at: String?
 }
 
 entity Activity {
@@ -36,7 +45,25 @@ entity Activity {
   field description: String?
 }
 
+entity Task {
+  field title: String
+  field assignee: String?
+  field due_date: String?
+  field priority: String = "medium"
+  field status: String = "open"
+  field related_type: String?
+  field related_id: Integer?
+}
+
+entity Note {
+  field title: String
+  field body: String
+  field related_type: String?
+  field related_id: Integer?
+}
+
 api Customer {
+  query page 25 max 100 sort updated_at desc
   GET /api/customers → list
   POST /api/customers → create
   GET /api/customers/:id → show
@@ -45,6 +72,7 @@ api Customer {
 }
 
 api Lead {
+  query page 25 max 100 sort updated_at desc
   GET /api/leads → list
   POST /api/leads → create
   GET /api/leads/:id → show
@@ -53,6 +81,7 @@ api Lead {
 }
 
 api Deal {
+  query page 25 max 100 sort updated_at desc
   GET /api/deals → list
   POST /api/deals → create
   GET /api/deals/:id → show
@@ -61,11 +90,30 @@ api Deal {
 }
 
 api Activity {
+  query page 25 max 100 sort created_at desc
   GET /api/activities → list
   POST /api/activities → create
   GET /api/activities/:id → show
   PUT /api/activities/:id → update
   DELETE /api/activities/:id → delete
+}
+
+api Task {
+  query page 25 max 100 sort created_at desc
+  GET /api/tasks → list
+  POST /api/tasks → create
+  GET /api/tasks/:id → show
+  PUT /api/tasks/:id → update
+  DELETE /api/tasks/:id → delete
+}
+
+api Note {
+  query page 25 max 100 sort created_at desc
+  GET /api/notes → list
+  POST /api/notes → create
+  GET /api/notes/:id → show
+  PUT /api/notes/:id → update
+  DELETE /api/notes/:id → delete
 }
 
 auth {
@@ -74,22 +122,143 @@ auth {
   middleware: jwt_required
 }
 
+seed Customer {
+  name: "Luca Ferri"
+  email: "luca@northstar.it"
+  company: "Northstar Labs"
+  phone: "+39 02 555 0198"
+  status: "active"
+  lifecycle: "customer"
+  owner: "Giulia Rossi"
+}
+
+seed Customer {
+  name: "Maya Rahman"
+  email: "maya@vertex.ae"
+  company: "Vertex Digital"
+  phone: "+971 50 555 0142"
+  status: "active"
+  lifecycle: "expansion"
+  owner: "AXL Agent"
+}
+
+seed Lead {
+  company: "Atlas Robotics"
+  contact: "Sofia Bianchi"
+  email: "sofia@atlasrobotics.eu"
+  source: "Conference"
+  status: "hot"
+  value: 85000
+  score: 92
+  owner: "Giulia Rossi"
+  next_action: "Book technical discovery"
+  next_action_at: "2026-08-27"
+}
+
+seed Lead {
+  company: "Palm Systems"
+  contact: "Omar Nasser"
+  email: "omar@palmsystems.ae"
+  source: "Referral"
+  status: "warm"
+  value: 42000
+  score: 74
+  owner: "AXL Agent"
+  next_action: "Send qualification questions"
+  next_action_at: "2026-08-28"
+}
+
+seed Deal {
+  name: "Northstar AI rollout"
+  customer_id: 1
+  value: 120000
+  stage: "proposal"
+  probability: 70
+  owner: "Giulia Rossi"
+  next_action: "Review commercial terms"
+  next_action_at: "2026-08-29"
+  expected_close_at: "2026-09-15"
+}
+
+seed Deal {
+  name: "Vertex CRM migration"
+  customer_id: 2
+  value: 68000
+  stage: "discovery"
+  probability: 45
+  owner: "AXL Agent"
+  next_action: "Map migration scope"
+  next_action_at: "2026-08-30"
+  expected_close_at: "2026-10-10"
+}
+
+seed Activity {
+  date: "2026-08-26"
+  type: "meeting"
+  related_type: "Deal"
+  related_id: 1
+  description: "Executive demo and rollout planning"
+}
+
+seed Task {
+  title: "Prepare Northstar proposal"
+  assignee: "AXL Agent"
+  due_date: "2026-08-29"
+  priority: "high"
+  status: "open"
+  related_type: "Deal"
+  related_id: 1
+}
+
+seed Note {
+  title: "Vertex requirements"
+  body: "Multi-region deployment, SSO and migration dashboard."
+  related_type: "Customer"
+  related_id: 2
+}
+
 ui Dashboard {
+  components: [app-shell, sidebar, topbar, breadcrumb, stat-card, card, data-table, badge]
   stats: [Customer.count, Lead.count, Deal.count, Deal.revenue]
   table: Customer[name, email, company, status]
 }
 
 ui CustomerList {
-  columns: [name, email, company, phone, status]
+  components: [search, select-filter, data-table, pagination, button, badge, dialog, text-input]
+  columns: [name, email, company, phone, status, lifecycle, owner]
   actions: [edit, delete]
 }
 
 ui LeadList {
-  columns: [company, contact, email, source, status, value, score]
+  components: [tabs, search, select-filter, data-table, pagination, button, badge, dialog]
+  columns: [company, contact, email, source, status, value, score, owner, next_action, next_action_at]
   actions: [edit, delete]
 }
 
 ui DealList {
-  columns: [name, customer, value, stage, probability]
+  components: [tabs, card, progress, badge, button, dialog, text-input, select-filter]
+  columns: [name, customer_id, value, stage, probability, owner, next_action, next_action_at, expected_close_at]
   actions: [edit, delete]
+}
+
+ui ActivityList {
+  components: [timeline, card, badge, date-input, textarea, button, empty-state]
+  columns: [date, type, related_type, description]
+  actions: [create, edit, delete]
+}
+
+ui TaskList {
+  components: [checkbox, data-table, badge, select-filter, date-input, button, dialog]
+  columns: [title, assignee, due_date, priority, status, related_type, related_id]
+  actions: [complete, edit, delete]
+}
+
+ui Reports {
+  components: [tabs, stat-card, card, progress, alert, skeleton]
+  metrics: [Customer.count, Lead.conversion, Deal.pipeline, Deal.revenue]
+}
+
+ui Settings {
+  components: [tabs, text-input, select-filter, checkbox, button, alert]
+  sections: [profile, workspace, notifications]
 }

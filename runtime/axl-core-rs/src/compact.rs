@@ -120,6 +120,67 @@ pub fn program_to_compact(program: &Program) -> Result<String, CompactParseError
     Ok(source)
 }
 
+/// Render canonical Compact Source as readable, semantically equivalent lines.
+/// Frames at the same block depth share a line until `max_width` is reached.
+pub fn format_compact(program: &Program, max_width: usize) -> Result<String, CompactParseError> {
+    if max_width < 20 {
+        return Err(CompactParseError("format width must be at least 20".into()));
+    }
+    let compact = program_to_compact(program)?;
+    let frames = split_compact_frames(&compact)?;
+    let Some((version, body)) = frames.split_first() else {
+        return Err(CompactParseError("cannot format an empty program".into()));
+    };
+
+    let mut lines = vec![format!("{version};")];
+    let mut current = String::new();
+    let mut depth = 0usize;
+
+    for frame in body {
+        let opcode = frame.split('|').next().unwrap_or("");
+        let is_close = opcode == "99";
+        let is_else = opcode == "31";
+        let is_open = matches!(opcode, "30" | "32" | "40" | "50" | "51" | "60" | "61");
+
+        if is_close || is_else {
+            flush_compact_line(&mut lines, &mut current);
+            depth = depth.saturating_sub(1);
+        }
+
+        let indent = "  ".repeat(depth);
+        let rendered = format!("{frame};");
+        let structural = is_open || is_close || is_else;
+        if structural {
+            flush_compact_line(&mut lines, &mut current);
+            lines.push(format!("{indent}{rendered}"));
+        } else {
+            if current.is_empty() {
+                current.push_str(&indent);
+                current.push_str(&rendered);
+            } else if current.len() + 1 + rendered.len() <= max_width {
+                current.push(' ');
+                current.push_str(&rendered);
+            } else {
+                flush_compact_line(&mut lines, &mut current);
+                current.push_str(&indent);
+                current.push_str(&rendered);
+            }
+        }
+
+        if is_open || is_else {
+            depth += 1;
+        }
+    }
+    flush_compact_line(&mut lines, &mut current);
+    Ok(lines.join("\n"))
+}
+
+fn flush_compact_line(lines: &mut Vec<String>, current: &mut String) {
+    if !current.is_empty() {
+        lines.push(std::mem::take(current));
+    }
+}
+
 fn has_v3_features(program: &Program) -> bool {
     program.instructions.iter().any(|i| matches!(i, Instruction::Annotation(_) | Instruction::UiView(_)))
 }

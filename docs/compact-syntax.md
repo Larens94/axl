@@ -1,6 +1,7 @@
 # AXL Compact Source 2
 
-AXL Compact Source 2 è la sintassi canonica del linguaggio. È progettata esclusivamente per agenti e sistemi automatici: minima quantità di token, parsing deterministico, nessuna indentazione e nessuna dipendenza dalle righe.
+AXL Compact Source 2 è la sintassi compatta del linguaggio. Mantiene pochi token
+e parsing deterministico, ma nei file viene normalmente disposta su più righe.
 
 ## Forma
 
@@ -16,10 +17,11 @@ AXL Compact Source 2 è la sintassi canonica del linguaggio. È progettata esclu
 - spazi, indentazione e newline non hanno significato strutturale;
 - le stringhe usano JSON escaping, quindi possono contenere separatori.
 
-Esempio completo su una riga:
+Esempio formattato:
 
 ```axl
-2;10|x|#2,#3,#4,*,+|i;12|$x
+2;
+10|x|#2,#3,#4,*,+|i; 12|$x;
 ```
 
 Equivale semanticamente a: calcola `2 + 3 * 4`, assegna a `x: int`, emette `x`.
@@ -130,7 +132,13 @@ Il comando `pack` converte la sintassi legacy nella rappresentazione canonica:
 axl pack legacy.axl -o packed.axl
 ```
 
-Il writer canonico garantisce una sola rappresentazione normale per il programma supportato. Questo facilita hashing, cache, deduplicazione, firma e confronto automatico.
+`pack` produce il formato multilinea standard con larghezza 100. `axl fmt`
+riformatta un file esistente; `--width N` sceglie la larghezza e `--check`
+verifica il formato senza modificarlo.
+
+Il compilatore può derivare separatamente una rappresentazione minificata
+canonica per hashing, cache, deduplicazione, firma e trasporto. La minificazione
+non è il formato raccomandato per i file sorgente versionati in Git.
 
 ## Formato legacy
 

@@ -1,5 +1,7 @@
-use anyhow::Result;
+use std::collections::HashSet;
+
 use crate::parser::AxlApp;
+use anyhow::{bail, Result};
 
 pub struct AnalyzedApp {
     pub name: String,
@@ -7,6 +9,12 @@ pub struct AnalyzedApp {
     pub apis: Vec<AnalyzedApi>,
     pub auth: Option<AnalyzedAuth>,
     pub ui: Vec<AnalyzedUi>,
+    pub seeds: Vec<AnalyzedSeed>,
+}
+
+pub struct AnalyzedSeed {
+    pub entity: String,
+    pub values: Vec<(String, String)>,
 }
 
 pub struct AnalyzedEntity {
@@ -31,6 +39,14 @@ pub struct AnalyzedField {
 pub struct AnalyzedApi {
     pub entity: String,
     pub routes: Vec<AnalyzedRoute>,
+    pub query: Option<AnalyzedQueryPolicy>,
+}
+
+pub struct AnalyzedQueryPolicy {
+    pub page_size: usize,
+    pub max_page_size: usize,
+    pub sort_field: String,
+    pub descending: bool,
 }
 
 pub struct AnalyzedRoute {
@@ -53,12 +69,85 @@ pub struct AnalyzedUi {
 }
 
 pub fn analyze(app: AxlApp) -> Result<AnalyzedApp> {
+    let mut entity_names = HashSet::new();
+    for entity in &app.entities {
+        if !entity_names.insert(entity.name.clone()) {
+            bail!("duplicate entity '{}'", entity.name);
+        }
+        let mut field_names = HashSet::new();
+        for field in &entity.fields {
+            if !field_names.insert(field.name.clone()) {
+                bail!("duplicate field '{}.{}'", entity.name, field.name);
+            }
+            if !matches!(
+                field.field_type.as_str(),
+                "String"
+                    | "Integer"
+                    | "Int"
+                    | "Boolean"
+                    | "Bool"
+                    | "Float"
+                    | "Double"
+                    | "DateTime"
+            )
+            {
+                bail!("unsupported AXL type '{}' on '{}.{}'", field.field_type, entity.name, field.name);
+            }
+        }
+    }
+    for api in &app.apis {
+        if !entity_names.contains(&api.entity) {
+            bail!("api '{}' references an unknown entity", api.entity);
+        }
+        if let Some(query) = &api.query {
+            if query.page_size == 0 || query.max_page_size == 0 {
+                bail!("query page sizes for '{}' must be greater than zero", api.entity);
+            }
+            if query.page_size > query.max_page_size {
+                bail!("query default page size for '{}' cannot exceed its maximum", api.entity);
+            }
+            if query.max_page_size > 1000 {
+                bail!("query maximum page size for '{}' cannot exceed 1000", api.entity);
+            }
+            if !matches!(query.sort_direction.as_str(), "asc" | "desc") {
+                bail!("query sort direction for '{}' must be 'asc' or 'desc'", api.entity);
+            }
+            let entity = app.entities.iter().find(|entity| entity.name == api.entity).unwrap();
+            let generated = matches!(query.sort_field.as_str(), "id" | "created_at" | "updated_at");
+            if !generated && !entity.fields.iter().any(|field| field.name == query.sort_field) {
+                bail!("query for '{}' sorts by unknown field '{}'", api.entity, query.sort_field);
+            }
+            if !api.routes.iter().any(|route| route.method == "GET" && route.handler == "list") {
+                bail!("query policy for '{}' requires a GET list route", api.entity);
+            }
+        }
+    }
+    for seed in &app.seeds {
+        let entity = app.entities.iter().find(|entity| entity.name == seed.entity)
+            .ok_or_else(|| anyhow::anyhow!("seed references unknown entity '{}'", seed.entity))?;
+        let mut names = HashSet::new();
+        for value in &seed.values {
+            if !names.insert(value.name.clone()) {
+                bail!("duplicate seed field '{}.{}'", seed.entity, value.name);
+            }
+            if !entity.fields.iter().any(|field| field.name == value.name) {
+                bail!("seed for '{}' references unknown field '{}'", seed.entity, value.name);
+            }
+        }
+        for field in &entity.fields {
+            if !field.optional && field.default.is_none() && !seed.values.iter().any(|value| value.name == field.name) {
+                bail!("seed for '{}' is missing required field '{}'", seed.entity, field.name);
+            }
+        }
+    }
+
     let mut analyzed = AnalyzedApp {
         name: app.name,
         entities: Vec::new(),
         apis: Vec::new(),
         auth: None,
         ui: Vec::new(),
+        seeds: Vec::new(),
     };
     
     // Analyze entities
@@ -88,6 +177,12 @@ pub fn analyze(app: AxlApp) -> Result<AnalyzedApp> {
             name: ui.name.clone(),
             component_type: ui.component_type.clone(),
             properties: ui.properties.iter().map(|p| (p.name.clone(), p.value.clone())).collect(),
+        });
+    }
+    for seed in &app.seeds {
+        analyzed.seeds.push(AnalyzedSeed {
+            entity: seed.entity.clone(),
+            values: seed.values.iter().map(|value| (value.name.clone(), value.value.clone())).collect(),
         });
     }
     
@@ -196,5 +291,49 @@ fn analyze_api(api: &crate::parser::Api) -> Result<AnalyzedApi> {
     Ok(AnalyzedApi {
         entity: api.entity.clone(),
         routes,
+        query: api.query.as_ref().map(|query| AnalyzedQueryPolicy {
+            page_size: query.page_size,
+            max_page_size: query.max_page_size,
+            sort_field: query.sort_field.clone(),
+            descending: query.sort_direction == "desc",
+        }),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser;
+
+    #[test]
+    fn rejects_api_for_unknown_entity() {
+        let app = parser::parse_source(
+            "entity Customer {\nfield name: String\n}\napi Missing {\nGET /missing -> list\n}",
+        )
+        .unwrap();
+        let error = analyze(app).err().expect("analysis should fail");
+        assert!(error.to_string().contains("unknown entity"));
+    }
+
+    #[test]
+    fn rejects_unknown_field_types() {
+        let app = parser::parse_source("entity Customer {\nfield name: Mystery\n}").unwrap();
+        let error = analyze(app).err().expect("analysis should fail");
+        assert!(error.to_string().contains("unsupported AXL type"));
+    }
+
+
+    #[test]
+    fn rejects_invalid_query_policy() {
+        let app = parser::parse_source("entity Customer {\nfield name: String\n}\napi Customer {\nquery page 50 max 20 sort missing sideways\nGET /customers -> list\n}").unwrap();
+        let error = analyze(app).err().expect("analysis should fail");
+        assert!(error.to_string().contains("cannot exceed"));
+    }
+
+    #[test]
+    fn rejects_query_sorting_by_unknown_field() {
+        let app = parser::parse_source("entity Customer {\nfield name: String\n}\napi Customer {\nquery page 20 max 100 sort missing asc\nGET /customers -> list\n}").unwrap();
+        let error = analyze(app).err().expect("analysis should fail");
+        assert!(error.to_string().contains("unknown field"));
+    }
 }

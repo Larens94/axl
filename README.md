@@ -1,29 +1,56 @@
 # AX / AXL — Agent eXecution
 
-**AXL** è un linguaggio di programmazione per agenti che wrappa Rust e tutto quello che Rust può fare.
+**AXL** è il linguaggio sorgente principale per costruire applicazioni complete.
+Rust, React/TypeScript, SQL, WebAssembly e i bridge hardware sono target o dettagli
+di runtime: lo sviluppatore descrive sistema, dati, API, UI e agenti in AXL.
 
 **Sito:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Docs:** [`docs/`](docs/) · **Specifica:** [`SPEC.md`](SPEC.md)
 
 ```text
-AXL Compact Source 3.0
-→ parser deterministico
-→ AX-IR 2.0 (agent-centric)
-→ type-check
-→ interpreter
-  ├─ 90+ primitive native (Rust)
-  ├─ LLM backend (reason, classify, extract)
-  ├─ tool system (policy, approval, audit)
-  ├─ memory (in-memory, SQLite)
-  └─ web server (HTTP, static, API)
+AXL Source
+→ parser e analisi statica
+→ AX-IR tipizzata
+→ capability e target check
+  ├─ Rust              backend, CLI, sistemi e IoT
+  ├─ React/TypeScript  frontend web
+  ├─ SQL               schema e migrazioni
+  ├─ WebAssembly       browser ed edge (roadmap)
+  └─ AI/host bridges   modelli, tool e hardware
 ```
 
-## Esempio
+## Applicazione full-stack
 
 ```axl
-2;10|result|"hello world",!text_upper/1|s;12|$result
+entity Customer {
+  field name: String
+  field email: String
+}
+
+api Customer {
+  GET /api/customers -> list
+  POST /api/customers -> create
+}
+
+ui Customers {
+  table: Customer[name, email]
+}
 ```
 
-→ `"HELLO WORLD"`
+La build produce backend Rust, frontend React/TypeScript e migrazioni SQL.
+
+Il formato Compact Source resta disponibile come rappresentazione canonica a
+basso livello per runtime, trasporto e generazione automatica. Nei file `.axl`
+viene formattato su più righe; spazi, rientri e newline non cambiano la semantica.
+
+```axl
+2;
+50|worker;
+  10|x|#1|i;
+  30|$x,#0,>;
+    12|$x;
+  99;
+99;
+```
 
 ## Primitiva Native (90+)
 
@@ -61,28 +88,30 @@ AXL Compact Source 3.0
 ```bash
 cargo build --workspace
 cargo test --workspace
-cargo run -p axl-cli -- run examples/compact.axl
-cargo run -p netflix-server
-cargo run -p ai-platform
+cargo run -p axl-cli -- build examples/crm/crm.axl -o build/crm
+```
+
+Dopo l'installazione del binario:
+
+```bash
+axl build examples/crm/crm.axl -o build/crm
+axl check examples/crm/crm.axl
+axl fmt program.axl
+axl fmt program.axl --width 80 --check
 ```
 
 ## Workspace
 
 ```text
 runtime/
-├── axl-core-rs/    # Libreria principale (3500 LOC)
-├── axl-cli/        # CLI binario
-├── netflix-server/ # Netflix demo
-└── ai-platform/    # AI Platform demo
+├── axl-core-rs/    # IR, runtime, primitive e AX-UI
+├── axl-cli/        # CLI `axl`
+└── axl-compiler/   # Analisi e target Rust/React/SQL
 ```
 
 ## Esempi
 
-- **Netflix** — Streaming platform con 20 titoli
-- **AI Platform** — Analisi contenuti con 6 API LLM
-- **API Server** — REST CRUD con auth e caching
-- **Data Pipeline** — ETL con parsing e trasformazione
-- **Multi-Agent** — Agenti collaborativi con reasoning
+- **CRM** — definizione AXL di entità, API e interfaccia, compilabile nei target applicativi
 
 ## Licenza
 

@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 
@@ -17,22 +18,66 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("run") => run_command(&args[1..]),
+        Some("check") => check_command(&args[1..]),
         Some("compile") => compile_command(&args[1..]),
         Some("exec") => exec_command(&args[1..]),
         Some("pack") => pack_command(&args[1..]),
+        Some("fmt") => fmt_command(&args[1..]),
         Some("build") => build_command(&args[1..]),
+        Some("dev") => dev_command(&args[1..]),
         Some("serve") => serve_command(&args[1..]),
         _ => {
             eprintln!("usage:");
             eprintln!("  axl run <file.axl>     [--memory <db>] [--max-steps <n>]");
+            eprintln!("  axl check <file.axl>   # validate a full application");
             eprintln!("  axl compile <file.axl> -o <output.json>");
             eprintln!("  axl exec <file.json>   [--memory <db>] [--max-steps <n>]");
             eprintln!("  axl pack <file.axl>    -o <output.axl>");
-            eprintln!("  axl build <file.axl>   --target web -o <dir>");
+            eprintln!("  axl fmt <file.axl>     [--width <n>] [--check] [-o <file>]");
+            eprintln!("  axl build <file.axl>   [-o <dir>]             # full application");
+            eprintln!("  axl dev <file.axl>     [-o <dir>]             # build and run full stack");
+            eprintln!("  axl build <file.axl>   --target web -o <dir>  # compact AX-UI");
             eprintln!("  axl serve <file.axl>   [--port <port>] [-o <dir>]");
             Err("unknown command".into())
         }
     }
+}
+
+fn dev_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut output = None;
+    let mut file = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-o" | "--output" if i + 1 < args.len() => { output = Some(PathBuf::from(&args[i + 1])); i += 2; }
+            value if value.starts_with('-') => return Err(format!("unknown dev option '{value}'").into()),
+            value => { file = Some(PathBuf::from(value)); i += 1; }
+        }
+    }
+    let file = file.ok_or("usage: axl dev <file.axl> [-o <dir>]")?;
+    let output = output.unwrap_or_else(|| {
+        let name = file.file_stem().and_then(|value| value.to_str()).unwrap_or("app");
+        PathBuf::from("build").join(name)
+    });
+    axl_compiler::compile_application(&file, &output)?;
+    println!("AXL full stack generated; starting Rust + React...");
+    let status = Command::new("sh").arg(output.join("dev.sh")).status()?;
+    if !status.success() { return Err(format!("development stack exited with {status}").into()); }
+    Ok(())
+}
+
+fn check_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let file = args.first().ok_or("usage: axl check <file.axl>")?;
+    if args.len() != 1 {
+        return Err("usage: axl check <file.axl>".into());
+    }
+    let app = axl_compiler::parser::parse_file(Path::new(file))?;
+    let entity_count = app.entities.len();
+    let api_count = app.apis.len();
+    let ui_count = app.ui.len();
+    axl_compiler::analyzer::analyze(app)?;
+    println!("AXL application is valid: {entity_count} entities, {api_count} APIs, {ui_count} UI components");
+    Ok(())
 }
 
 struct RuntimeArgs {
@@ -161,8 +206,61 @@ fn pack_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let program = load_program_from_source(&file)?;
     axl_core::validate(&program).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     axl_core::typecheck(&program).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
-    let compact = axl_core::program_to_compact(&program)?;
+    let compact = axl_core::format_compact(&program, 100)?;
     fs::write(&output, format!("{compact}\n"))?;
+    Ok(())
+}
+
+fn fmt_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let mut file = None;
+    let mut output = None;
+    let mut width = 100usize;
+    let mut check = false;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--width" if i + 1 < args.len() => {
+                width = args[i + 1].parse()?;
+                i += 2;
+            }
+            "--check" => {
+                check = true;
+                i += 1;
+            }
+            "-o" | "--output" if i + 1 < args.len() => {
+                output = Some(PathBuf::from(&args[i + 1]));
+                i += 2;
+            }
+            value if value.starts_with('-') => return Err(format!("unknown fmt option '{value}'").into()),
+            value => {
+                if file.is_some() {
+                    return Err("usage: axl fmt <file.axl> [--width <n>] [--check] [-o <file>]".into());
+                }
+                file = Some(PathBuf::from(value));
+                i += 1;
+            }
+        }
+    }
+
+    let file = file.ok_or("usage: axl fmt <file.axl> [--width <n>] [--check] [-o <file>]")?;
+    let source = fs::read_to_string(&file)?;
+    if !axl_core::is_compact_source(&source) {
+        return Err("axl fmt currently formats Compact Source files".into());
+    }
+    let program = axl_core::parse_compact(&source)?;
+    let formatted = format!("{}\n", axl_core::format_compact(&program, width)?);
+
+    if check {
+        if source == formatted {
+            println!("{} is formatted", file.display());
+            return Ok(());
+        }
+        return Err(format!("{} is not formatted", file.display()).into());
+    }
+
+    let destination = output.unwrap_or(file);
+    fs::write(&destination, formatted)?;
+    println!("formatted {}", destination.display());
     Ok(())
 }
 
@@ -178,10 +276,22 @@ fn build_command(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
             _ => { file = Some(PathBuf::from(&args[i])); i += 1; }
         }
     }
-    let file = file.ok_or("usage: axl build <file.axl> --target web -o <dir>")?;
-    let target = target.ok_or("--target is required")?;
-    let output = output.ok_or("-o/--output is required")?;
-    if target != "web" { return Err("only 'web' target is supported".into()); }
+    let file = file.ok_or("usage: axl build <file.axl> [-o <dir>] [--target app|web]")?;
+    let output = output.unwrap_or_else(|| {
+        let name = file.file_stem().and_then(|s| s.to_str()).unwrap_or("app");
+        PathBuf::from("build").join(name)
+    });
+
+    if target.as_deref().is_none() || target.as_deref() == Some("app") {
+        axl_compiler::compile_application(&file, &output)?;
+        println!("AXL application built in {}", output.display());
+        println!("  backend:  {}", output.join("backend").display());
+        println!("  frontend: {}", output.join("frontend").display());
+        return Ok(());
+    }
+    if target.as_deref() != Some("web") {
+        return Err("supported targets are 'app' and 'web'".into());
+    }
     let program = load_program_from_source(&file)?;
     axl_core::validate(&program).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     axl_core::typecheck(&program).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;

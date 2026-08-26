@@ -81,69 +81,25 @@ fn generate_main_rs(app: &AnalyzedApp, output: &Path) -> Result<()> {
     
     for api in &app.apis {
         let entity_lower = api.entity.to_lowercase();
+        let base_path = api.routes.iter()
+            .map(|route| route.path.strip_suffix("/:id").unwrap_or(&route.path))
+            .min_by_key(|path| path.len())
+            .unwrap_or("/api");
         routes.push_str(&format!(
-            "        .nest(\"/api/{}s\", handlers::{}::routes())\n",
-            entity_lower, entity_lower
+            "        .nest(\"{}\", handlers::{}::routes())\n",
+            base_path, entity_lower
         ));
     }
     
-    let sql_tables = r#"
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            name TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user',
-            is_active BOOLEAN NOT NULL DEFAULT 1,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE TABLE IF NOT EXISTS customers (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            email TEXT,
-            company TEXT,
-            phone TEXT,
-            status TEXT NOT NULL DEFAULT 'active',
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE TABLE IF NOT EXISTS leads (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            company TEXT NOT NULL,
-            contact TEXT NOT NULL,
-            email TEXT,
-            source TEXT,
-            status TEXT NOT NULL DEFAULT 'warm',
-            value INTEGER NOT NULL DEFAULT 0,
-            score INTEGER NOT NULL DEFAULT 50,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE TABLE IF NOT EXISTS deals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            customer_id INTEGER,
-            value INTEGER NOT NULL DEFAULT 0,
-            stage TEXT NOT NULL DEFAULT 'discovery',
-            probability INTEGER NOT NULL DEFAULT 50,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-        
-        CREATE TABLE IF NOT EXISTS activities (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
-            activity_type TEXT NOT NULL,
-            related_type TEXT,
-            related_id INTEGER,
-            description TEXT,
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-    "#;
+    let mut sql_tables = app.entities.iter().map(create_table_sql).collect::<Vec<_>>().join("\n");
+    let (auth_module, auth_route, protected_setup, protected_merge) = if app.auth.is_some() {
+        sql_tables.push_str("\nCREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'user', created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP);");
+        let setup = format!("    let protected = Router::new()\n{routes}        .route_layer(axum::middleware::from_fn_with_state(state.clone(), auth::require_auth))\n        .with_state(state.clone());\n");
+        ("mod auth;", "        .nest(\"/api/auth\", auth::routes())\n", setup, "        .merge(protected)\n".to_string())
+    } else {
+        ("", "", String::new(), routes.clone())
+    };
+    let seed_sql = create_seed_sql(app);
     
     let content = format!(
         r#"use axum::{{routing::get, Router}};
@@ -154,6 +110,7 @@ use tracing_subscriber::{{layer::SubscriberExt, util::SubscriberInitExt}};
 
 mod handlers;
 mod models;
+{auth_module}
 
 #[derive(Clone)]
 pub struct AppState {{
@@ -173,16 +130,18 @@ async fn main() -> anyhow::Result<()> {{
     let database_url = std::env::var("DATABASE_URL")
         .unwrap_or_else(|_| "sqlite://app.db?mode=rwc".to_string());
     let jwt_secret = std::env::var("JWT_SECRET")
-        .unwrap_or_else(|_| "secret-key-change-in-production".to_string());
+        .map_err(|_| anyhow::anyhow!("JWT_SECRET must be configured"))?;
     let db = Database::connect(&database_url).await?;
     
     create_tables(&db).await?;
+    seed_demo_data(&db).await?;
     
     let state = AppState {{ db, jwt_secret }};
-    
+{protected_setup}
     let app = Router::new()
         .route("/api/health", get(|| async {{ "OK" }}))
-{routes}
+{auth_route}
+{protected_merge}
         .layer(CorsLayer::permissive())
         .layer(CompressionLayer::new())
         .with_state(state);
@@ -207,11 +166,66 @@ async fn create_tables(db: &DatabaseConnection) -> anyhow::Result<()> {{
     
     Ok(())
 }}
+
+async fn seed_demo_data(db: &DatabaseConnection) -> anyhow::Result<()> {{
+    use sea_orm::ConnectionTrait;
+    let statements = [{seed_sql}];
+    for sql in statements {{
+        db.execute(sea_orm::Statement::from_string(sea_orm::DatabaseBackend::Sqlite, sql.to_string())).await?;
+    }}
+    Ok(())
+}}
 "#
     );
     
     fs::write(output.join("src/main.rs"), content)?;
     Ok(())
+}
+
+fn create_seed_sql(app: &AnalyzedApp) -> String {
+    app.seeds.iter().filter_map(|seed| {
+        let entity = app.entities.iter().find(|entity| entity.name == seed.entity)?;
+        let columns = seed.values.iter().map(|(name, _)| name.as_str()).collect::<Vec<_>>().join(", ");
+        let values = seed.values.iter().map(|(name, value)| {
+            let field = entity.fields.iter().find(|field| field.name == *name);
+            sql_literal(field, value)
+        }).collect::<Vec<_>>().join(", ");
+        let (identity_name, identity_value) = seed.values.first()?;
+        let identity_field = entity.fields.iter().find(|field| field.name == *identity_name);
+        let identity = sql_literal(identity_field, identity_value);
+        Some(format!("\"INSERT INTO {} ({}) SELECT {} WHERE NOT EXISTS (SELECT 1 FROM {} WHERE {} = {});\"", entity.table_name, columns, values, entity.table_name, identity_name, identity))
+    }).collect::<Vec<_>>().join(",\n        ")
+}
+
+fn sql_literal(field: Option<&crate::analyzer::AnalyzedField>, value: &str) -> String {
+    if field.is_some_and(|field| matches!(field.rust_type.as_str(), "i32" | "f64" | "bool")) {
+        value.to_string()
+    } else {
+        format!("'{}'", value.replace('\'', "''"))
+    }
+}
+
+fn create_table_sql(entity: &crate::analyzer::AnalyzedEntity) -> String {
+    let columns = entity.fields.iter().map(|field| {
+        let sql_type = match field.rust_type.as_str() {
+            "i32" => "INTEGER",
+            "bool" => "BOOLEAN",
+            "f64" => "REAL",
+            "DateTime" | "chrono::NaiveDateTime" => "DATETIME",
+            _ => "TEXT",
+        };
+        let primary = if field.is_primary_key { " PRIMARY KEY AUTOINCREMENT" } else { "" };
+        let nullable = if field.optional || field.is_primary_key { "" } else { " NOT NULL" };
+        let default = field.default.as_ref().map(|value| {
+            if field.rust_type == "String" {
+                format!(" DEFAULT '{}'", value.replace('\'', "''"))
+            } else {
+                format!(" DEFAULT {value}")
+            }
+        }).unwrap_or_default();
+        format!("            {} {sql_type}{primary}{nullable}{default}", field.name)
+    }).collect::<Vec<_>>().join(",\n");
+    format!("CREATE TABLE IF NOT EXISTS {} (\n{}\n);", entity.table_name, columns)
 }
 
 fn generate_model(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Result<()> {
@@ -220,33 +234,36 @@ fn generate_model(entity: &crate::analyzer::AnalyzedEntity, output: &Path) -> Re
     
     let mut fields = String::new();
     let mut create_fields = String::new();
+    let mut update_fields = String::new();
     let mut response_fields = String::new();
     let mut response_from_fields = String::new();
     
     for field in &entity.fields {
         let optional = if field.optional { "Option<" } else { "" };
         let close = if field.optional { ">" } else { "" };
+        let rust_name = rust_identifier(&field.name);
         
         // Skip id field - it's added explicitly with primary_key annotation
         if field.name != "id" {
             fields.push_str(&format!(
                 "    pub {}: {}{}{},\n",
-                field.name, optional, field.rust_type, close
+                rust_name, optional, field.rust_type, close
             ));
         }
         
         if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
-            create_fields.push_str(&format!(
-                "    pub {}: {}{}{},\n",
-                field.name, optional, field.rust_type, close
-            ));
+            let create_optional = field.optional || field.default.is_some();
+            let create_wrapper = if create_optional { "Option<" } else { "" };
+            let create_close = if create_optional { ">" } else { "" };
+            create_fields.push_str(&format!("    pub {rust_name}: {create_wrapper}{}{create_close},\n", field.rust_type));
+            update_fields.push_str(&format!("    pub {rust_name}: Option<{}>,\n", field.rust_type));
             response_fields.push_str(&format!(
                 "    pub {}: {}{}{},\n",
-                field.name, optional, field.rust_type, close
+                rust_name, optional, field.rust_type, close
             ));
             response_from_fields.push_str(&format!(
                 "            {}: model.{},\n",
-                field.name, field.name
+                rust_name, rust_name
             ));
         }
     }
@@ -276,7 +293,7 @@ pub struct CreateInput {{
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateInput {{
-{create_fields}}}
+{update_fields}}}
 
 #[derive(Debug, Serialize)]
 pub struct Response {{
@@ -297,50 +314,95 @@ impl From<Model> for Response {{
     Ok(())
 }
 
+fn rust_identifier(name: &str) -> String {
+    const KEYWORDS: &[&str] = &[
+        "as", "break", "const", "continue", "crate", "else", "enum", "extern", "false",
+        "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut",
+        "pub", "ref", "return", "self", "Self", "static", "struct", "super", "trait",
+        "true", "type", "unsafe", "use", "where", "while", "async", "await", "dyn",
+    ];
+    if KEYWORDS.contains(&name) { format!("r#{name}") } else { name.to_string() }
+}
+
+fn sea_orm_column(name: &str) -> String {
+    name.split('_')
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            chars.next().map(|first| first.to_uppercase().collect::<String>() + chars.as_str()).unwrap_or_default()
+        })
+        .collect()
+}
+
 fn generate_handler(api: &crate::analyzer::AnalyzedApi, entities: &[crate::analyzer::AnalyzedEntity], output: &Path) -> Result<()> {
     let entity_lower = api.entity.to_lowercase();
-    let entity_upper = api.entity.chars().next().unwrap().to_uppercase().to_string() + &api.entity[1..];
-    
     let entity = entities.iter().find(|e| e.name.to_lowercase() == entity_lower);
-    
-    let mut set_fields = String::new();
+
+    let mut create_assignments = String::new();
+    let mut update_assignments = String::new();
+    let (axum_query_import, sea_query_imports, query_struct, list_signature, list_query) = if let Some(query) = &api.query {
+        let column = sea_orm_column(&query.sort_field);
+        let ordering = if query.descending { "order_by_desc" } else { "order_by_asc" };
+        (
+            ", Query",
+            ", QuerySelect, PaginatorTrait",
+            "#[derive(Debug, serde::Deserialize)]\nstruct ListQuery { page: Option<u64>, per_page: Option<u64> }\n",
+            ", Query(params): Query<ListQuery>".to_string(),
+            format!("    let page = params.page.unwrap_or(1).max(1);\n    let per_page = params.per_page.unwrap_or({}).clamp(1, {});\n    let total = Entity::find().count(&state.db).await.unwrap_or(0);\n    let items = Entity::find()\n        .{}(Column::{})\n        .offset((page - 1) * per_page)\n        .limit(per_page)\n        .all(&state.db)\n        .await\n        .unwrap_or_default();", query.page_size, query.max_page_size, ordering, column),
+        )
+    } else {
+        (
+            "",
+            "",
+            "",
+            String::new(),
+            "    let items = Entity::find()\n        .order_by_asc(Column::Id)\n        .all(&state.db)\n        .await\n        .unwrap_or_default();\n    let total = items.len() as u64;".to_string(),
+        )
+    };
     if let Some(entity) = entity {
         for field in &entity.fields {
             if !field.is_primary_key && field.name != "created_at" && field.name != "updated_at" {
-                set_fields.push_str(&format!(
-                    "        if let Some(v) = payload.{name} {{ active.{name} = Set(v); }}\n",
-                    name = field.name
+                let name = rust_identifier(&field.name);
+                if field.default.is_some() {
+                    let value = if field.optional { "Set(Some(v))" } else { "Set(v)" };
+                    create_assignments.push_str(&format!(
+                        "    if let Some(v) = payload.{name} {{ active.{name} = {value}; }}\n"
+                    ));
+                } else {
+                    create_assignments.push_str(&format!(
+                        "    active.{name} = Set(payload.{name});\n"
+                    ));
+                }
+                let update_value = if field.optional { "Set(Some(v))" } else { "Set(v)" };
+                update_assignments.push_str(&format!(
+                    "            if let Some(v) = payload.{name} {{ active.{name} = {update_value}; }}\n"
                 ));
             }
         }
     }
     
     let content = format!(
-        r#"use axum::{{extract::{{Path, State}}, routing::{{get, post, put, delete}}, Json, Router}};
-use sea_orm::{{EntityTrait, ActiveModelTrait, Set, QueryOrder, IntoActiveModel}};
+        r#"use axum::{{extract::{{Path, State{axum_query_import}}}, routing::get, Json, Router}};
+use sea_orm::{{EntityTrait, ActiveModelTrait, ModelTrait, Set, QueryOrder, IntoActiveModel{sea_query_imports}}};
 
 use crate::models::{entity_lower}::*;
 use crate::AppState;
+{query_struct}
 
 pub fn routes() -> Router<AppState> {{
     Router::new()
         .route("/", get(list).post(create))
-        .route("/:id", get(show).put(update).delete(delete_one))
+        .route("/{{id}}", get(show).put(update).delete(delete_one))
 }}
 
-async fn list(State(state): State<AppState>) -> Json<serde_json::Value> {{
-    let items = {entity_upper}::find()
-        .order_by_asc(Column::Id)
-        .all(&state.db)
-        .await
-        .unwrap_or_default();
-    
+async fn list(State(state): State<AppState>{list_signature}) -> Json<serde_json::Value> {{
+{list_query}
     let response: Vec<Response> = items.into_iter().map(Response::from).collect();
-    Json(serde_json::json!({{ "data": response }}))
+    Json(serde_json::json!({{ "data": response, "total": total }}))
 }}
 
 async fn show(State(state): State<AppState>, Path(id): Path<i32>) -> Json<serde_json::Value> {{
-    match {entity_upper}::find_by_id(id).one(&state.db).await {{
+    match Entity::find_by_id(id).one(&state.db).await {{
         Ok(Some(item)) => Json(serde_json::json!({{ "data": Response::from(item) }})),
         Ok(None) => Json(serde_json::json!({{ "error": "Not found" }})),
         Err(e) => Json(serde_json::json!({{ "error": e.to_string() }})),
@@ -351,11 +413,10 @@ async fn create(
     State(state): State<AppState>,
     Json(payload): Json<CreateInput>,
 ) -> Json<serde_json::Value> {{
-    let new_item = ActiveModel {{
-{set_fields}        ..Default::default()
-    }};
+    let mut active = <ActiveModel as Default>::default();
+{create_assignments}
     
-    match new_item.insert(&state.db).await {{
+    match active.insert(&state.db).await {{
         Ok(item) => Json(serde_json::json!({{ "data": Response::from(item) }})),
         Err(e) => Json(serde_json::json!({{ "error": e.to_string() }})),
     }}
@@ -366,10 +427,10 @@ async fn update(
     Path(id): Path<i32>,
     Json(payload): Json<UpdateInput>,
 ) -> Json<serde_json::Value> {{
-    match {entity_upper}::find_by_id(id).one(&state.db).await {{
+    match Entity::find_by_id(id).one(&state.db).await {{
         Ok(Some(item)) => {{
             let mut active = item.into_active_model();
-{set_fields}            match active.update(&state.db).await {{
+{update_assignments}            match active.update(&state.db).await {{
                 Ok(updated) => Json(serde_json::json!({{ "data": Response::from(updated) }})),
                 Err(e) => Json(serde_json::json!({{ "error": e.to_string() }})),
             }}
@@ -380,9 +441,9 @@ async fn update(
 }}
 
 async fn delete_one(State(state): State<AppState>, Path(id): Path<i32>) -> Json<serde_json::Value> {{
-    match {entity_upper}::find_by_id(id).one(&state.db).await {{
+    match Entity::find_by_id(id).one(&state.db).await {{
         Ok(Some(item)) => {{
-            match {entity_upper}::delete(item.into_active_model()).exec(&state.db).await {{
+            match item.delete(&state.db).await {{
                 Ok(_) => Json(serde_json::json!({{ "message": "Deleted successfully" }})),
                 Err(e) => Json(serde_json::json!({{ "error": e.to_string() }})),
             }}
@@ -398,12 +459,13 @@ async fn delete_one(State(state): State<AppState>, Path(id): Path<i32>) -> Json<
     Ok(())
 }
 
-fn generate_auth(app: &AnalyzedApp, output: &Path) -> Result<()> {
-    let content = r#"use axum::{extract::State, Json, http::StatusCode};
+fn generate_auth(_app: &AnalyzedApp, output: &Path) -> Result<()> {
+    let content = r#"use axum::{extract::State, routing::post, Json, Router, http::{Request, StatusCode}, middleware::Next, response::Response};
 use serde::{Deserialize, Serialize};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 use rand::rngs::OsRng;
-use jsonwebtoken::{encode, decode, Header, Validation, EncodingKey, DecodingKey};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, Validation, Header, EncodingKey};
+use sea_orm::{ConnectionTrait, DatabaseBackend, Statement};
 
 use crate::AppState;
 
@@ -434,18 +496,68 @@ struct Claims {
     exp: usize,
 }
 
+pub fn routes() -> Router<AppState> {
+    Router::new().route("/login", post(login)).route("/register", post(register))
+}
+
+pub async fn require_auth(
+    State(state): State<AppState>,
+    request: Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let token = request.headers().get("authorization")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    decode::<Claims>(token, &DecodingKey::from_secret(state.jwt_secret.as_bytes()), &Validation::new(Algorithm::HS256))
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
+    Ok(next.run(request).await)
+}
+
 pub async fn login(
     State(state): State<AppState>,
     Json(payload): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
-    Err(StatusCode::NOT_IMPLEMENTED)
+    let email = payload.email.trim().to_lowercase();
+    let row = state.db.query_one(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "SELECT id, email, password_hash, name, role FROM users WHERE email = ?",
+        [email.clone().into()],
+    )).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.ok_or(StatusCode::UNAUTHORIZED)?;
+    let hash: String = row.try_get("", "password_hash").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let parsed = PasswordHash::new(&hash).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Argon2::default().verify_password(payload.password.as_bytes(), &parsed).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let id: i32 = row.try_get("", "id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let name: String = row.try_get("", "name").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let role: String = row.try_get("", "role").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token = create_jwt(id, &email, &role, &state.jwt_secret)?;
+    Ok(Json(AuthResponse { token, user: serde_json::json!({ "id": id, "email": email, "name": name, "role": role }) }))
 }
 
 pub async fn register(
     State(state): State<AppState>,
     Json(payload): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, StatusCode> {
-    Err(StatusCode::NOT_IMPLEMENTED)
+    if payload.password.len() < 8 || !payload.email.contains('@') || payload.name.trim().is_empty() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    let email = payload.email.trim().to_lowercase();
+    let salt = SaltString::generate(&mut OsRng);
+    let hash = Argon2::default().hash_password(payload.password.as_bytes(), &salt)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.to_string();
+    state.db.execute(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "INSERT INTO users (email, password_hash, name) VALUES (?, ?, ?)",
+        [email.clone().into(), hash.into(), payload.name.trim().to_string().into()],
+    )).await.map_err(|error| if error.to_string().contains("UNIQUE") { StatusCode::CONFLICT } else { StatusCode::INTERNAL_SERVER_ERROR })?;
+    let row = state.db.query_one(Statement::from_sql_and_values(
+        DatabaseBackend::Sqlite,
+        "SELECT id FROM users WHERE email = ?",
+        [email.clone().into()],
+    )).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?.ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+    let id: i32 = row.try_get("", "id").map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let token = create_jwt(id, &email, "user", &state.jwt_secret)?;
+    Ok(Json(AuthResponse { token, user: serde_json::json!({ "id": id, "email": email, "name": payload.name, "role": "user" }) }))
 }
 
 fn create_jwt(user_id: i32, email: &str, role: &str, secret: &str) -> Result<String, StatusCode> {
@@ -476,11 +588,11 @@ fn create_jwt(user_id: i32, email: &str, role: &str, secret: &str) -> Result<Str
 
 fn generate_env(output: &Path) -> Result<()> {
     let content = r#"DATABASE_URL=sqlite://app.db?mode=rwc
-JWT_SECRET=secret-key-change-in-production
+JWT_SECRET=replace-with-a-random-secret
 PORT=3000
 RUST_LOG=debug
 "#;
     
-    fs::write(output.join(".env"), content)?;
+    fs::write(output.join(".env.example"), content)?;
     Ok(())
 }

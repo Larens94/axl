@@ -5,9 +5,9 @@ use crate::analyzer::AnalyzedApp;
 
 pub fn generate(app: &AnalyzedApp, output: &Path) -> Result<()> {
     fs::create_dir_all(output)?;
-    
+
     for (i, entity) in app.entities.iter().enumerate() {
-        let migration_name = format!("m20240101_{:06}_create_{}s", i + 1, entity.name.to_lowercase());
+        let migration_name = format!("m20240101_{:06}_create_{}", i + 1, entity.table_name);
         generate_migration(entity, output, &migration_name)?;
     }
     
@@ -19,87 +19,35 @@ fn generate_migration(
     output: &Path,
     migration_name: &str,
 ) -> Result<()> {
-    let mut columns = String::new();
-    
-    for (i, field) in entity.fields.iter().enumerate() {
+    let columns = entity.fields.iter().map(|field| {
         let sql_type = match field.rust_type.as_str() {
             "i32" => "INTEGER",
             "String" => "TEXT",
             "bool" => "BOOLEAN",
             "f64" => "REAL",
-            "DateTime" => "DATETIME",
+            "DateTime" | "chrono::NaiveDateTime" => "DATETIME",
             _ => "TEXT",
         };
         
-        let nullable = if field.optional { "" } else { " NOT NULL" };
+        let nullable = if field.optional || field.is_primary_key { "" } else { " NOT NULL" };
         let default = if let Some(ref d) = field.default {
-            format!(" DEFAULT {}", d)
+            if field.rust_type == "String" {
+                format!(" DEFAULT '{}'", d.replace('\'', "''"))
+            } else {
+                format!(" DEFAULT {d}")
+            }
         } else {
             String::new()
         };
-        
         let pk = if field.is_primary_key { " PRIMARY KEY AUTOINCREMENT" } else { "" };
-        
-        columns.push_str(&format!(
-            "                    .col(ColumnDef::new({}::{}).{}{}{}{})\n",
-            entity.name.to_uppercase(),
-            field.name.to_uppercase().replace("_", "_"),
-            sql_type.to_lowercase(),
-            nullable,
-            default,
-            pk
-        ));
-        
-        if i < entity.fields.len() - 1 {
-            columns.push_str("\n");
-        }
-    }
-    
-    let content = format!(r#"use sea_orm_migration::prelude::*;
+        format!("    {} {sql_type}{pk}{nullable}{default}", field.name)
+    }).collect::<Vec<_>>().join(",\n");
 
-pub struct Migration;
-
-impl MigrationName for Migration {{
-    fn name(&self) -> &str {{
-        "{migration_name}"
-    }}
-}}
-
-#[async_trait::async_trait]
-impl MigrationTrait for Migration {{
-    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {{
-        manager
-            .create_table(
-                Table::create()
-                    .table({entity_name}::Table)
-                    .if_not_exists()
-{columns}
-                    .to_owned(),
-            )
-            .await
-    }}
-
-    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {{
-        manager
-            .drop_table(Table::drop().table({entity_name}::Table).to_owned())
-            .await
-    }}
-}}
-
-#[derive(Iden)]
-pub enum {entity_name} {{
-    Table,
-{iden_fields}}}
-"#,
-        migration_name = migration_name,
-        entity_name = entity.name,
-        columns = columns,
-        iden_fields = entity.fields.iter()
-            .map(|f| format!("    {}", f.name.to_uppercase().replace("_", "_")))
-            .collect::<Vec<_>>()
-            .join(",\n")
+    let content = format!(
+        "CREATE TABLE IF NOT EXISTS {} (\n{}\n);\n",
+        entity.table_name, columns
     );
-    
-    fs::write(output.join(format!("{}.rs", migration_name)), content)?;
+
+    fs::write(output.join(format!("{migration_name}.sql")), content)?;
     Ok(())
 }
