@@ -1,0 +1,11 @@
+// An agent declaration: model only, without runtime execution yet.
+axl 4
+app AgentBlock
+
+agent SalesAssistant
+  believe crm.pipeline
+  goal qualify_lead
+  plan automatic_qualification
+  plan request_human_review
+  effect ai.generate
+  capability crm.lead.read

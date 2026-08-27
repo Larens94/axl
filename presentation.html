@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Presentazione semplice e verificata di AXL 4.">
+  <title>AXL 4 — Software come grafo aperto</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1c1b19;
+      --muted: #746f68;
+      --paper: #f4f0e9;
+      --white: rgba(255,255,255,.72);
+      --line: rgba(28,27,25,.12);
+      --orange: #dc633a;
+      --violet: #7763d9;
+      --green: #24745a;
+      --shadow: 0 30px 100px rgba(46,37,28,.13);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 4% 3%, rgba(220,99,58,.17), transparent 36%),
+        radial-gradient(circle at 96% 92%, rgba(119,99,217,.14), transparent 39%),
+        var(--paper);
+    }
+    button, a { font: inherit; }
+    a { color: inherit; }
+    .deck { height: 100%; }
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: clamp(58px, 7vw, 110px) clamp(24px, 7vw, 110px) 78px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(18px) scale(.995);
+      transition: opacity .36s ease, transform .36s ease, visibility .36s;
+    }
+    .slide.active { opacity: 1; visibility: visible; transform: none; }
+    .content { width: min(1180px, 100%); max-height: 100%; }
+    .eyebrow { margin-bottom: 18px; color: var(--orange); font-size: 13px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h1, h2 { margin: 0; letter-spacing: -.06em; }
+    h1 { max-width: 1000px; font-size: clamp(58px, 10vw, 132px); line-height: .88; }
+    h2 { max-width: 1020px; font-size: clamp(40px, 6.4vw, 82px); line-height: .98; }
+    h3 { margin: 0 0 9px; font-size: clamp(18px, 2vw, 25px); letter-spacing: -.025em; }
+    p { margin: 22px 0 0; }
+    .lead { max-width: 790px; color: var(--muted); font-size: clamp(20px, 2.5vw, 31px); line-height: 1.4; }
+    .small { color: var(--muted); font-size: 15px; line-height: 1.55; }
+    .accent { color: var(--orange); }
+    .violet { color: var(--violet); }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: clamp(12px, 2vw, 22px); margin-top: 38px; }
+    .grid.two { grid-template-columns: repeat(2, 1fr); }
+    .card { min-height: 160px; padding: clamp(20px, 2.6vw, 32px); border: 1px solid var(--line); border-radius: 26px; background: var(--white); box-shadow: var(--shadow); }
+    .card p { margin-top: 9px; color: var(--muted); font-size: clamp(15px, 1.55vw, 19px); line-height: 1.48; }
+    .step { display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 19px; border-radius: 12px; background: rgba(220,99,58,.12); color: var(--orange); font-size: 12px; font-weight: 850; }
+    .split { display: grid; grid-template-columns: .88fr 1.12fr; gap: clamp(24px, 5vw, 70px); align-items: center; margin-top: 28px; }
+    pre { overflow: auto; max-height: 52vh; margin: 0; padding: clamp(19px, 2.7vw, 34px); border: 1px solid rgba(255,255,255,.08); border-radius: 26px; background: #201f1d; color: #f5efe5; box-shadow: var(--shadow); font: clamp(12px, 1.35vw, 16px)/1.65 "SFMono-Regular", Consolas, monospace; }
+    .flow { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; overflow: hidden; margin-top: 46px; border: 1px solid var(--line); border-radius: 27px; background: var(--line); box-shadow: var(--shadow); }
+    .flow div { min-height: 170px; padding: 26px; background: rgba(255,255,255,.78); }
+    .flow span { display: block; margin-bottom: 42px; color: var(--orange); font-size: 12px; font-weight: 820; }
+    .flow strong { display: block; font-size: clamp(17px, 1.8vw, 23px); }
+    .flow small { display: block; margin-top: 7px; color: var(--muted); line-height: 1.4; }
+    .ports { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; margin-top: 38px; }
+    .port-column { display: grid; gap: 12px; }
+    .port { padding: 17px 20px; border: 1px solid var(--line); border-radius: 17px; background: rgba(255,255,255,.7); }
+    .port b { display: block; font-size: 14px; }
+    .port small { color: var(--muted); }
+    .core { display: grid; place-items: center; min-width: 210px; min-height: 210px; padding: 25px; border-radius: 50%; background: var(--ink); color: white; text-align: center; box-shadow: var(--shadow); }
+    .core strong { font-size: 26px; }
+    .core small { opacity: .67; }
+    .checklist { display: grid; gap: 13px; margin-top: 30px; }
+    .check { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: start; max-width: 900px; font-size: clamp(17px, 2vw, 23px); }
+    .check i { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: rgba(36,116,90,.12); color: var(--green); font-size: 13px; font-style: normal; font-weight: 900; }
+    .check.no i { background: rgba(220,99,58,.12); color: var(--orange); }
+    .metric { font-size: clamp(44px, 7vw, 88px); font-weight: 760; letter-spacing: -.07em; line-height: .9; }
+    .metric-label { margin-top: 13px; color: var(--muted); }
+    .callout { margin-top: 30px; padding: 18px 22px; border-left: 3px solid var(--orange); color: var(--muted); background: rgba(255,255,255,.42); }
+    .chrome { position: fixed; z-index: 20; inset: 0; pointer-events: none; }
+    .topbar { position: absolute; top: 24px; left: 30px; right: 30px; display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .controls { position: absolute; right: 24px; bottom: 22px; display: flex; gap: 8px; pointer-events: auto; }
+    .controls button { width: 43px; height: 43px; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.72); color: var(--ink); cursor: pointer; backdrop-filter: blur(12px); }
+    .controls button:hover { background: var(--ink); color: white; }
+    .counter { position: absolute; left: 30px; bottom: 31px; color: var(--muted); font: 13px/1 "SFMono-Regular", monospace; }
+    .progress { position: absolute; left: 0; bottom: 0; width: 100%; height: 3px; background: rgba(28,27,25,.08); }
+    .progress span { display: block; width: 10%; height: 100%; background: linear-gradient(90deg, var(--orange), var(--violet)); transition: width .3s ease; }
+    @media (max-width: 760px) {
+      .slide { align-items: start; overflow-y: auto; padding: 76px 18px 84px; }
+      .grid, .grid.two, .split { grid-template-columns: 1fr; }
+      .grid { margin-top: 26px; }
+      .card { min-height: 0; }
+      .flow { grid-template-columns: 1fr 1fr; margin-top: 28px; }
+      .flow div { min-height: 135px; padding: 18px; }
+      .flow span { margin-bottom: 20px; }
+      .ports { grid-template-columns: 1fr; }
+      .core { min-width: 150px; min-height: 150px; width: 150px; margin: 2px auto; }
+      pre { max-height: none; font-size: 11px; }
+      .topbar { top: 18px; left: 18px; right: 18px; }
+      .topbar span:last-child { display: none; }
+      .counter { left: 18px; bottom: 31px; }
+      .controls { right: 17px; bottom: 18px; }
+    }
+    @media (prefers-reduced-motion: reduce) { .slide, .progress span { transition: none; } }
+    @media print {
+      html, body { height: auto; overflow: visible; background: white; }
+      .slide { position: relative; min-height: 100vh; opacity: 1; visibility: visible; transform: none; break-after: page; }
+      .chrome { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-live="polite">
+    <section class="slide active" data-title="AXL 4">
+      <div class="content">
+        <div class="eyebrow">Semantic blueprint language</div>
+        <h1>Software come <span class="accent">grafo aperto.</span></h1>
+        <p class="lead">AXL sopra. Rust, React, SQL, AI e IoT sotto.</p>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Idea">
+      <div class="content">
+        <div class="eyebrow">L'idea in una frase</div>
+        <h2>Descrivere il sistema, non riscrivere Rust.</h2>
+        <div class="grid">
+          <article class="card"><div class="step">01</div><h3>AXL è la fonte</h3><p>Entità, contratti, componenti e collegamenti vivono in un grafo tipizzato.</p></article>
+          <article class="card"><div class="step">02</div><h3>I target eseguono</h3><p>Le skill puntano alle implementazioni native Rust, React, SQL, AI, IoT o WASM.</p></article>
+          <article class="card"><div class="step">03</div><h3>Le porte restano aperte</h3><p>Input, slot e hook rendono sostituibili dati, UI e comportamento.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Pipeline">
+      <div class="content">
+        <div class="eyebrow">Pipeline implementata</div>
+        <h2>Una semantica. Tre rappresentazioni.</h2>
+        <div class="flow">
+          <div><span>01</span><strong>Readable AXL</strong><small>Forma multilinea per scrivere e revisionare.</small></div>
+          <div><span>02</span><strong>Typed AST</strong><small>Struttura analizzata dal compilatore.</small></div>
+          <div><span>03</span><strong>Graph IR</strong><small>Nodi, edge, contratti e capacità espliciti.</small></div>
+          <div><span>04</span><strong>Packed IR</strong><small>Opcode deterministici per il trasporto.</small></div>
+        </div>
+        <div class="callout">Il Packed IR è confrontato con il JSON Graph IR. Non viene presentato come sempre più piccolo del sorgente leggibile.</div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Blocco">
+      <div class="content">
+        <div class="eyebrow">Costruzione verificata · store</div>
+        <div class="split">
+          <div><h2>Contratto.<br>Implementazione.<br>Connessione.</h2><p class="lead">Sono le tre parti del blocco AXL attuale.</p></div>
+          <pre><code>capacity CustomerStore
+  op find uuid -> Result&lt;Customer&gt;
+  op save Customer -> Result&lt;Customer&gt;
+
+skill SqliteCustomers provides CustomerStore
+  native rust demo::sqlite_customers
+  effect db.read
+  effect db.write
+
+blueprint CustomerData
+  in store: CustomerStore
+  use store = SqliteCustomers</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Porte">
+      <div class="content">
+        <div class="eyebrow">Il principio decisivo</div>
+        <h2>Ogni blocco mantiene porte di personalizzazione.</h2>
+        <div class="ports">
+          <div class="port-column">
+            <div class="port"><b>in store</b><small>CustomerStore</small></div>
+            <div class="port"><b>in auth</b><small>AuthProvider</small></div>
+          </div>
+          <div class="core"><div><strong>CustomerCRM</strong><br><small>blueprint</small></div></div>
+          <div class="port-column">
+            <div class="port"><b>slot table.row</b><small>CustomerRow</small></div>
+            <div class="port"><b>slot mobile.card</b><small>CustomerCard</small></div>
+            <div class="port"><b>hook before.save</b><small>CustomerPolicy</small></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="UI">
+      <div class="content">
+        <div class="eyebrow">Costruzione verificata · UI</div>
+        <div class="split">
+          <div><h2>La UI è una porta, non un preset chiuso.</h2><p class="lead">Una skill compatibile può sostituire il renderer predefinito senza modificare il blueprint.</p></div>
+          <pre><code>capacity CustomerRow
+  op render Customer -> UI
+
+skill DefaultCustomerRow provides CustomerRow
+  native react crm::DefaultCustomerRow
+
+blueprint CustomerList
+  slot table.row: CustomerRow = DefaultCustomerRow</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Controlli">
+      <div class="content">
+        <div class="eyebrow">Cosa controlla oggi</div>
+        <h2>Il compilatore verifica il grafo prima dei target.</h2>
+        <div class="checklist">
+          <div class="check"><i>✓</i><span>Tipi, entità, capacity e riferimenti generici.</span></div>
+          <div class="check"><i>✓</i><span>Compatibilità tra porta e provider.</span></div>
+          <div class="check"><i>✓</i><span>Porte obbligatorie non collegate, con candidati di riparazione.</span></div>
+          <div class="check"><i>✓</i><span>Round-trip deterministico tra Graph IR e Packed IR.</span></div>
+          <div class="check no"><i>×</i><span>Non verifica ancora l'ABI della funzione Rust o del componente React.</span></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Output">
+      <div class="content">
+        <div class="eyebrow">Output reale dell'esperimento</div>
+        <h2>Contratti per quattro mondi.</h2>
+        <div class="grid">
+          <article class="card"><h3>Rust</h3><p>Strutture dati e trait delle capacity.</p></article>
+          <article class="card"><h3>React</h3><p>Registry dei riferimenti slot.</p></article>
+          <article class="card"><h3>SQL</h3><p>DDL iniziale delle entità.</p></article>
+          <article class="card"><h3>Agenti</h3><p>Manifest di belief, goal e plan.</p></article>
+          <article class="card"><h3>Graph IR</h3><p>JSON esplicito e canonico.</p></article>
+          <article class="card"><h3>Packed IR</h3><p>Frame opcode reversibili.</p></article>
+        </div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Stato">
+      <div class="content">
+        <div class="eyebrow">Confine onesto</div>
+        <h2>È un linguaggio sperimentale funzionante. Non ancora un generatore full-stack.</h2>
+        <div class="grid two">
+          <article class="card"><h3 class="accent">Funziona oggi</h3><p>Parser, analyzer, formatter, Graph IR, Packed IR, diagnostica, porte tipizzate e adapter dei target.</p></article>
+          <article class="card"><h3 class="violet">Prossimo gate</h3><p>Una vertical slice eseguibile: handler Rust, persistenza SQL e componente React collegati dal grafo esistente.</p></article>
+        </div>
+        <div class="callout">`if`, `else`, cicli, esecuzione dei contratti e runtime degli agenti non sono ancora sintassi o comportamento AXL implementati.</div>
+      </div>
+    </section>
+
+    <section class="slide" data-title="Prova">
+      <div class="content">
+        <div class="eyebrow">La prova resta nel repository</div>
+        <h2>Gli esempi della presentazione sono test del compilatore.</h2>
+        <div class="grid">
+          <article class="card"><div class="metric">4</div><div class="metric-label">esempi di blocco isolati</div></article>
+          <article class="card"><div class="metric">1</div><div class="metric-label">grafo CRM composto</div></article>
+          <article class="card"><div class="metric">100%</div><div class="metric-label">dei sample documentati nel test round-trip</div></article>
+        </div>
+        <p class="lead">Apri <a href="docs/index.html">docs/index.html</a> oppure esegui <code>cargo test --workspace</code>.</p>
+      </div>
+    </section>
+  </main>
+
+  <div class="chrome">
+    <div class="topbar"><span>AXL 4</span><span id="title">AXL 4</span></div>
+    <div class="counter"><span id="current">01</span> / <span id="total">10</span></div>
+    <div class="controls">
+      <button id="previous" type="button" aria-label="Slide precedente">←</button>
+      <button id="next" type="button" aria-label="Slide successiva">→</button>
+    </div>
+    <div class="progress"><span id="bar"></span></div>
+  </div>
+
+  <script>
+    const slides = [...document.querySelectorAll('.slide')];
+    const current = document.getElementById('current');
+    const total = document.getElementById('total');
+    const title = document.getElementById('title');
+    const bar = document.getElementById('bar');
+    let index = Math.max(0, Math.min(slides.length - 1, Number(location.hash.slice(1)) - 1 || 0));
+
+    function show(next) {
+      index = (next + slides.length) % slides.length;
+      slides.forEach((slide, position) => slide.classList.toggle('active', position === index));
+      current.textContent = String(index + 1).padStart(2, '0');
+      title.textContent = slides[index].dataset.title;
+      bar.style.width = `${((index + 1) / slides.length) * 100}%`;
+      history.replaceState(null, '', `#${index + 1}`);
+    }
+
+    total.textContent = String(slides.length).padStart(2, '0');
+    document.getElementById('previous').addEventListener('click', () => show(index - 1));
+    document.getElementById('next').addEventListener('click', () => show(index + 1));
+    addEventListener('keydown', (event) => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); show(index + 1); }
+      if (['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); show(index - 1); }
+      if (event.key === 'Home') { event.preventDefault(); show(0); }
+      if (event.key === 'End') { event.preventDefault(); show(slides.length - 1); }
+    });
+    let touchX = null;
+    addEventListener('touchstart', event => { touchX = event.changedTouches[0].clientX; }, {passive: true});
+    addEventListener('touchend', event => {
+      if (touchX === null) return;
+      const distance = event.changedTouches[0].clientX - touchX;
+      if (Math.abs(distance) > 50) show(index + (distance < 0 ? 1 : -1));
+      touchX = null;
+    }, {passive: true});
+    show(index);
+  </script>
+</body>
+</html>

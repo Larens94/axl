@@ -262,3 +262,16 @@ claiming to generate a complete production application.
 
 These are later gates. The current experiment validates the source language,
 open-port type model, agent diagnostics and deterministic IR pipeline.
+
+## 10. Verified examples and guides
+
+- `examples/blocks/01-store.axl` — capacity, Rust skill and explicit binding.
+- `examples/blocks/02-ui-slot.axl` — typed React slot with a default provider.
+- `examples/blocks/03-hook.axl` — typed lifecycle hook and recorded contracts.
+- `examples/blocks/04-agent.axl` — belief/goal/plan graph model.
+- `examples/next/crm.axl` — composed CRM graph.
+- `docs/blocks.md` — construction guide and current limitations.
+- `docs/status.md` — concise implemented/planned matrix.
+
+The Rust integration test `documented_examples.rs` compiles every example and
+verifies Packed IR round-trip equality with Semantic Graph IR.

@@ -16,3 +16,7 @@ Run from the repository root:
 The experiment output contains canonical readable AXL, JSON Graph IR, matrix-
 formatted Packed Graph IR and initial Rust, React, SQL and agent target contracts.
 See `SPEC-4.0.md` for the implemented boundary.
+
+For smaller, independently verified construction examples, see
+`examples/blocks`. The visual overview is available in `docs/index.html`, and
+the simplified presentation is `presentation.html`.

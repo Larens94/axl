@@ -1,0 +1,19 @@
+// A lifecycle block: policy behavior enters through a typed hook.
+axl 4
+app HookBlock
+
+entity Customer
+  id: uuid key
+  email: email required unique
+
+capacity CustomerPolicy
+  op validate Customer -> Result<Customer>
+
+skill ValidateCustomer provides CustomerPolicy
+  native rust crm::validate_customer
+
+blueprint CustomerWrite
+  hook before.save: CustomerPolicy = ValidateCustomer
+  requires customer.valid
+  ensures customer.accepted
+  invariant Customer.email unique

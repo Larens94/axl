@@ -1,0 +1,16 @@
+// A UI block: the row renderer can be replaced through a typed slot.
+axl 4
+app UiSlotBlock
+
+entity Customer
+  id: uuid key
+  name: text required
+
+capacity CustomerRow
+  op render Customer -> UI
+
+skill DefaultCustomerRow provides CustomerRow
+  native react crm::DefaultCustomerRow
+
+blueprint CustomerList
+  slot table.row: CustomerRow = DefaultCustomerRow

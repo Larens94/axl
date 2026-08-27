@@ -1,0 +1,20 @@
+// A data block: contract, Rust provider and explicit connection.
+axl 4
+app StoreBlock
+
+entity Customer
+  id: uuid key
+  email: email required unique
+
+capacity CustomerStore
+  op find uuid -> Result<Customer>
+  op save Customer -> Result<Customer>
+
+skill SqliteCustomers provides CustomerStore
+  native rust demo::sqlite_customers
+  effect db.read
+  effect db.write
+
+blueprint CustomerData
+  in store: CustomerStore
+  use store = SqliteCustomers
