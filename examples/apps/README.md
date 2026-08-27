@@ -63,6 +63,7 @@ Expected results:
 - the movement view returns direction `Entrata` and signed amount `125000`;
 - the ledger fold returns `80000`;
 - the filter/map pipeline returns `[125000]`;
+- the typed sort returns `movement-002` before `movement-001`;
 - both replaceable storage providers return movement `movement-001`.
 - the composed validation/storage flow returns the valid movement.
 
@@ -74,7 +75,8 @@ multiline `make name: Entity` record construction. Flow Runtime 2 adds typed `in
 `fold` provides immutable collection aggregation and `run` composes flows.
 
 The `CashflowApi` declaration exposes `/movements`, `/movement-by-id`,
-`/balance` and `/income-amounts` through the generic Axum runtime:
+`/balance`, `/income-amounts` and `/movements/sorted` through the generic Axum
+runtime:
 
 ```sh
 cargo run -p axl-compiler -- \

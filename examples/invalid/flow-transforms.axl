@@ -1,10 +1,11 @@
-// Expected diagnostics: AXL-N806 and AXL-X871 through AXL-X875.
+// Expected diagnostics: AXL-N806 and AXL-X871 through AXL-X879.
 axl 4
 app InvalidFlowTransforms
 
 entity Input
   amount: money required
   items: List<int> required
+  flags: List<bool> required
 
 flow NonCollection Input -> List<money>
   map values: List<money> = input.amount as item
@@ -34,4 +35,28 @@ flow WrongMapValue Input -> List<int>
 flow ReservedItem Input -> List<int>
   map values: List<int> = input.items as input
     value = input
+  return values
+
+flow NonCollectionSort Input -> List<int>
+  sort values: List<int> = input.amount as item
+    by = item
+    direction = asc
+  return values
+
+flow WrongSortResult Input -> Set<int>
+  sort values: Set<int> = input.items as item
+    by = item
+    direction = asc
+  return values
+
+flow UnsortableKey Input -> List<bool>
+  sort values: List<bool> = input.flags as item
+    by = item
+    direction = asc
+  return values
+
+flow InvalidDirection Input -> List<int>
+  sort values: List<int> = input.items as item
+    by = item
+    direction = sideways
   return values

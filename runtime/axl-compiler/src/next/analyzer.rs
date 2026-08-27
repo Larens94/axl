@@ -1999,15 +1999,7 @@ fn collection_inner(value: &str) -> Option<(&str, &str)> {
 fn sortable_type(value: &str, declarations: &BTreeMap<&str, &Declaration>) -> bool {
     matches!(
         value,
-        "int"
-            | "float"
-            | "money"
-            | "text"
-            | "string"
-            | "email"
-            | "uuid"
-            | "datetime"
-            | "duration"
+        "int" | "float" | "money" | "text" | "string" | "email" | "uuid" | "datetime" | "duration"
     ) || matches!(declarations.get(value), Some(Declaration::Enum(_)))
 }
 
@@ -2650,9 +2642,7 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                     .insert("collection".into(), collection.clone());
                 value.metadata.insert("item".into(), item.clone());
                 value.metadata.insert("key".into(), key.clone());
-                value
-                    .metadata
-                    .insert("direction".into(), direction.clone());
+                value.metadata.insert("direction".into(), direction.clone());
             }
         }
         if let FlowStatement::Require { message, .. } = statement {

@@ -25,8 +25,8 @@ Graph/Packed IR and executed through a replaceable ABI. Memory and SQLite
 adapters prove two implementations behind the same `MovementStore` capacity.
 
 Gate 1 is active. Typed multiline records, lazy conditionals, functional `fold`
-loops, flow-to-flow `run` calls, enum `match`, `map` and `filter` are implemented.
-Grouping, sorting and async provider semantics remain. Durable SQLite is
+loops, flow-to-flow `run` calls, enum `match`, `map`, `filter` and stable typed
+`sort` are implemented. Grouping and async provider semantics remain. Durable SQLite is
 intentionally deferred to the data gate because the current adapter proves
 invocation and replacement, not process-level persistence.
 

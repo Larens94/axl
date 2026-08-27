@@ -99,6 +99,18 @@ Both statements create scoped immutable item variables. Sources and outputs are
 limited to `List<T>` and `Set<T>`; predicates and mapped values are checked
 statically and again at runtime.
 
+`sort` produces a deterministic `List<T>` from a `List<T>` or `Set<T>`:
+
+```axl
+sort newest: List<Movement> = input.movements as movement
+  by = movement.occurred_at
+  direction = desc
+```
+
+Keys are ordered numeric, string-like or enum values. Equal keys preserve source
+order. The compiler rejects a changed item type, an unordered key or a direction
+other than `asc` and `desc`.
+
 ## Provider ABI
 
 `ProviderRuntime` is public and replaceable. The interpreter passes it the
@@ -146,7 +158,6 @@ source parser.
 ## Current boundary
 
 Flow Runtime 2 does not implement mutable variables, branch statement blocks,
-collection literals/group/sort, async execution, durable
-persistence, events, state mutation, concurrency or UI bindings. The next
-vertical slice is collection transforms and async semantics, then durable
-storage and HTTP.
+collection literals/grouping, async execution, durable persistence, events,
+state mutation, concurrency or UI bindings. The next vertical slice is grouping
+and async semantics, then durable storage and richer HTTP behavior.

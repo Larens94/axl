@@ -78,6 +78,12 @@ flow IncomeAmounts MovementBatch -> List<money>
     value = movement.amount
   return amounts
 
+flow SortMovementsNewest MovementBatch -> List<Movement>
+  sort ordered: List<Movement> = input.movements as movement
+    by = movement.occurred_at
+    direction = desc
+  return ordered
+
 flow StoreAndLoadMovement Movement -> Result<Movement>
   in store: MovementStore = MemoryMovements
   call saved = store.save(input)?
@@ -106,3 +112,4 @@ api CashflowApi
   post /movement-by-id uuid -> Result<Movement> = FindMovement
   post /balance MovementBatch -> money = CalculateLedgerBalance
   post /income-amounts MovementBatch -> List<money> = IncomeAmounts
+  post /movements/sorted MovementBatch -> List<Movement> = SortMovementsNewest

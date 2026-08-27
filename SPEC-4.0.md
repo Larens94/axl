@@ -290,6 +290,17 @@ map amounts: List<money> = incomes as movement
 predicate. `map` requires a `List<T>` or `Set<T>` output and checks every mapped
 value against `T`. A mapped `Set<T>` removes duplicate values deterministically.
 
+`sort` converts a `List<T>` or `Set<T>` source into an ordered `List<T>`:
+
+```axl
+sort newest: List<Movement> = input.movements as movement
+  by = movement.occurred_at
+  direction = desc
+```
+
+The key must be a number, string-like scalar or enum. Direction is exactly
+`asc` or `desc`; equal keys keep their original order deterministically.
+
 ### HTTP API
 
 An API exposes checked flows without handwritten controllers:
@@ -443,7 +454,7 @@ generate a complete production application.
 
 - contract expression type checking;
 - branch statement blocks and mutable variables;
-- collection literals, grouping and sorting;
+- collection literals and grouping;
 - `parallel`, `race`, retry and timeout execution;
 - generated standalone Rust handlers and React components from Graph IR;
 - path parameters, query decoding, middleware and streaming HTTP bodies;

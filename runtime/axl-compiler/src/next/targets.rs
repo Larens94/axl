@@ -259,6 +259,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                 .chain(children(graph, &flow.id, "match"))
                 .chain(children(graph, &flow.id, "map"))
                 .chain(children(graph, &flow.id, "filter"))
+                .chain(children(graph, &flow.id, "sort"))
                 .chain(children(graph, &flow.id, "return"))
                 .collect::<Vec<_>>();
             statements.sort_by_key(|statement| {
@@ -325,6 +326,8 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                         "subject": statement.metadata.get("subject"),
                         "cases": cases,
                         "predicate": statement.metadata.get("predicate"),
+                        "key": statement.metadata.get("key"),
+                        "direction": statement.metadata.get("direction"),
                     })
                 }).collect::<Vec<_>>(),
             })

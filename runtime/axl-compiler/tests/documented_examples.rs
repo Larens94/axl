@@ -210,6 +210,22 @@ fn documented_invalid_examples_report_stable_codes() {
             include_str!("../../../examples/invalid/flow-transforms.axl"),
         ),
         (
+            "AXL-X876",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X877",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X878",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X879",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
             "AXL-H901",
             include_str!("../../../examples/invalid/http-routes.axl"),
         ),
@@ -292,6 +308,16 @@ fn documented_cashflow_core_executes() {
     let amounts =
         axl_compiler::next::runtime::evaluate_flow(&graph, "IncomeAmounts", movements).unwrap();
     assert_eq!(amounts, serde_json::json!([125000]));
+
+    let movements = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-batch.json"
+    ))
+    .unwrap();
+    let ordered =
+        axl_compiler::next::runtime::evaluate_flow(&graph, "SortMovementsNewest", movements)
+            .unwrap();
+    assert_eq!(ordered[0]["id"], "movement-002");
+    assert_eq!(ordered[1]["id"], "movement-001");
 
     for flow in ["StoreAndLoadMovement", "StoreAndLoadMovementSqlite"] {
         let movement = serde_json::from_str(include_str!(

@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 
@@ -385,6 +386,43 @@ fn evaluate_flow_inner(
                 validate_value(graph, type_name, &filtered, "filter result")?;
                 values.insert(statement.name.clone(), filtered);
             }
+            "sort" => {
+                let type_name = statement.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no sort result type", statement.id))
+                })?;
+                let collection = evaluated_collection(statement, &values)?;
+                let item_name = metadata(statement, "item")?;
+                let key_expression = expression::parse(metadata(statement, "key")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let direction = metadata(statement, "direction")?;
+                let mut keyed = Vec::with_capacity(collection.len());
+                for (index, item) in collection.into_iter().enumerate() {
+                    let mut scope = values.clone();
+                    scope.insert(item_name.into(), item.clone());
+                    let key = expression::evaluate(&key_expression, &scope)
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                    keyed.push((key, index, item));
+                }
+                let mut comparison_error = None;
+                keyed.sort_by(|left, right| match compare_sort_keys(&left.0, &right.0) {
+                    Ok(ordering) => if direction == "desc" {
+                        ordering.reverse()
+                    } else {
+                        ordering
+                    }
+                    .then_with(|| left.1.cmp(&right.1)),
+                    Err(error) => {
+                        comparison_error = Some(error);
+                        Ordering::Equal
+                    }
+                });
+                if let Some(error) = comparison_error {
+                    return Err(RuntimeError(format!("{}: {error}", statement.id)));
+                }
+                let sorted = Value::Array(keyed.into_iter().map(|(_, _, item)| item).collect());
+                validate_value(graph, type_name, &sorted, "sort result")?;
+                values.insert(statement.name.clone(), sorted);
+            }
             "return" => {
                 let expression = statement_expression(statement)?;
                 let value = expression::evaluate(&expression, &values)
@@ -433,6 +471,17 @@ fn evaluated_collection(
                 statement.id
             ))
         })
+}
+
+fn compare_sort_keys(left: &Value, right: &Value) -> Result<Ordering, String> {
+    match (left, right) {
+        (Value::Number(left), Value::Number(right)) => left
+            .as_f64()
+            .and_then(|left| right.as_f64().and_then(|right| left.partial_cmp(&right)))
+            .ok_or_else(|| "sort keys contain a non-finite number".into()),
+        (Value::String(left), Value::String(right)) => Ok(left.cmp(right)),
+        _ => Err("sort keys must have one ordered scalar type".into()),
+    }
 }
 
 fn memory_store_call(
@@ -665,6 +714,7 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
                     | "match"
                     | "map"
                     | "filter"
+                    | "sort"
                     | "return"
             )
         })

@@ -64,11 +64,13 @@
         "flow",
         "subject",
         "cases",
-        "predicate"
+        "predicate",
+        "key",
+        "direction"
       ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["let", "require", "call", "make", "fold", "run", "match", "map", "filter", "return"] },
+        "kind": { "enum": ["let", "require", "call", "make", "fold", "run", "match", "map", "filter", "sort", "return"] },
         "name": { "type": "string" },
         "expression": { "type": ["string", "null"] },
         "message": { "type": ["string", "null"] },
@@ -91,7 +93,9 @@
           "type": "array",
           "items": { "$ref": "#/$defs/case" }
         },
-        "predicate": { "type": ["string", "null"] }
+        "predicate": { "type": ["string", "null"] },
+        "key": { "type": ["string", "null"] },
+        "direction": { "type": ["string", "null"] }
       }
     },
     "field": {
