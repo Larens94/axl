@@ -66,6 +66,8 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             if !body.is_empty() {
                 diagnostics.push(unexpected_body(line, "app header"));
             }
+        } else if line.text.starts_with("enum ") {
+            parse_enum(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("entity ") {
             parse_entity(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("capacity ") {
@@ -76,6 +78,8 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             parse_blueprint(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("instance ") {
             parse_instance(line, body, &mut declarations, &mut diagnostics);
+        } else if line.text.starts_with("flow ") {
+            parse_flow(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("agent ") {
             parse_agent(line, body, &mut declarations, &mut diagnostics);
         } else {
@@ -127,6 +131,46 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
     } else {
         Err(diagnostics)
     }
+}
+
+fn parse_enum(
+    header: &SourceLine,
+    body: &[SourceLine],
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let name = header.text["enum ".len()..].trim();
+    if name.is_empty() {
+        diagnostics.push(missing_name(header, "enum"));
+        return;
+    }
+    let variants = body
+        .iter()
+        .filter_map(|line| {
+            if line.text.split_whitespace().count() == 1 {
+                Some(EnumVariant {
+                    name: line.text.clone(),
+                    span: span(line),
+                })
+            } else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P710",
+                        "parse",
+                        "an enum variant is a single name",
+                        span(line),
+                    )
+                    .expected("variant_name", &line.text),
+                );
+                None
+            }
+        })
+        .collect();
+    declarations.push(Declaration::Enum(Enum {
+        name: name.to_string(),
+        variants,
+        span: span(header),
+    }));
 }
 
 fn source_lines(source: &str, diagnostics: &mut Vec<Diagnostic>) -> Vec<SourceLine> {
@@ -584,6 +628,470 @@ fn parse_instance(
         }
     }
     declarations.push(Declaration::Instance(instance));
+}
+
+fn parse_flow(
+    header: &SourceLine,
+    body: &[SourceLine],
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let value = header.text["flow ".len()..].trim();
+    let Some((left, output)) = value.split_once("->") else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P810",
+                "parse",
+                "a flow requires an input and output type",
+                span(header),
+            )
+            .expected("flow Name Input -> Output", &header.text),
+        );
+        return;
+    };
+    let mut left = left.split_whitespace();
+    let (Some(name), Some(input), None) = (left.next(), left.next(), left.next()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P811",
+                "parse",
+                "a flow header requires a name and one input type",
+                span(header),
+            )
+            .expected("flow Name Input -> Output", &header.text),
+        );
+        return;
+    };
+    let mut dependencies = Vec::new();
+    let mut bindings = Vec::new();
+    let mut statements = Vec::new();
+    let statement_indent = body.iter().map(|line| line.indent).min().unwrap_or(0);
+    for (line_index, line) in body.iter().enumerate() {
+        if line.indent > statement_indent {
+            continue;
+        }
+        if let Some(value) = line.text.strip_prefix("in ") {
+            let Some((name, capacity_and_default)) = value.split_once(':') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P816",
+                        "parse",
+                        "a flow dependency requires a name and capacity",
+                        span(line),
+                    )
+                    .expected("in name: Capacity = Provider", &line.text),
+                );
+                continue;
+            };
+            let (capacity, default) = match capacity_and_default.split_once('=') {
+                Some((capacity, provider)) => (
+                    capacity.trim().to_string(),
+                    Some(provider.trim().to_string()),
+                ),
+                None => (capacity_and_default.trim().to_string(), None),
+            };
+            dependencies.push(FlowDependency {
+                name: name.trim().to_string(),
+                capacity,
+                default,
+                span: span(line),
+            });
+        } else if let Some(value) = line.text.strip_prefix("use ") {
+            let Some((dependency, provider)) = value.split_once('=') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P817",
+                        "parse",
+                        "a flow binding connects a dependency to a provider",
+                        span(line),
+                    )
+                    .expected("use dependency = Provider", &line.text),
+                );
+                continue;
+            };
+            bindings.push(Binding {
+                port: dependency.trim().to_string(),
+                provider: provider.trim().to_string(),
+                span: span(line),
+            });
+        } else if let Some(value) = line.text.strip_prefix("let ") {
+            let Some((name, expression)) = value.split_once('=') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P812",
+                        "parse",
+                        "a let statement binds an expression",
+                        span(line),
+                    )
+                    .expected("let name = expression", &line.text),
+                );
+                continue;
+            };
+            statements.push(FlowStatement::Let {
+                name: name.trim().to_string(),
+                expression: expression.trim().to_string(),
+                span: span(line),
+            });
+        } else if let Some(value) = line.text.strip_prefix("require ") {
+            let Some((expression, message)) = value.rsplit_once(" else ") else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P813",
+                        "parse",
+                        "a require statement needs an error message",
+                        span(line),
+                    )
+                    .expected("require expression else \"message\"", &line.text),
+                );
+                continue;
+            };
+            match serde_json::from_str::<String>(message.trim()) {
+                Ok(message) => statements.push(FlowStatement::Require {
+                    expression: expression.trim().to_string(),
+                    message,
+                    span: span(line),
+                }),
+                Err(_) => diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P814",
+                        "parse",
+                        "a require error message must be a JSON string",
+                        span(line),
+                    )
+                    .expected("\"message\"", message.trim()),
+                ),
+            }
+        } else if let Some(value) = line.text.strip_prefix("call ") {
+            parse_flow_call(value, line, &mut statements, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("run ") {
+            parse_flow_run(value, line, &mut statements, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("make ") {
+            let Some((name, type_name)) = value.split_once(':') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P823",
+                        "parse",
+                        "a record constructor requires a variable and entity type",
+                        span(line),
+                    )
+                    .expected("make name: Entity", &line.text),
+                );
+                continue;
+            };
+            let mut fields = Vec::new();
+            for field_line in body
+                .iter()
+                .skip(line_index + 1)
+                .take_while(|candidate| candidate.indent > line.indent)
+            {
+                let Some((field, expression)) = field_line.text.split_once('=') else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-P824",
+                            "parse",
+                            "a constructed field binds an expression",
+                            span(field_line),
+                        )
+                        .expected("field = expression", &field_line.text),
+                    );
+                    continue;
+                };
+                fields.push(RecordFieldValue {
+                    name: field.trim().to_string(),
+                    expression: expression.trim().to_string(),
+                    span: span(field_line),
+                });
+            }
+            statements.push(FlowStatement::Make {
+                name: name.trim().to_string(),
+                type_name: type_name.trim().to_string(),
+                fields,
+                span: span(line),
+            });
+        } else if let Some(value) = line.text.strip_prefix("fold ") {
+            let parsed = value
+                .split_once('=')
+                .and_then(|(name_and_type, remainder)| {
+                    let (name, type_name) = name_and_type.split_once(':')?;
+                    let (collection, initial_and_item) = remainder.split_once(" from ")?;
+                    let (initial, item) = initial_and_item.rsplit_once(" as ")?;
+                    Some((name, type_name, collection, initial, item))
+                });
+            let Some((name, type_name, collection, initial, item)) = parsed else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P825",
+                        "parse",
+                        "a fold requires a result type, collection, initial value and item",
+                        span(line),
+                    )
+                    .expected(
+                        "fold name: Type = collection from initial as item",
+                        &line.text,
+                    ),
+                );
+                continue;
+            };
+            let nested = body
+                .iter()
+                .skip(line_index + 1)
+                .take_while(|candidate| candidate.indent > line.indent)
+                .collect::<Vec<_>>();
+            let Some(next_line) = nested.first() else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P826",
+                        "parse",
+                        "a fold requires a next expression",
+                        span(line),
+                    )
+                    .expected("next = expression", "missing"),
+                );
+                continue;
+            };
+            let Some((keyword, expression)) = next_line.text.split_once('=') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P826",
+                        "parse",
+                        "a fold requires a next expression",
+                        span(next_line),
+                    )
+                    .expected("next = expression", &next_line.text),
+                );
+                continue;
+            };
+            if keyword.trim() != "next" {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P826",
+                        "parse",
+                        "a fold body begins with 'next ='",
+                        span(next_line),
+                    )
+                    .expected("next = expression", &next_line.text),
+                );
+                continue;
+            }
+            let mut update = expression.trim().to_string();
+            for continuation in nested.iter().skip(1) {
+                update.push(' ');
+                update.push_str(continuation.text.trim());
+            }
+            statements.push(FlowStatement::Fold {
+                name: name.trim().to_string(),
+                type_name: type_name.trim().to_string(),
+                collection: collection.trim().to_string(),
+                initial: initial.trim().to_string(),
+                item: item.trim().to_string(),
+                update,
+                span: span(line),
+            });
+        } else if let Some(value) = line.text.strip_prefix("match ") {
+            let parsed = value.split_once('=').and_then(|(name_and_type, subject)| {
+                let (name, type_name) = name_and_type.split_once(':')?;
+                Some((name.trim(), type_name.trim(), subject.trim()))
+            });
+            let Some((name, type_name, subject)) = parsed else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P828",
+                        "parse",
+                        "a match requires a result type and subject",
+                        span(line),
+                    )
+                    .expected("match name: Type = expression", &line.text),
+                );
+                continue;
+            };
+            let mut cases = Vec::new();
+            for case_line in body
+                .iter()
+                .skip(line_index + 1)
+                .take_while(|candidate| candidate.indent > line.indent)
+            {
+                let Some((variant, expression)) = case_line.text.split_once("=>") else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-P829",
+                            "parse",
+                            "a match case maps a variant to an expression",
+                            span(case_line),
+                        )
+                        .expected("variant => expression", &case_line.text),
+                    );
+                    continue;
+                };
+                cases.push(MatchCase {
+                    variant: variant.trim().to_string(),
+                    expression: expression.trim().to_string(),
+                    span: span(case_line),
+                });
+            }
+            statements.push(FlowStatement::Match {
+                name: name.into(),
+                type_name: type_name.into(),
+                subject: subject.into(),
+                cases,
+                span: span(line),
+            });
+        } else if let Some(expression) = line.text.strip_prefix("return ") {
+            statements.push(FlowStatement::Return {
+                expression: expression.trim().to_string(),
+                span: span(line),
+            });
+        } else {
+            diagnostics.push(Diagnostic::error(
+                "AXL-P815",
+                "parse",
+                format!("unknown flow statement '{}'", line.text),
+                span(line),
+            ));
+        }
+    }
+    declarations.push(Declaration::Flow(Flow {
+        name: name.to_string(),
+        input: input.to_string(),
+        output: output.trim().to_string(),
+        dependencies,
+        bindings,
+        statements,
+        span: span(header),
+    }));
+}
+
+fn parse_flow_call(
+    value: &str,
+    line: &SourceLine,
+    statements: &mut Vec<FlowStatement>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some((name, invocation)) = value.split_once('=') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P818",
+                "parse",
+                "a call binds a provider operation result",
+                span(line),
+            )
+            .expected("call name = dependency.operation(argument)?", &line.text),
+        );
+        return;
+    };
+    let invocation = invocation.trim();
+    let (invocation, propagate) = match invocation.strip_suffix('?') {
+        Some(value) => (value.trim(), true),
+        None => (invocation, false),
+    };
+    let Some((target, argument)) = invocation.split_once('(') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P819",
+                "parse",
+                "a call requires a target and parenthesized argument",
+                span(line),
+            )
+            .expected("dependency.operation(argument)", invocation),
+        );
+        return;
+    };
+    let Some(argument) = argument.strip_suffix(')') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P819",
+                "parse",
+                "a call requires a closing ')'",
+                span(line),
+            )
+            .expected("dependency.operation(argument)", invocation),
+        );
+        return;
+    };
+    let Some((dependency, operation)) = target.trim().split_once('.') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P819",
+                "parse",
+                "a call target names a dependency and operation",
+                span(line),
+            )
+            .expected("dependency.operation(argument)", invocation),
+        );
+        return;
+    };
+    if name.trim().is_empty()
+        || dependency.trim().is_empty()
+        || operation.trim().is_empty()
+        || argument.trim().is_empty()
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P819",
+                "parse",
+                "a call requires a result, dependency, operation and argument",
+                span(line),
+            )
+            .expected("call name = dependency.operation(argument)?", &line.text),
+        );
+        return;
+    }
+    statements.push(FlowStatement::Call {
+        name: name.trim().to_string(),
+        dependency: dependency.trim().to_string(),
+        operation: operation.trim().to_string(),
+        argument: argument.trim().to_string(),
+        propagate,
+        span: span(line),
+    });
+}
+
+fn parse_flow_run(
+    value: &str,
+    line: &SourceLine,
+    statements: &mut Vec<FlowStatement>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let parsed = value.split_once('=').and_then(|(name, invocation)| {
+        let invocation = invocation.trim();
+        let (invocation, propagate) = match invocation.strip_suffix('?') {
+            Some(value) => (value.trim(), true),
+            None => (invocation, false),
+        };
+        let (flow, argument) = invocation.split_once('(')?;
+        let argument = argument.strip_suffix(')')?;
+        Some((name.trim(), flow.trim(), argument.trim(), propagate))
+    });
+    let Some((name, flow, argument, propagate)) = parsed else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P827",
+                "parse",
+                "a run binds another flow result",
+                span(line),
+            )
+            .expected("run name = Flow(argument)?", &line.text),
+        );
+        return;
+    };
+    if name.is_empty() || flow.is_empty() || argument.is_empty() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P827",
+                "parse",
+                "a run requires a result, flow and argument",
+                span(line),
+            )
+            .expected("run name = Flow(argument)?", &line.text),
+        );
+        return;
+    }
+    statements.push(FlowStatement::Run {
+        name: name.into(),
+        flow: flow.into(),
+        argument: argument.into(),
+        propagate,
+        span: span(line),
+    });
 }
 
 fn parse_agent(

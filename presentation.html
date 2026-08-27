@@ -221,6 +221,8 @@ instance CompactCustomerList of CustomerList
           <div class="check"><i>✓</i><span>Compatibilità tra porta e provider.</span></div>
           <div class="check"><i>✓</i><span>Porte obbligatorie non collegate, con candidati di riparazione.</span></div>
           <div class="check"><i>✓</i><span>Blueprint chiusi rifiutati con diagnostica AXL-O401.</span></div>
+          <div class="check"><i>✓</i><span>Flow con record, if, fold, run, call e propagazione Result.</span></div>
+          <div class="check"><i>✓</i><span>Capacity call verificate contro porta, operazione e argomento.</span></div>
           <div class="check"><i>✓</i><span>Round-trip deterministico tra Graph IR e Packed IR.</span></div>
           <div class="check no"><i>×</i><span>Non verifica ancora l'ABI della funzione Rust o del componente React.</span></div>
         </div>
@@ -230,13 +232,14 @@ instance CompactCustomerList of CustomerList
     <section class="slide" data-title="Output">
       <div class="content">
         <div class="eyebrow">Output reale dell'esperimento</div>
-        <h2>Contratti per quattro mondi.</h2>
+        <h2>Contratti e un primo runtime.</h2>
         <div class="grid">
           <article class="card"><h3>Rust</h3><p>Strutture dati e trait delle capacity.</p></article>
           <article class="card"><h3>React</h3><p>Registry dei riferimenti slot.</p></article>
           <article class="card"><h3>SQL</h3><p>DDL iniziale delle entità.</p></article>
           <article class="card"><h3>Agenti</h3><p>Manifest di belief, goal e plan.</p></article>
           <article class="card"><h3>Open blocks</h3><p>Manifest delle superfici personalizzabili.</p></article>
+          <article class="card"><h3>Flow Runtime 2</h3><p>Valida input e chiama provider tipizzati.</p></article>
           <article class="card"><h3>Graph IR</h3><p>JSON esplicito e canonico.</p></article>
           <article class="card"><h3>Packed IR</h3><p>Frame opcode reversibili.</p></article>
         </div>
@@ -248,10 +251,10 @@ instance CompactCustomerList of CustomerList
         <div class="eyebrow">Confine onesto</div>
         <h2>È un linguaggio sperimentale funzionante. Non ancora un generatore full-stack.</h2>
         <div class="grid two">
-          <article class="card"><h3 class="accent">Funziona oggi</h3><p>Protocollo aperto, parametri, stato, eventi, azioni, errori, policy, Graph IR, diagnostica e adapter.</p></article>
-          <article class="card"><h3 class="violet">Prossimo gate</h3><p>Package AXL e poi una vertical slice Rust, SQL e React eseguibile.</p></article>
+          <article class="card"><h3 class="accent">Funziona oggi</h3><p>I flow costruiscono record, aggregano liste, compongono altri flow e chiamano provider sostituibili.</p></article>
+          <article class="card"><h3 class="violet">Prossimo gate</h3><p>Map/filter e async; poi storage durevole e HTTP.</p></article>
         </div>
-        <div class="callout">`if`, `else`, cicli, esecuzione dei contratti e runtime degli agenti non sono ancora sintassi o comportamento AXL implementati.</div>
+        <div class="callout">SQLite è reale ma oggi vive in memoria per una singola eval. Persistenza durevole, HTTP, UI runtime e agent runtime restano gate successivi.</div>
       </div>
     </section>
 
@@ -261,10 +264,10 @@ instance CompactCustomerList of CustomerList
         <h2>Gli esempi della presentazione sono test del compilatore.</h2>
         <div class="grid">
           <article class="card"><div class="metric">14</div><div class="metric-label">foundation block aperti</div></article>
-          <article class="card"><div class="metric">8</div><div class="metric-label">programmi validi nel round-trip</div></article>
-          <article class="card"><div class="metric">5</div><div class="metric-label">diagnostiche negative verificate</div></article>
+          <article class="card"><div class="metric">9</div><div class="metric-label">programmi validi nel round-trip</div></article>
+          <article class="card"><div class="metric">33</div><div class="metric-label">diagnostiche negative verificate</div></article>
         </div>
-        <p class="lead">Apri <a href="docs/index.html">docs/index.html</a> oppure esegui <code>cargo test --workspace</code>.</p>
+        <p class="lead">Apri <a href="docs/index.html">docs/index.html</a>, prova <a href="examples/apps/cashflow-core.axl">cashflow-core.axl</a> oppure esegui <code>cargo test --workspace</code>.</p>
       </div>
     </section>
   </main>

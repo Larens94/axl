@@ -10,7 +10,9 @@ fn main() -> Result<()> {
     }
 
     match args[1].as_str() {
-        "check" | "ir" | "pack" | "fmt" | "blocks" | "experiment" | "unpack" => run(&args[1..]),
+        "check" | "ir" | "pack" | "fmt" | "blocks" | "eval" | "experiment" | "unpack" => {
+            run(&args[1..])
+        }
         _ => {
             usage();
             bail!("invalid command")
@@ -81,6 +83,20 @@ fn run(args: &[String]) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&next::targets::open_block_manifest(&compilation.graph))?
         ),
+        "eval" => {
+            let flow = args
+                .get(2)
+                .ok_or_else(|| anyhow::anyhow!("eval requires a flow name"))?;
+            let input_path = args
+                .get(3)
+                .ok_or_else(|| anyhow::anyhow!("eval requires a JSON input file"))?;
+            let input = std::fs::read_to_string(input_path)
+                .with_context(|| format!("cannot read eval input '{input_path}'"))?;
+            let input: serde_json::Value = serde_json::from_str(&input)
+                .with_context(|| format!("invalid JSON input '{input_path}'"))?;
+            let result = next::runtime::evaluate_flow(&compilation.graph, flow, input)?;
+            println!("{}", serde_json::to_string_pretty(&result)?);
+        }
         "experiment" => {
             let Some(output) = args.get(2) else {
                 bail!("experiment requires an output directory")
@@ -103,6 +119,6 @@ fn run(args: &[String]) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "Usage:\n  axl-compiler check <input.axl> [--json]\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>"
+        "Usage:\n  axl-compiler check <input.axl> [--json]\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler eval <input.axl> <flow> <input.json>\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>"
     );
 }

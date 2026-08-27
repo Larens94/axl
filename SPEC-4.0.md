@@ -47,6 +47,17 @@ Implemented field qualifiers:
 key required optional unique index private readonly
 ```
 
+### Enum
+
+```axl
+enum MovementKind
+  income
+  expense
+```
+
+Enum variants are closed, unique typed values. In expressions they are
+referenced as `MovementKind.income`.
+
 ### Capacity
 
 A capacity describes what can be done without selecting an implementation.
@@ -176,6 +187,95 @@ agent SalesAssistant
 An agent requires at least one goal and one plan. Beliefs, goals and plans become
 explicit graph nodes. Execution semantics are planned.
 
+### Flow
+
+A flow is the first executable AXL behavior. It has one typed input, one typed
+output and an immutable, ordered body:
+
+```axl
+flow CalculateBalance BalanceInput -> money
+  let balance = input.income - input.expense
+  return balance
+```
+
+`Result<T>` flows can stop with a typed validation error:
+
+```axl
+flow ValidateMovement Movement -> Result<Movement>
+  let positive = input.amount > 0
+  require positive else "amount_must_be_positive"
+  return input
+```
+
+A flow can expose an open capacity dependency and invoke its bound provider:
+
+```axl
+flow StoreAndLoadMovement Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call saved = store.save(input)?
+  call loaded = store.find(saved.id)?
+  return loaded
+```
+
+`in` declares the required capacity. A compatible default provider may follow
+`=`, or `use store = Provider` can bind it separately. `call` is checked against
+the selected capacity operation. `?` is required for `Result<T>` operations and
+propagates provider failure through a `Result<T>` flow.
+
+AXL constructs typed records without a single long expression:
+
+```axl
+make view: MovementView
+  id = input.id
+  direction = if input.kind == MovementKind.income then "Entrata" else "Uscita"
+  signed_amount = if input.kind == MovementKind.income then input.amount else -input.amount
+```
+
+The compiler rejects unknown, duplicate, missing required and incorrectly typed
+fields. Implemented statements are `let`, `make`, `require ... else`, `call`
+and `return`. Values are immutable. Expressions support paths, enum variants,
+`if ... then ... else ...`, parentheses, `!`, unary `-`, `*`, `/`, `+`, `-`,
+comparisons, equality, `&&` and `||`, with normal operator precedence. The
+compiler checks every expression, call argument and return type.
+
+The public Rust `ProviderRuntime` ABI receives provider, capacity,
+implementation, operation and JSON input. The built-in experiment implements
+generic `save`, `find`, `delete` and `list` operations for
+`rust::axl::store::memory` and `rust::axl::store::sqlite`. They are not tied to
+`Movement` or to the cashflow application. The CLI currently constructs a new
+runtime for each `eval`; its SQLite connection is therefore in-memory and not
+durable across CLI processes.
+
+Flows compose other flows with the same explicit `Result` propagation:
+
+```axl
+run valid = ValidateMovement(input)?
+```
+
+`fold` is the first collection loop. It keeps the accumulator immutable and
+types both the initial and next value:
+
+```axl
+fold balance: money = input.movements from 0 as movement
+  next = if movement.kind == MovementKind.income
+    then value + movement.amount
+    else value - movement.amount
+```
+
+Inside `next`, `value` is the current accumulator and the name after `as` is the
+current collection item. The source must be `List<T>` or `Set<T>`.
+
+Enum decisions can be exhaustive:
+
+```axl
+match signed: money = input.kind
+  income => input.amount
+  expense => -input.amount
+```
+
+`match` requires an enum subject and exactly one compatible case for every
+variant. Missing, duplicate and unknown variants are compiler errors.
+
 ## 3. Type system
 
 Implemented built-ins:
@@ -185,7 +285,7 @@ unit bool int float text string email uuid datetime money bytes duration
 Result Option List Set Map Stream Future UI CrudApi
 ```
 
-Declared entities and capacities are also valid types. Generic references are
+Declared entities, enums and capacities are also valid types. Generic references are
 checked recursively, so `Result<Unknown>` is rejected.
 
 ## 4. Ports and repair diagnostics
@@ -262,6 +362,7 @@ axl-compiler fmt <input.axl>
 axl-compiler blocks <input.axl>
 axl-compiler experiment <input.axl> <output-dir>
 axl-compiler unpack <packed.axl>
+axl-compiler eval <input.axl> <flow> <input.json>
 ```
 
 `experiment` writes:
@@ -277,12 +378,14 @@ targets/
   react/axl_slots.ts
   sql/schema.sql
   agents/agents.json
+  flows/flows.json
 ```
 
 The current target adapters generate Rust data/capacity contracts, a React slot
 registry, SQL entity DDL, an agent manifest and an `axl-open-block/2` manifest
-that lists every blueprint surface. They deliberately stop before claiming to
-generate a complete production application.
+that lists every blueprint surface. `flows/flows.json` exposes the ordered,
+typed executable bodies and dependencies using protocol `axl-flow/2`. They deliberately stop
+before claiming to generate a complete production application.
 
 ## 8. Design sources adopted
 
@@ -299,11 +402,13 @@ generate a complete production application.
 ## 9. Explicitly not implemented yet
 
 - contract expression type checking;
-- function bodies and general control flow;
+- branch statement blocks and mutable variables;
+- collection literals, `map`, `filter`, grouping and sorting;
 - `parallel`, `race`, retry and timeout execution;
 - executable Rust handlers and React components from Graph IR;
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
+- durable provider configuration and database paths;
 - blueprint package registry;
 - package imports and cross-package blueprint overlays;
 - runtime behavior for state, events, actions, errors and policies;
@@ -313,7 +418,9 @@ generate a complete production application.
 - stable backward compatibility.
 
 These are later gates. The current experiment validates the source language,
-open-port type model, agent diagnostics and deterministic IR pipeline.
+open-port type model, agent diagnostics and deterministic IR pipeline. Flow
+Runtime 2 executes expressions and capacity calls through a replaceable runtime
+ABI. It does not yet provide durable persistence, HTTP or UI behavior.
 
 ## 10. Verified examples and guides
 
@@ -324,8 +431,10 @@ open-port type model, agent diagnostics and deterministic IR pipeline.
 - `examples/blocks/05-open-dataview.axl` — all implemented open-block surfaces.
 - `examples/blocks/06-instance-override.axl` — typed parameter and provider overrides.
 - `examples/catalog/software-foundation.axl` — fourteen primary open block contracts.
+- `examples/apps/cashflow-core.axl` — executable validation and balance flows.
 - `examples/next/crm.axl` — composed CRM graph.
 - `docs/blocks.md` — construction guide and current limitations.
+- `docs/executable-flows.md` — executable syntax, commands and current boundary.
 - `docs/status.md` — concise implemented/planned matrix.
 
 The Rust integration test `documented_examples.rs` compiles every example and

@@ -1,0 +1,114 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://axl-lang.dev/schema/axl-flow-2.schema.json",
+  "title": "AXL Executable Flow Manifest 2",
+  "type": "object",
+  "required": ["schema", "app", "runtime", "flows"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "ax-ir/4.0" },
+    "app": { "type": "string", "minLength": 1 },
+    "runtime": { "const": "axl-flow/2" },
+    "flows": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/flow" }
+    }
+  },
+  "$defs": {
+    "flow": {
+      "type": "object",
+      "required": ["name", "input", "output", "dependencies", "statements"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "input": { "type": "string", "minLength": 1 },
+        "output": { "type": "string", "minLength": 1 },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/dependency" }
+        },
+        "statements": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/statement" },
+          "minItems": 1
+        }
+      }
+    },
+    "dependency": {
+      "type": "object",
+      "required": ["name", "capacity", "provider"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "capacity": { "type": "string", "minLength": 1 },
+        "provider": { "type": "string", "minLength": 1 }
+      }
+    },
+    "statement": {
+      "type": "object",
+      "required": [
+        "kind",
+        "name",
+        "expression",
+        "message",
+        "dependency",
+        "operation",
+        "argument",
+        "propagate",
+        "record_type",
+        "fields",
+        "collection",
+        "initial",
+        "item",
+        "update",
+        "flow",
+        "subject",
+        "cases"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "enum": ["let", "require", "call", "make", "fold", "run", "match", "return"] },
+        "name": { "type": "string" },
+        "expression": { "type": ["string", "null"] },
+        "message": { "type": ["string", "null"] },
+        "dependency": { "type": ["string", "null"] },
+        "operation": { "type": ["string", "null"] },
+        "argument": { "type": ["string", "null"] },
+        "propagate": { "type": ["boolean", "null"] },
+        "record_type": { "type": ["string", "null"] },
+        "fields": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/field" }
+        },
+        "collection": { "type": ["string", "null"] },
+        "initial": { "type": ["string", "null"] },
+        "item": { "type": ["string", "null"] },
+        "update": { "type": ["string", "null"] },
+        "flow": { "type": ["string", "null"] },
+        "subject": { "type": ["string", "null"] },
+        "cases": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/case" }
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "required": ["name", "expression"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "expression": { "type": "string", "minLength": 1 }
+      }
+    },
+    "case": {
+      "type": "object",
+      "required": ["variant", "expression"],
+      "additionalProperties": false,
+      "properties": {
+        "variant": { "type": "string", "minLength": 1 },
+        "expression": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

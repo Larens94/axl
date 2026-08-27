@@ -12,36 +12,55 @@ pub struct Program {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Declaration {
+    Enum(Enum),
     Entity(Entity),
     Capacity(Capacity),
     Skill(Skill),
     Blueprint(Blueprint),
     Instance(Instance),
+    Flow(Flow),
     Agent(Agent),
 }
 
 impl Declaration {
     pub fn name(&self) -> &str {
         match self {
+            Self::Enum(value) => &value.name,
             Self::Entity(value) => &value.name,
             Self::Capacity(value) => &value.name,
             Self::Skill(value) => &value.name,
             Self::Blueprint(value) => &value.name,
             Self::Instance(value) => &value.name,
+            Self::Flow(value) => &value.name,
             Self::Agent(value) => &value.name,
         }
     }
 
     pub fn span(&self) -> &SourceSpan {
         match self {
+            Self::Enum(value) => &value.span,
             Self::Entity(value) => &value.span,
             Self::Capacity(value) => &value.span,
             Self::Skill(value) => &value.span,
             Self::Blueprint(value) => &value.span,
             Self::Instance(value) => &value.span,
+            Self::Flow(value) => &value.span,
             Self::Agent(value) => &value.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Enum {
+    pub name: String,
+    pub variants: Vec<EnumVariant>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EnumVariant {
+    pub name: String,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -192,6 +211,110 @@ pub struct Instance {
 pub struct Setting {
     pub parameter: String,
     pub value: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Flow {
+    pub name: String,
+    pub input: String,
+    pub output: String,
+    pub dependencies: Vec<FlowDependency>,
+    pub bindings: Vec<Binding>,
+    pub statements: Vec<FlowStatement>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlowDependency {
+    pub name: String,
+    pub capacity: String,
+    pub default: Option<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FlowStatement {
+    Let {
+        name: String,
+        expression: String,
+        span: SourceSpan,
+    },
+    Require {
+        expression: String,
+        message: String,
+        span: SourceSpan,
+    },
+    Call {
+        name: String,
+        dependency: String,
+        operation: String,
+        argument: String,
+        propagate: bool,
+        span: SourceSpan,
+    },
+    Make {
+        name: String,
+        type_name: String,
+        fields: Vec<RecordFieldValue>,
+        span: SourceSpan,
+    },
+    Fold {
+        name: String,
+        type_name: String,
+        collection: String,
+        initial: String,
+        item: String,
+        update: String,
+        span: SourceSpan,
+    },
+    Run {
+        name: String,
+        flow: String,
+        argument: String,
+        propagate: bool,
+        span: SourceSpan,
+    },
+    Match {
+        name: String,
+        type_name: String,
+        subject: String,
+        cases: Vec<MatchCase>,
+        span: SourceSpan,
+    },
+    Return {
+        expression: String,
+        span: SourceSpan,
+    },
+}
+
+impl FlowStatement {
+    pub fn span(&self) -> &SourceSpan {
+        match self {
+            Self::Let { span, .. }
+            | Self::Require { span, .. }
+            | Self::Call { span, .. }
+            | Self::Make { span, .. }
+            | Self::Fold { span, .. }
+            | Self::Run { span, .. }
+            | Self::Match { span, .. }
+            | Self::Return { span, .. } => span,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RecordFieldValue {
+    pub name: String,
+    pub expression: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MatchCase {
+    pub variant: String,
+    pub expression: String,
     pub span: SourceSpan,
 }
 

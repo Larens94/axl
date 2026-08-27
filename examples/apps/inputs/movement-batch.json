@@ -1,0 +1,18 @@
+{
+  "movements": [
+    {
+      "id": "movement-001",
+      "kind": "income",
+      "amount": 125000,
+      "category": "consulting",
+      "occurred_at": "2026-08-27T10:00:00Z"
+    },
+    {
+      "id": "movement-002",
+      "kind": "expense",
+      "amount": 45000,
+      "category": "software",
+      "occurred_at": "2026-08-27T11:00:00Z"
+    }
+  ]
+}

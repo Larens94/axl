@@ -307,18 +307,40 @@ fn reconstruct_id(
     match parent {
         None if matches!(
             kind,
-            "app" | "entity" | "capacity" | "skill" | "blueprint" | "instance" | "agent"
+            "app"
+                | "enum"
+                | "entity"
+                | "capacity"
+                | "skill"
+                | "blueprint"
+                | "instance"
+                | "flow"
+                | "agent"
         ) =>
         {
             Ok(format!("{kind}.{name}"))
         }
         Some(parent) if kind == "operation" => Ok(format!("{parent}.op.{name}")),
+        Some(parent) if kind == "variant" => Ok(format!("{parent}.variant.{name}")),
         Some(parent) if matches!(kind, "belief" | "goal" | "plan") => {
             let order = metadata.get("order").ok_or_else(|| {
                 PackedError(format!("{kind} node '{name}' is missing order metadata"))
             })?;
             Ok(format!("{parent}.{kind}.{order}"))
         }
+        Some(parent)
+            if matches!(
+                kind,
+                "let" | "require" | "call" | "make" | "fold" | "run" | "match" | "return"
+            ) =>
+        {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("{kind} node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.{kind}.{order}"))
+        }
+        Some(parent) if kind == "assign" => Ok(format!("{parent}.assign.{name}")),
+        Some(parent) if kind == "case" => Ok(format!("{parent}.case.{name}")),
         Some(parent)
             if matches!(
                 kind,
@@ -372,6 +394,19 @@ fn node_kind_code(kind: &str) -> &str {
         "instance" => "21",
         "setting" => "22",
         "override" => "23",
+        "enum" => "24",
+        "variant" => "25",
+        "flow" => "26",
+        "let" => "27",
+        "require" => "28",
+        "return" => "29",
+        "call" => "30",
+        "make" => "31",
+        "assign" => "32",
+        "fold" => "33",
+        "run" => "34",
+        "match" => "35",
+        "case" => "36",
         other => other,
     }
 }
@@ -402,6 +437,19 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "21" => "instance",
         "22" => "setting",
         "23" => "override",
+        "24" => "enum",
+        "25" => "variant",
+        "26" => "flow",
+        "27" => "let",
+        "28" => "require",
+        "29" => "return",
+        "30" => "call",
+        "31" => "make",
+        "32" => "assign",
+        "33" => "fold",
+        "34" => "run",
+        "35" => "match",
+        "36" => "case",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

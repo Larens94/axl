@@ -1,10 +1,12 @@
 pub mod analyzer;
 pub mod ast;
 pub mod diagnostic;
+pub mod expression;
 pub mod formatter;
 pub mod ir;
 pub mod packed;
 pub mod parser;
+pub mod runtime;
 pub mod targets;
 
 use std::path::Path;

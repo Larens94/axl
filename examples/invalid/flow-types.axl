@@ -1,0 +1,10 @@
+// Expected diagnostics: AXL-X803 and AXL-X806.
+axl 4
+app InvalidFlows
+
+entity Input
+  amount: money required
+
+flow Invalid Input -> Result<Input>
+  require input.amount else "not_boolean"
+  return input.amount

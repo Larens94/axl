@@ -1,0 +1,713 @@
+use std::collections::BTreeMap;
+use std::fmt;
+
+use rusqlite::{Connection, params};
+use serde_json::{Map, Value, json};
+
+use super::expression;
+use super::ir::{GraphIr, GraphNode};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeError(pub String);
+
+impl fmt::Display for RuntimeError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for RuntimeError {}
+
+pub struct ProviderCall<'a> {
+    pub provider: &'a str,
+    pub capacity: &'a str,
+    pub implementation: &'a str,
+    pub operation: &'a str,
+    pub input: Value,
+}
+
+pub trait ProviderRuntime {
+    fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String>;
+}
+
+pub struct BuiltinRuntime {
+    memory: BTreeMap<String, BTreeMap<String, Value>>,
+    sqlite: Connection,
+}
+
+impl BuiltinRuntime {
+    pub fn new() -> Result<Self, RuntimeError> {
+        let sqlite = Connection::open_in_memory()
+            .map_err(|error| RuntimeError(format!("cannot initialize SQLite provider: {error}")))?;
+        sqlite
+            .execute_batch(
+                "CREATE TABLE axl_records (\
+                 provider TEXT NOT NULL, \
+                 record_id TEXT NOT NULL, \
+                 payload TEXT NOT NULL, \
+                 PRIMARY KEY (provider, record_id));",
+            )
+            .map_err(|error| RuntimeError(format!("cannot initialize SQLite schema: {error}")))?;
+        Ok(Self {
+            memory: BTreeMap::new(),
+            sqlite,
+        })
+    }
+}
+
+impl ProviderRuntime for BuiltinRuntime {
+    fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String> {
+        match call.implementation {
+            "rust::axl::store::memory" => memory_store_call(&mut self.memory, call),
+            "rust::axl::store::sqlite" => sqlite_store_call(&self.sqlite, call),
+            implementation => Err(format!(
+                "unsupported provider implementation '{implementation}'"
+            )),
+        }
+    }
+}
+
+pub fn evaluate_flow(
+    graph: &GraphIr,
+    flow_name: &str,
+    input: Value,
+) -> Result<Value, RuntimeError> {
+    let mut runtime = BuiltinRuntime::new()?;
+    evaluate_flow_with_runtime(graph, flow_name, input, &mut runtime)
+}
+
+pub fn evaluate_flow_with_runtime(
+    graph: &GraphIr,
+    flow_name: &str,
+    input: Value,
+    runtime: &mut dyn ProviderRuntime,
+) -> Result<Value, RuntimeError> {
+    evaluate_flow_inner(graph, flow_name, input, runtime, 0)
+}
+
+fn evaluate_flow_inner(
+    graph: &GraphIr,
+    flow_name: &str,
+    input: Value,
+    runtime: &mut dyn ProviderRuntime,
+    depth: usize,
+) -> Result<Value, RuntimeError> {
+    if depth >= 64 {
+        return Err(RuntimeError("flow call depth exceeds 64".into()));
+    }
+    let flow = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "flow" && node.name == flow_name)
+        .ok_or_else(|| RuntimeError(format!("unknown flow '{flow_name}'")))?;
+    let signature = flow
+        .type_name
+        .as_deref()
+        .and_then(|value| value.split_once("->"))
+        .ok_or_else(|| RuntimeError(format!("flow '{flow_name}' has no valid signature")))?;
+    validate_value(graph, signature.0, &input, "input")?;
+
+    let mut values = enum_values(graph);
+    values.insert("input".into(), input);
+    let statements = ordered_children(graph, &flow.id);
+    for statement in statements {
+        match statement.kind.as_str() {
+            "let" => {
+                let expression = statement_expression(statement)?;
+                let value = expression::evaluate(&expression, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                values.insert(statement.name.clone(), value);
+            }
+            "require" => {
+                let expression = statement_expression(statement)?;
+                let value = expression::evaluate(&expression, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let accepted = value.as_bool().ok_or_else(|| {
+                    RuntimeError(format!("{} did not evaluate to bool", statement.id))
+                })?;
+                if !accepted {
+                    return Ok(json!({
+                        "error": statement.metadata.get("message").cloned().unwrap_or_default()
+                    }));
+                }
+            }
+            "call" => {
+                let dependency_name = metadata(statement, "dependency")?;
+                let operation_name = metadata(statement, "operation")?;
+                let argument = metadata(statement, "argument")?;
+                let argument = expression::parse(argument)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let argument = expression::evaluate(&argument, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let dependency = children(graph, &flow.id, "input")
+                    .into_iter()
+                    .find(|node| node.name == dependency_name)
+                    .ok_or_else(|| {
+                        RuntimeError(format!(
+                            "{} references missing dependency '{dependency_name}'",
+                            statement.id
+                        ))
+                    })?;
+                let capacity_name = dependency.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no capacity type", dependency.id))
+                })?;
+                let provider_id = provider_for(graph, &dependency.id).ok_or_else(|| {
+                    RuntimeError(format!("{} has no bound provider", dependency.id))
+                })?;
+                let provider = graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == provider_id)
+                    .ok_or_else(|| RuntimeError(format!("missing provider '{provider_id}'")))?;
+                let implementation = provider.implementation.as_deref().ok_or_else(|| {
+                    RuntimeError(format!(
+                        "provider '{}' has no native binding",
+                        provider.name
+                    ))
+                })?;
+                let capacity = graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.kind == "capacity" && node.name == capacity_name)
+                    .ok_or_else(|| RuntimeError(format!("missing capacity '{capacity_name}'")))?;
+                let operation = children(graph, &capacity.id, "operation")
+                    .into_iter()
+                    .find(|node| node.name == operation_name)
+                    .ok_or_else(|| {
+                        RuntimeError(format!(
+                            "capacity '{capacity_name}' has no operation '{operation_name}'"
+                        ))
+                    })?;
+                let (operation_input, operation_output) = operation
+                    .type_name
+                    .as_deref()
+                    .and_then(|value| value.split_once("->"))
+                    .ok_or_else(|| {
+                        RuntimeError(format!("{} has no valid signature", operation.id))
+                    })?;
+                validate_value(graph, operation_input, &argument, "call argument")?;
+                let result = runtime.invoke(ProviderCall {
+                    provider: &provider.name,
+                    capacity: capacity_name,
+                    implementation,
+                    operation: operation_name,
+                    input: argument,
+                });
+                let propagate = metadata(statement, "propagate")? == "true";
+                match (result, generic(operation_output, "Result"), propagate) {
+                    (Ok(value), Some(inner), true) => {
+                        validate_value(graph, inner, &value, "provider result")?;
+                        values.insert(statement.name.clone(), value);
+                    }
+                    (Err(message), Some(_), true) => return Ok(json!({ "error": message })),
+                    (Ok(value), None, false) => {
+                        validate_value(graph, operation_output, &value, "provider result")?;
+                        values.insert(statement.name.clone(), value);
+                    }
+                    (Err(message), None, false) => {
+                        return Err(RuntimeError(format!(
+                            "provider '{}' failed: {message}",
+                            provider.name
+                        )));
+                    }
+                    _ => {
+                        return Err(RuntimeError(format!(
+                            "{} has inconsistent Result propagation metadata",
+                            statement.id
+                        )));
+                    }
+                }
+            }
+            "make" => {
+                let type_name = statement
+                    .type_name
+                    .as_deref()
+                    .ok_or_else(|| RuntimeError(format!("{} has no record type", statement.id)))?;
+                let mut object = Map::new();
+                for assignment in children(graph, &statement.id, "assign") {
+                    let expression = statement_expression(assignment)?;
+                    let value = expression::evaluate(&expression, &values)
+                        .map_err(|message| RuntimeError(format!("{}: {message}", assignment.id)))?;
+                    object.insert(assignment.name.clone(), value);
+                }
+                let value = Value::Object(object);
+                validate_value(graph, type_name, &value, "constructed record")?;
+                values.insert(statement.name.clone(), value);
+            }
+            "fold" => {
+                let type_name = statement
+                    .type_name
+                    .as_deref()
+                    .ok_or_else(|| RuntimeError(format!("{} has no fold type", statement.id)))?;
+                let collection = expression::parse(metadata(statement, "collection")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let collection = expression::evaluate(&collection, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let collection = collection.as_array().ok_or_else(|| {
+                    RuntimeError(format!(
+                        "{} source did not evaluate to a collection",
+                        statement.id
+                    ))
+                })?;
+                let initial = expression::parse(metadata(statement, "initial")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let mut accumulator = expression::evaluate(&initial, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                validate_value(graph, type_name, &accumulator, "fold initial value")?;
+                let item_name = metadata(statement, "item")?;
+                let update = expression::parse(metadata(statement, "update")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                for item in collection {
+                    let mut scope = values.clone();
+                    scope.insert("value".into(), accumulator);
+                    scope.insert(item_name.into(), item.clone());
+                    accumulator = expression::evaluate(&update, &scope)
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                    validate_value(graph, type_name, &accumulator, "fold next value")?;
+                }
+                values.insert(statement.name.clone(), accumulator);
+            }
+            "run" => {
+                let target_name = metadata(statement, "flow")?;
+                let argument = expression::parse(metadata(statement, "argument")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let argument = expression::evaluate(&argument, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let target = graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.kind == "flow" && node.name == target_name)
+                    .ok_or_else(|| RuntimeError(format!("unknown flow '{target_name}'")))?;
+                let target_output = target
+                    .type_name
+                    .as_deref()
+                    .and_then(|value| value.split_once("->"))
+                    .map(|(_, output)| output)
+                    .ok_or_else(|| {
+                        RuntimeError(format!("flow '{target_name}' has no signature"))
+                    })?;
+                let result = evaluate_flow_inner(graph, target_name, argument, runtime, depth + 1)?;
+                let propagate = metadata(statement, "propagate")? == "true";
+                match (generic(target_output, "Result"), propagate) {
+                    (Some(_), true) => {
+                        let object = result.as_object().ok_or_else(|| {
+                            RuntimeError(format!("flow '{target_name}' returned invalid Result"))
+                        })?;
+                        if let Some(value) = object.get("ok") {
+                            values.insert(statement.name.clone(), value.clone());
+                        } else if let Some(message) = object.get("error") {
+                            return Ok(json!({ "error": message }));
+                        } else {
+                            return Err(RuntimeError(format!(
+                                "flow '{target_name}' returned invalid Result"
+                            )));
+                        }
+                    }
+                    (None, false) => {
+                        values.insert(statement.name.clone(), result);
+                    }
+                    _ => {
+                        return Err(RuntimeError(format!(
+                            "{} has inconsistent flow propagation metadata",
+                            statement.id
+                        )));
+                    }
+                }
+            }
+            "match" => {
+                let type_name = statement.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no match result type", statement.id))
+                })?;
+                let subject = expression::parse(metadata(statement, "subject")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let subject = expression::evaluate(&subject, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let variant = subject.as_str().ok_or_else(|| {
+                    RuntimeError(format!("{} subject did not evaluate to enum", statement.id))
+                })?;
+                let case = children(graph, &statement.id, "case")
+                    .into_iter()
+                    .find(|case| case.name == variant)
+                    .ok_or_else(|| {
+                        RuntimeError(format!("{} has no case for '{variant}'", statement.id))
+                    })?;
+                let expression = statement_expression(case)?;
+                let value = expression::evaluate(&expression, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", case.id)))?;
+                validate_value(graph, type_name, &value, "match result")?;
+                values.insert(statement.name.clone(), value);
+            }
+            "return" => {
+                let expression = statement_expression(statement)?;
+                let value = expression::evaluate(&expression, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                if let Some(inner) = generic(signature.1, "Result") {
+                    validate_value(graph, inner, &value, "return")?;
+                    return Ok(json!({ "ok": value }));
+                }
+                validate_value(graph, signature.1, &value, "return")?;
+                return Ok(value);
+            }
+            kind => return Err(RuntimeError(format!("unsupported flow statement '{kind}'"))),
+        }
+    }
+    Err(RuntimeError(format!(
+        "flow '{flow_name}' completed without return"
+    )))
+}
+
+fn metadata<'a>(node: &'a GraphNode, name: &str) -> Result<&'a str, RuntimeError> {
+    node.metadata
+        .get(name)
+        .map(String::as_str)
+        .ok_or_else(|| RuntimeError(format!("{} is missing {name} metadata", node.id)))
+}
+
+fn statement_expression(statement: &GraphNode) -> Result<expression::Expr, RuntimeError> {
+    let source = metadata(statement, "expression")?;
+    expression::parse(source)
+        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))
+}
+
+fn memory_store_call(
+    stores: &mut BTreeMap<String, BTreeMap<String, Value>>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let store = stores.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "save" => {
+            let id = record_id(&call.input)?;
+            store.insert(id, call.input.clone());
+            Ok(call.input)
+        }
+        "find" => {
+            let id = string_input(&call.input, "find")?;
+            store.get(id).cloned().ok_or_else(|| "not_found".into())
+        }
+        "delete" => {
+            let id = string_input(&call.input, "delete")?;
+            Ok(Value::Bool(store.remove(id).is_some()))
+        }
+        "list" => Ok(Value::Array(store.values().cloned().collect())),
+        operation => Err(format!(
+            "memory store does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn sqlite_store_call(connection: &Connection, call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "save" => {
+            let id = record_id(&call.input)?;
+            let payload = serde_json::to_string(&call.input).map_err(|error| error.to_string())?;
+            connection
+                .execute(
+                    "INSERT INTO axl_records (provider, record_id, payload) VALUES (?1, ?2, ?3) \
+                     ON CONFLICT(provider, record_id) DO UPDATE SET payload = excluded.payload",
+                    params![call.provider, id, payload],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(call.input)
+        }
+        "find" => {
+            let id = string_input(&call.input, "find")?;
+            let result = connection.query_row(
+                "SELECT payload FROM axl_records WHERE provider = ?1 AND record_id = ?2",
+                params![call.provider, id],
+                |row| row.get::<_, String>(0),
+            );
+            match result {
+                Ok(payload) => serde_json::from_str(&payload).map_err(|error| error.to_string()),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Err("not_found".into()),
+                Err(error) => Err(error.to_string()),
+            }
+        }
+        "delete" => {
+            let id = string_input(&call.input, "delete")?;
+            let removed = connection
+                .execute(
+                    "DELETE FROM axl_records WHERE provider = ?1 AND record_id = ?2",
+                    params![call.provider, id],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(Value::Bool(removed > 0))
+        }
+        "list" => {
+            let mut statement = connection
+                .prepare("SELECT payload FROM axl_records WHERE provider = ?1 ORDER BY record_id")
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![call.provider], |row| row.get::<_, String>(0))
+                .map_err(|error| error.to_string())?;
+            let mut values = Vec::new();
+            for row in rows {
+                let payload = row.map_err(|error| error.to_string())?;
+                values.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+            }
+            Ok(Value::Array(values))
+        }
+        operation => Err(format!(
+            "SQLite store does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn record_id(value: &Value) -> Result<String, String> {
+    value
+        .as_object()
+        .and_then(|object| object.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| "store save requires a string 'id' field".into())
+}
+
+fn string_input<'a>(value: &'a Value, operation: &str) -> Result<&'a str, String> {
+    value
+        .as_str()
+        .ok_or_else(|| format!("store {operation} requires a string id"))
+}
+
+fn validate_value(
+    graph: &GraphIr,
+    type_name: &str,
+    value: &Value,
+    path: &str,
+) -> Result<(), RuntimeError> {
+    if let Some(inner) = generic(type_name, "Option") {
+        if value.is_null() {
+            return Ok(());
+        }
+        return validate_value(graph, inner, value, path);
+    }
+    if let Some(inner) = generic(type_name, "List").or_else(|| generic(type_name, "Set")) {
+        let values = value
+            .as_array()
+            .ok_or_else(|| RuntimeError(format!("{path} must be an array of {inner}")))?;
+        for (index, value) in values.iter().enumerate() {
+            validate_value(graph, inner, value, &format!("{path}[{index}]"))?;
+        }
+        return Ok(());
+    }
+    match type_name {
+        "unit" if value.is_null() => return Ok(()),
+        "bool" if value.is_boolean() => return Ok(()),
+        "int" if value.as_i64().is_some() => return Ok(()),
+        "float" | "money" if value.is_number() => return Ok(()),
+        "text" | "string" | "email" | "uuid" | "datetime" | "duration" if value.is_string() => {
+            return Ok(());
+        }
+        _ => {}
+    }
+
+    if let Some(value_enum) = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "enum" && node.name == type_name)
+    {
+        let Some(variant) = value.as_str() else {
+            return Err(RuntimeError(format!("{path} must be enum {type_name}")));
+        };
+        if children(graph, &value_enum.id, "variant")
+            .iter()
+            .any(|node| node.name == variant)
+        {
+            return Ok(());
+        }
+        return Err(RuntimeError(format!(
+            "{path} has unknown {type_name} variant '{variant}'"
+        )));
+    }
+
+    if let Some(entity) = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "entity" && node.name == type_name)
+    {
+        let object = value
+            .as_object()
+            .ok_or_else(|| RuntimeError(format!("{path} must be object {type_name}")))?;
+        for field in children(graph, &entity.id, "field") {
+            let field_type = field.type_name.as_deref().unwrap_or("unit");
+            let qualifiers = field
+                .metadata
+                .get("qualifiers")
+                .map(|value| value.split(',').collect::<Vec<_>>())
+                .unwrap_or_default();
+            match object.get(&field.name) {
+                Some(value) => {
+                    validate_value(graph, field_type, value, &format!("{path}.{}", field.name))?
+                }
+                None if qualifiers.contains(&"optional")
+                    || generic(field_type, "Option").is_some() => {}
+                None => {
+                    return Err(RuntimeError(format!(
+                        "{path} is missing field '{}.{}'",
+                        entity.name, field.name
+                    )));
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    Err(RuntimeError(format!(
+        "{path} does not match AXL type '{type_name}'"
+    )))
+}
+
+fn enum_values(graph: &GraphIr) -> BTreeMap<String, Value> {
+    graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "enum")
+        .map(|value| {
+            let variants = children(graph, &value.id, "variant")
+                .into_iter()
+                .map(|variant| (variant.name.clone(), Value::String(variant.name.clone())))
+                .collect::<Map<_, _>>();
+            (value.name.clone(), Value::Object(variants))
+        })
+        .collect()
+}
+
+fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
+    let mut values = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == owner)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .filter(|node| {
+            matches!(
+                node.kind.as_str(),
+                "let" | "require" | "call" | "make" | "fold" | "run" | "match" | "return"
+            )
+        })
+        .collect::<Vec<_>>();
+    values.sort_by_key(|node| {
+        node.metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    values
+}
+
+fn children<'a>(graph: &'a GraphIr, owner: &str, kind: &str) -> Vec<&'a GraphNode> {
+    graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == owner)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .filter(|node| node.kind == kind)
+        .collect()
+}
+
+fn provider_for(graph: &GraphIr, dependency: &str) -> Option<String> {
+    graph
+        .edges
+        .iter()
+        .filter(|edge| edge.from == dependency)
+        .find(|edge| edge.kind == "bind")
+        .or_else(|| {
+            graph
+                .edges
+                .iter()
+                .find(|edge| edge.from == dependency && edge.kind == "default")
+        })
+        .map(|edge| edge.to.clone())
+}
+
+fn generic<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+    value
+        .strip_prefix(name)?
+        .strip_prefix('<')?
+        .strip_suffix('>')
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::next::compile_source;
+
+    const SOURCE: &str = r#"axl 4
+app CashflowCore
+enum MovementKind
+  income
+  expense
+entity Movement
+  id: uuid required
+  kind: MovementKind required
+  amount: money required
+entity BalanceInput
+  income: money required
+  expense: money required
+capacity Echo
+  op invoke Movement -> Result<Movement>
+skill EchoSkill provides Echo
+  native rust test::echo
+flow ValidateMovement Movement -> Result<Movement>
+  let positive = input.amount > 0
+  require positive else "amount_must_be_positive"
+  return input
+flow CalculateBalance BalanceInput -> money
+  let balance = input.income - input.expense
+  return balance
+flow EchoMovement Movement -> Result<Movement>
+  in echo: Echo = EchoSkill
+  call output = echo.invoke(input)?
+  return output
+"#;
+
+    #[test]
+    fn executes_validation_and_result_propagation() {
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let accepted = evaluate_flow(
+            &graph,
+            "ValidateMovement",
+            json!({"id": "m1", "kind": "income", "amount": 25}),
+        )
+        .unwrap();
+        assert_eq!(accepted["ok"]["amount"], 25);
+
+        let rejected = evaluate_flow(
+            &graph,
+            "ValidateMovement",
+            json!({"id": "m2", "kind": "expense", "amount": 0}),
+        )
+        .unwrap();
+        assert_eq!(rejected, json!({"error": "amount_must_be_positive"}));
+    }
+
+    #[test]
+    fn executes_money_arithmetic() {
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let result = evaluate_flow(
+            &graph,
+            "CalculateBalance",
+            json!({"income": 120, "expense": 45}),
+        )
+        .unwrap();
+        assert_eq!(result, 75);
+    }
+
+    #[test]
+    fn executes_a_replaceable_capacity_runtime() {
+        struct EchoRuntime;
+
+        impl ProviderRuntime for EchoRuntime {
+            fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String> {
+                assert_eq!(call.capacity, "Echo");
+                assert_eq!(call.operation, "invoke");
+                Ok(call.input)
+            }
+        }
+
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let movement = json!({"id": "m3", "kind": "income", "amount": 80});
+        let result =
+            evaluate_flow_with_runtime(&graph, "EchoMovement", movement, &mut EchoRuntime).unwrap();
+        assert_eq!(result["ok"]["id"], "m3");
+    }
+}

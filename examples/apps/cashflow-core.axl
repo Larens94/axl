@@ -1,0 +1,90 @@
+// First executable AXL cashflow core: validation and money arithmetic.
+axl 4
+app CashflowCore
+
+enum MovementKind
+  income
+  expense
+
+entity Movement
+  id: uuid required
+  kind: MovementKind required
+  amount: money required
+  category: text required
+  occurred_at: datetime required
+  note: text optional
+
+entity BalanceInput
+  income: money required
+  expense: money required
+
+entity MovementView
+  id: uuid required
+  direction: text required
+  signed_amount: money required
+  category: text required
+
+entity MovementBatch
+  movements: List<Movement> required
+
+capacity MovementStore
+  op save Movement -> Result<Movement>
+  op find uuid -> Result<Movement>
+
+skill MemoryMovements provides MovementStore
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteMovements provides MovementStore
+  native rust axl::store::sqlite
+  effect db.read
+  effect db.write
+
+flow ValidateMovement Movement -> Result<Movement>
+  let known_kind = input.kind == MovementKind.income || input.kind == MovementKind.expense
+  let positive_amount = input.amount > 0
+  require known_kind else "movement_kind_invalid"
+  require positive_amount else "amount_must_be_positive"
+  return input
+
+flow CalculateBalance BalanceInput -> money
+  let balance = input.income - input.expense
+  return balance
+
+flow BuildMovementView Movement -> MovementView
+  let direction = if input.kind == MovementKind.income then "Entrata" else "Uscita"
+  match signed_amount: money = input.kind
+    income => input.amount
+    expense => -input.amount
+  make view: MovementView
+    id = input.id
+    direction = direction
+    signed_amount = signed_amount
+    category = input.category
+  return view
+
+flow CalculateLedgerBalance MovementBatch -> money
+  fold balance: money = input.movements from 0 as movement
+    next = if movement.kind == MovementKind.income
+      then value + movement.amount
+      else value - movement.amount
+  return balance
+
+flow StoreAndLoadMovement Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call saved = store.save(input)?
+  call loaded = store.find(saved.id)?
+  return loaded
+
+flow StoreAndLoadMovementSqlite Movement -> Result<Movement>
+  in store: MovementStore = SqliteMovements
+  call saved = store.save(input)?
+  call loaded = store.find(saved.id)?
+  return loaded
+
+flow ValidateAndStoreMovement Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  run valid = ValidateMovement(input)?
+  call saved = store.save(valid)?
+  return saved

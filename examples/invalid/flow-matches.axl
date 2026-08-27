@@ -1,0 +1,29 @@
+// Expected diagnostics: AXL-X861 through AXL-X865.
+axl 4
+app InvalidFlowMatches
+
+enum Kind
+  first
+  second
+
+entity Input
+  kind: Kind required
+  amount: money required
+
+flow NonEnum Input -> money
+  match result: money = input.amount
+    first => input.amount
+  return result
+
+flow InvalidCases Input -> money
+  match result: money = input.kind
+    first => input.amount
+    first => input.amount
+    unknown => input.amount
+  return result
+
+flow WrongCaseType Input -> money
+  match result: money = input.kind
+    first => input.amount
+    second => "invalid"
+  return result

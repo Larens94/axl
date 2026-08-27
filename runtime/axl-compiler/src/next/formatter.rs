@@ -8,6 +8,12 @@ pub fn format(program: &Program) -> String {
     for declaration in &program.declarations {
         output.push(String::new());
         match declaration {
+            Declaration::Enum(value) => {
+                output.push(format!("enum {}", value.name));
+                for variant in &value.variants {
+                    output.push(format!("  {}", variant.name));
+                }
+            }
             Declaration::Entity(entity) => {
                 output.push(format!("entity {}", entity.name));
                 for field in &entity.fields {
@@ -79,6 +85,112 @@ pub fn format(program: &Program) -> String {
                     output.push(format!("  use {} = {}", binding.port, binding.provider));
                 }
             }
+            Declaration::Flow(flow) => {
+                output.push(format!(
+                    "flow {} {} -> {}",
+                    flow.name, flow.input, flow.output
+                ));
+                for dependency in &flow.dependencies {
+                    let default = dependency
+                        .default
+                        .as_ref()
+                        .map(|provider| format!(" = {provider}"))
+                        .unwrap_or_default();
+                    output.push(format!(
+                        "  in {}: {}{}",
+                        dependency.name, dependency.capacity, default
+                    ));
+                }
+                for binding in &flow.bindings {
+                    output.push(format!("  use {} = {}", binding.port, binding.provider));
+                }
+                for statement in &flow.statements {
+                    match statement {
+                        FlowStatement::Let {
+                            name, expression, ..
+                        } => output.push(format!("  let {name} = {expression}")),
+                        FlowStatement::Require {
+                            expression,
+                            message,
+                            ..
+                        } => output.push(format!(
+                            "  require {} else {}",
+                            expression,
+                            serde_json::to_string(message)
+                                .expect("flow messages are JSON encodable")
+                        )),
+                        FlowStatement::Call {
+                            name,
+                            dependency,
+                            operation,
+                            argument,
+                            propagate,
+                            ..
+                        } => output.push(format!(
+                            "  call {name} = {dependency}.{operation}({argument}){}",
+                            if *propagate { "?" } else { "" }
+                        )),
+                        FlowStatement::Make {
+                            name,
+                            type_name,
+                            fields,
+                            ..
+                        } => {
+                            output.push(format!("  make {name}: {type_name}"));
+                            for field in fields {
+                                output.push(format!("    {} = {}", field.name, field.expression));
+                            }
+                        }
+                        FlowStatement::Fold {
+                            name,
+                            type_name,
+                            collection,
+                            initial,
+                            item,
+                            update,
+                            ..
+                        } => {
+                            output.push(format!(
+                                "  fold {name}: {type_name} = {collection} from {initial} as {item}"
+                            ));
+                            if let Some((condition, when_true, when_false)) =
+                                conditional_parts(update)
+                            {
+                                output.push(format!("    next = if {condition}"));
+                                output.push(format!("      then {when_true}"));
+                                output.push(format!("      else {when_false}"));
+                            } else {
+                                output.push(format!("    next = {update}"));
+                            }
+                        }
+                        FlowStatement::Run {
+                            name,
+                            flow,
+                            argument,
+                            propagate,
+                            ..
+                        } => output.push(format!(
+                            "  run {name} = {flow}({argument}){}",
+                            if *propagate { "?" } else { "" }
+                        )),
+                        FlowStatement::Match {
+                            name,
+                            type_name,
+                            subject,
+                            cases,
+                            ..
+                        } => {
+                            output.push(format!("  match {name}: {type_name} = {subject}"));
+                            for case in cases {
+                                output.push(format!("    {} => {}", case.variant, case.expression));
+                            }
+                        }
+                        FlowStatement::Return { expression, .. } => {
+                            output.push(format!("  return {expression}"));
+                        }
+                    }
+                }
+            }
             Declaration::Agent(agent) => {
                 output.push(format!("agent {}", agent.name));
                 append_values(&mut output, "believe", &agent.beliefs);
@@ -97,6 +209,13 @@ fn append_values(output: &mut Vec<String>, keyword: &str, values: &[String]) {
     for value in values {
         output.push(format!("  {keyword} {value}"));
     }
+}
+
+fn conditional_parts(value: &str) -> Option<(&str, &str, &str)> {
+    let value = value.strip_prefix("if ")?;
+    let (condition, values) = value.split_once(" then ")?;
+    let (when_true, when_false) = values.rsplit_once(" else ")?;
+    Some((condition, when_true, when_false))
 }
 
 #[cfg(test)]

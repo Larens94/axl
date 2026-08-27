@@ -90,10 +90,11 @@ blueprint CustomerList
         <thead><tr><th>Area</th><th>Oggi</th><th>Prossimo gate</th></tr></thead>
         <tbody>
           <tr><td>Blocchi</td><td class="yes">Protocollo aperto e istanze tipizzate</td><td>Package, overlay esterni e registry</td></tr>
-          <tr><td>Superfici</td><td class="yes">Parametri, stato, eventi, azioni, errori e policy</td><td>Esecuzione runtime</td></tr>
-          <tr><td>Target</td><td class="yes">Contratti Rust, React, SQL e agenti</td><td>Vertical slice eseguibile</td></tr>
+          <tr><td>Superfici</td><td class="yes">Parametri, stato, eventi, azioni, errori e policy</td><td>Collegamento al runtime</td></tr>
+          <tr><td>Target</td><td class="yes">Contratti Rust, React, SQL, agenti e Flow Runtime 2</td><td>HTTP e UI runtime</td></tr>
           <tr><td>Contratti</td><td class="yes">Registrati nel Graph IR</td><td>Type-check ed esecuzione</td></tr>
-          <tr><td>Controllo di flusso</td><td class="no">Non implementato</td><td>Semantica prima della sintassi</td></tr>
+          <tr><td>Controllo di flusso</td><td class="yes">make, if, match, fold, run, call, Result</td><td>Map/filter e async</td></tr>
+          <tr><td>Provider</td><td class="yes">ABI sostituibile, memory e SQLite</td><td>Persistenza durevole e multi-database</td></tr>
           <tr><td>Agenti</td><td class="yes">Grafo belief / goal / plan</td><td>Runtime di pianificazione</td></tr>
         </tbody>
       </table>
@@ -104,6 +105,9 @@ blueprint CustomerList
       <h2 id="links-title">Documentazione collegata al codice.</h2>
       <div class="grid">
         <a class="card" href="blocks.md"><h3>Guida ai blocchi</h3><p>Protocollo aperto, DataView, store, UI, hook e CRM.</p></a>
+        <a class="card" href="executable-flows.md"><h3>Flow eseguibili</h3><p>Sintassi, operatori, runtime e prova cashflow.</p></a>
+        <a class="card" href="runtime-abi.md"><h3>Provider ABI</h3><p>Come capacity e skill collegano runtime sostituibili.</p></a>
+        <a class="card" href="roadmap.md"><h3>Autoloop</h3><p>Gate eseguibili da backend a IoT e AI.</p></a>
         <a class="card" href="toolchain.md"><h3>Toolchain</h3><p>Comandi, IR, formato packed e output generati.</p></a>
         <a class="card" href="agent-testing.md"><h3>Test per agenti</h3><p>Comandi ripetibili e risultati attesi.</p></a>
       </div>

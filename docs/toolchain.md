@@ -7,7 +7,7 @@ readable AXL
   -> typed AST
   -> Semantic Graph IR
   -> Packed Graph IR
-  -> Rust / React / SQL / agent contracts
+  -> Flow runtime + replaceable providers + target contracts
 ```
 
 Readable AXL is the authoring form. Semantic Graph IR is explicit and suitable
@@ -27,13 +27,17 @@ cargo run -p axl-compiler -- fmt examples/next/crm.axl
 cargo run -p axl-compiler -- blocks examples/next/crm.axl
 cargo run -p axl-compiler -- experiment examples/next/crm.axl build/axl4
 cargo run -p axl-compiler -- unpack build/axl4/app.packed.axl
+cargo run -p axl-compiler -- eval examples/apps/cashflow-core.axl \
+  CalculateBalance examples/apps/inputs/balance.json
 ```
 
 `check` parses and semantically validates a program. `fmt` prints canonical
 multiline source. `ir` and `pack` expose the two machine representations.
 `blocks` prints the `axl-open-block/2` manifest without writing files. `unpack`
 reconstructs JSON Graph IR. `experiment` writes all representations and target
-contracts.
+contracts. `eval` validates JSON input and executes an AXL flow. Flow Runtime 2
+can call a provider through the public ABI; built-in memory and SQLite store
+providers are available, while arbitrary native symbol loading is not.
 
 ## Experiment output
 
@@ -49,6 +53,7 @@ build/axl4/
     react/axl_slots.ts
     sql/schema.sql
     agents/agents.json
+    flows/flows.json
 ```
 
 `blocks/open-blocks.json` uses protocol identifier `axl-open-block/2` and exposes
@@ -57,6 +62,8 @@ of every instance. These target files are contracts and registries. They are not
 a deployable CRM.
 
 Its JSON shape is documented by `schema/axl-open-block-2.schema.json`.
+The flow manifest uses `axl-flow/2` and is documented by
+`schema/axl-flow-2.schema.json`.
 
 ## Verification
 
@@ -64,6 +71,9 @@ Its JSON shape is documented by `schema/axl-open-block-2.schema.json`.
 cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
+jq empty schema/axl-ir-4.0.schema.json
+jq empty schema/axl-open-block-2.schema.json
+jq empty schema/axl-flow-2.schema.json
 ```
 
 The documented examples are included at compile time in

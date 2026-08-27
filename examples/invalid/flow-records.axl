@@ -1,0 +1,25 @@
+// Expected diagnostics: AXL-X831 through AXL-X835.
+axl 4
+app InvalidFlowRecords
+
+entity Input
+  id: uuid required
+  amount: money required
+
+entity Output
+  id: uuid required
+  amount: money required
+  label: text required
+  note: text optional
+
+flow WrongRecordType Input -> Input
+  make ignored: money
+  return input
+
+flow InvalidRecord Input -> Output
+  make result: Output
+    id = input.amount
+    amount = input.amount
+    amount = input.amount
+    unknown = input.amount
+  return result

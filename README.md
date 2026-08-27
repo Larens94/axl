@@ -9,7 +9,7 @@ readable AXL
   -> typed AST
   -> Semantic Graph IR
   -> Packed Graph IR
-  -> Rust, React, SQL and agent contracts
+  -> Flow runtime + replaceable providers + target contracts
 ```
 
 AXL describes software through entities, capacities, skills and blueprints with
@@ -29,19 +29,35 @@ target implementations rather than the source language.
 The second command generates canonical AXL, JSON Graph IR, Packed IR and initial
 target contracts.
 
+Execute behavior written in AXL:
+
+```sh
+~/.cargo/bin/cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl CalculateBalance \
+  examples/apps/inputs/balance.json
+```
+
+This returns `80000`. The balance rule is an AXL flow, not an
+application-specific Rust function.
+
 ## Project map
 
 - `SPEC-4.0.md` — implemented language boundary.
 - `docs/index.html` — concise browser documentation.
 - `docs/blocks.md` — verified guide to open block construction.
 - `docs/agent-testing.md` — repeatable test handoff for another agent.
+- `docs/executable-flows.md` — executable Flow Runtime 2 semantics.
+- `docs/runtime-abi.md` — replaceable native provider contract.
+- `docs/roadmap.md` — executable autoloop gates and current position.
 - `presentation.html` — simplified, responsive project presentation.
 - `examples/blocks` — small examples compiled by the test suite.
 - `examples/catalog/software-foundation.axl` — fourteen open foundation blocks.
+- `examples/apps/cashflow-core.axl` — executable validation and balance flows.
 - `examples/next/crm.axl` — semantic CRM experiment.
 - `runtime/axl-compiler/src/next` — parser, analyzer, IR and target adapters.
 - `schema/axl-ir-4.0.schema.json` — Graph IR JSON schema.
 - `schema/axl-open-block-2.schema.json` — block and instance manifest schema.
+- `schema/axl-flow-2.schema.json` — executable flow and capacity-call manifest schema.
 
 ## Build an open block
 
@@ -76,4 +92,5 @@ commands, API, UI, events, jobs, observability, agent tools and scenarios.
 ~/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Status: experiment. Executable full-stack Rust/React generation is the next gate.
+Status: experiment. Pure typed flows execute; persistence, HTTP and React
+runtime generation are not implemented yet.

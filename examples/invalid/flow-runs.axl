@@ -1,0 +1,39 @@
+// Expected diagnostics: AXL-X851 through AXL-X856.
+axl 4
+app InvalidFlowRuns
+
+entity A
+  id: uuid required
+
+entity B
+  id: uuid required
+
+flow Plain A -> A
+  return input
+
+flow Fallible A -> Result<A>
+  return input
+
+flow Unknown A -> A
+  run ignored = Missing(input)
+  return input
+
+flow WrongArgument B -> B
+  run ignored = Plain(input)
+  return input
+
+flow MissingPropagation A -> Result<A>
+  run ignored = Fallible(input)
+  return input
+
+flow ResultlessCaller A -> A
+  run ignored = Fallible(input)?
+  return input
+
+flow PlainPropagation A -> Result<A>
+  run ignored = Plain(input)?
+  return input
+
+flow Recursive A -> A
+  run ignored = Recursive(input)
+  return input

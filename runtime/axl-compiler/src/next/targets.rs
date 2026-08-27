@@ -12,7 +12,10 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     let sql_dir = output.join("sql");
     let agent_dir = output.join("agents");
     let block_dir = output.join("blocks");
-    for directory in [&rust_dir, &react_dir, &sql_dir, &agent_dir, &block_dir] {
+    let flow_dir = output.join("flows");
+    for directory in [
+        &rust_dir, &react_dir, &sql_dir, &agent_dir, &block_dir, &flow_dir,
+    ] {
         std::fs::create_dir_all(directory)?;
     }
     std::fs::write(rust_dir.join("axl_contracts.rs"), rust_contracts(graph))?;
@@ -25,6 +28,10 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     std::fs::write(
         block_dir.join("open-blocks.json"),
         serde_json::to_string_pretty(&open_block_manifest(graph))?,
+    )?;
+    std::fs::write(
+        flow_dir.join("flows.json"),
+        serde_json::to_string_pretty(&flow_manifest(graph))?,
     )?;
     std::fs::write(
         output.join("manifest.json"),
@@ -46,6 +53,16 @@ pub fn rust_contracts(graph: &GraphIr) -> String {
         "}".to_string(),
         String::new(),
     ];
+
+    for value in nodes(graph, "enum") {
+        output.push("#[derive(Debug, Clone, PartialEq, Eq)]".into());
+        output.push(format!("pub enum {} {{", value.name));
+        for variant in children(graph, &value.id, "variant") {
+            output.push(format!("    {},", rust_variant(&variant.name)));
+        }
+        output.push("}".into());
+        output.push(String::new());
+    }
 
     for entity in nodes(graph, "entity") {
         output.push("#[derive(Debug, Clone)]".into());
@@ -218,6 +235,101 @@ pub fn open_block_manifest(graph: &GraphIr) -> serde_json::Value {
     })
 }
 
+pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
+    let flows = nodes(graph, "flow")
+        .into_iter()
+        .map(|flow| {
+            let (input, output) = flow
+                .type_name
+                .as_deref()
+                .and_then(|value| value.split_once("->"))
+                .unwrap_or(("", ""));
+            let mut statements = children(graph, &flow.id, "let")
+                .into_iter()
+                .chain(children(graph, &flow.id, "require"))
+                .chain(children(graph, &flow.id, "call"))
+                .chain(children(graph, &flow.id, "make"))
+                .chain(children(graph, &flow.id, "fold"))
+                .chain(children(graph, &flow.id, "run"))
+                .chain(children(graph, &flow.id, "match"))
+                .chain(children(graph, &flow.id, "return"))
+                .collect::<Vec<_>>();
+            statements.sort_by_key(|statement| {
+                statement
+                    .metadata
+                    .get("order")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
+            let dependencies = children(graph, &flow.id, "input")
+                .into_iter()
+                .map(|dependency| {
+                    let provider = provider_for(graph, &dependency.id).and_then(|id| {
+                        graph
+                            .nodes
+                            .iter()
+                            .find(|node| node.id == id)
+                            .map(|node| node.name.clone())
+                    });
+                    json!({
+                        "name": dependency.name,
+                        "capacity": dependency.type_name,
+                        "provider": provider,
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "name": flow.name,
+                "input": input,
+                "output": output,
+                "dependencies": dependencies,
+                "statements": statements.into_iter().map(|statement| {
+                    let fields = children(graph, &statement.id, "assign")
+                        .into_iter()
+                        .map(|field| json!({
+                            "name": field.name,
+                            "expression": field.metadata.get("expression"),
+                        }))
+                        .collect::<Vec<_>>();
+                    let cases = children(graph, &statement.id, "case")
+                        .into_iter()
+                        .map(|case| json!({
+                            "variant": case.name,
+                            "expression": case.metadata.get("expression"),
+                        }))
+                        .collect::<Vec<_>>();
+                    json!({
+                        "kind": statement.kind,
+                        "name": statement.name,
+                        "expression": statement.metadata.get("expression"),
+                        "message": statement.metadata.get("message"),
+                        "dependency": statement.metadata.get("dependency"),
+                        "operation": statement.metadata.get("operation"),
+                        "argument": statement.metadata.get("argument"),
+                        "propagate": statement.metadata.get("propagate")
+                            .and_then(|value| value.parse::<bool>().ok()),
+                        "record_type": statement.type_name,
+                        "fields": fields,
+                        "collection": statement.metadata.get("collection"),
+                        "initial": statement.metadata.get("initial"),
+                        "item": statement.metadata.get("item"),
+                        "update": statement.metadata.get("update"),
+                        "flow": statement.metadata.get("flow"),
+                        "subject": statement.metadata.get("subject"),
+                        "cases": cases,
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "schema": graph.schema,
+        "app": graph.app,
+        "runtime": "axl-flow/2",
+        "flows": flows,
+    })
+}
+
 pub fn sql_schema(graph: &GraphIr) -> String {
     let mut output = vec!["-- Generated from AXL Semantic Graph IR. Do not edit.".to_string()];
     for entity in nodes(graph, "entity") {
@@ -267,7 +379,8 @@ fn target_manifest(graph: &GraphIr) -> serde_json::Value {
             "react": "react/axl_slots.ts",
             "sql": "sql/schema.sql",
             "agents": "agents/agents.json",
-            "blocks": "blocks/open-blocks.json"
+            "blocks": "blocks/open-blocks.json",
+            "flows": "flows/flows.json"
         },
         "counts": {
             "nodes": graph.nodes.len(),
@@ -413,6 +526,20 @@ fn rust_identifier(value: &str) -> String {
     value.replace(['-', '.'], "_")
 }
 
+fn rust_variant(value: &str) -> String {
+    value
+        .split(['-', '_', '.'])
+        .filter(|segment| !segment.is_empty())
+        .map(|segment| {
+            let mut characters = segment.chars();
+            match characters.next() {
+                Some(first) => first.to_ascii_uppercase().to_string() + characters.as_str(),
+                None => String::new(),
+            }
+        })
+        .collect()
+}
+
 fn sql_identifier(value: &str) -> String {
     rust_identifier(value)
 }
@@ -424,9 +551,13 @@ mod tests {
 
     const SOURCE: &str = r#"axl 4
 app Demo
+enum CustomerStatus
+  active
+  inactive
 entity Customer
   id: uuid key
   email: email required unique
+  status: CustomerStatus required
 capacity CustomerStore
   op save Customer -> Result<Customer>
 capacity CustomerRow
@@ -451,6 +582,12 @@ instance CompactCRM of CRM
 agent Sales
   goal qualify
   plan automatic
+flow Identity Customer -> Customer
+  return input
+flow Save Customer -> Result<Customer>
+  in store: CustomerStore = SqliteCustomers
+  call saved = store.save(input)?
+  return saved
 "#;
 
     #[test]
@@ -460,6 +597,9 @@ agent Sales
         let react = react_slots(&graph);
         let sql = sql_schema(&graph);
         let blocks = open_block_manifest(&graph);
+        let flows = flow_manifest(&graph);
+        assert!(rust.contains("pub enum CustomerStatus"));
+        assert!(rust.contains("Active,"));
         assert!(rust.contains("pub trait CustomerStore"));
         assert!(rust.contains("Result<Customer, String>"));
         assert!(react.contains("crm::DefaultRow"));
@@ -484,5 +624,18 @@ agent Sales
             blocks["instances"][0]["overrides"][0]["provider"],
             "CompactRow"
         );
+        assert_eq!(flows["runtime"], "axl-flow/2");
+        assert_eq!(flows["flows"][0]["name"], "Identity");
+        assert_eq!(flows["flows"][0]["statements"][0]["kind"], "return");
+        let save = flows["flows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|flow| flow["name"] == "Save")
+            .unwrap();
+        assert_eq!(save["dependencies"][0]["provider"], "SqliteCustomers");
+        assert_eq!(save["statements"][0]["kind"], "call");
+        assert_eq!(save["statements"][0]["operation"], "save");
+        assert_eq!(save["statements"][0]["propagate"], true);
     }
 }

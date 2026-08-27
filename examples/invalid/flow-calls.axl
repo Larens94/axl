@@ -1,0 +1,55 @@
+// Expected diagnostics: AXL-X816 through AXL-X821.
+axl 4
+app InvalidFlowCalls
+
+entity Movement
+  id: uuid required
+
+capacity MovementStore
+  op save Movement -> Result<Movement>
+  op find uuid -> Result<Movement>
+
+capacity OtherStore
+  op save Movement -> Result<Movement>
+
+capacity Counter
+  op count unit -> int
+
+skill MemoryMovements provides MovementStore
+  native rust axl::store::memory
+
+skill WrongMovements provides OtherStore
+  native rust axl::store::memory
+
+skill RuntimeCounter provides Counter
+  native rust test::counter
+
+flow WrongProvider Movement -> Result<Movement>
+  in store: MovementStore = WrongMovements
+  call saved = store.save(input)?
+  return saved
+
+flow MissingOperation Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call ignored = store.missing(input)?
+  return input
+
+flow WrongArgument Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call ignored = store.find(input)?
+  return input
+
+flow MissingPropagation Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call ignored = store.save(input)
+  return input
+
+flow ResultlessPropagation Movement -> Movement
+  in store: MovementStore = MemoryMovements
+  call ignored = store.save(input)?
+  return input
+
+flow PlainPropagation unit -> Result<int>
+  in counter: Counter = RuntimeCounter
+  call ignored = counter.count(input)?
+  return 0

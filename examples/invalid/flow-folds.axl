@@ -1,0 +1,27 @@
+// Expected diagnostics: AXL-N805 and AXL-X841 through AXL-X843.
+axl 4
+app InvalidFlowFolds
+
+entity Input
+  amount: money required
+  items: List<int> required
+
+flow NotACollection Input -> int
+  fold result: int = input.amount from 0 as item
+    next = value
+  return result
+
+flow WrongInitial Input -> int
+  fold result: int = input.items from "zero" as item
+    next = value + item
+  return result
+
+flow WrongNext Input -> int
+  fold result: int = input.items from 0 as item
+    next = "invalid"
+  return result
+
+flow ReservedItem Input -> int
+  fold result: int = input.items from 0 as value
+    next = value
+  return result

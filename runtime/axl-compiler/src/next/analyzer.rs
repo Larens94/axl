@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::ast::*;
 use super::diagnostic::{Diagnostic, FixSafety, Repair, SourceSpan};
+use super::expression::{self, BinaryOp, Expr, UnaryOp};
 use super::ir::{GraphContract, GraphEdge, GraphGrant, GraphIr, GraphNode};
 
 pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
@@ -35,6 +36,7 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
 
     for declaration in &program.declarations {
         match declaration {
+            Declaration::Enum(value) => check_enum(value, &mut diagnostics),
             Declaration::Entity(entity) => check_entity(entity, &declarations, &mut diagnostics),
             Declaration::Capacity(capacity) => {
                 check_capacity(capacity, &declarations, &mut diagnostics)
@@ -46,6 +48,7 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
             Declaration::Instance(instance) => {
                 check_instance(instance, &declarations, &mut diagnostics)
             }
+            Declaration::Flow(flow) => check_flow(flow, &declarations, &mut diagnostics),
             Declaration::Agent(agent) => check_agent(agent, &mut diagnostics),
         }
     }
@@ -57,6 +60,36 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
     let mut graph = lower(program);
     graph.canonicalize();
     Ok(graph)
+}
+
+fn check_enum(value: &Enum, diagnostics: &mut Vec<Diagnostic>) {
+    if value.variants.is_empty() {
+        diagnostics.push(Diagnostic::error(
+            "AXL-T701",
+            "types",
+            format!("enum '{}' requires at least one variant", value.name),
+            value.span.clone(),
+        ));
+    }
+    let mut variants = BTreeSet::new();
+    for variant in &value.variants {
+        if !valid_name(&variant.name, false) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-N701",
+                "names",
+                format!("invalid enum variant '{}.{}'", value.name, variant.name),
+                variant.span.clone(),
+            ));
+        }
+        if !variants.insert(variant.name.as_str()) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-N702",
+                "names",
+                format!("duplicate enum variant '{}.{}'", value.name, variant.name),
+                variant.span.clone(),
+            ));
+        }
+    }
 }
 
 fn check_entity(
@@ -609,6 +642,1000 @@ fn parameter_value_hint(type_name: &str) -> &'static str {
     }
 }
 
+fn check_flow(
+    flow: &Flow,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    check_type(&flow.input, &flow.span, declarations, diagnostics);
+    check_type(&flow.output, &flow.span, declarations, diagnostics);
+
+    let result_type = generic_inner(&flow.output, "Result");
+    let expected_return = result_type.unwrap_or(&flow.output);
+    let mut variables = BTreeMap::from([("input".to_string(), flow.input.clone())]);
+    let mut dependencies = BTreeMap::new();
+    let mut bindings = BTreeMap::new();
+    let mut return_count = 0;
+
+    for dependency in &flow.dependencies {
+        if !valid_name(&dependency.name, false) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-N803",
+                "names",
+                format!("invalid flow dependency '{}'", dependency.name),
+                dependency.span.clone(),
+            ));
+        }
+        if dependencies
+            .insert(dependency.name.as_str(), dependency)
+            .is_some()
+        {
+            diagnostics.push(Diagnostic::error(
+                "AXL-N804",
+                "names",
+                format!("duplicate flow dependency '{}'", dependency.name),
+                dependency.span.clone(),
+            ));
+        }
+        match declarations.get(dependency.capacity.as_str()) {
+            Some(Declaration::Capacity(_)) => {}
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-X811",
+                    "execution",
+                    format!(
+                        "flow dependency '{}.{}' requires a capacity",
+                        flow.name, dependency.name
+                    ),
+                    dependency.span.clone(),
+                )
+                .expected("capacity", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-X811",
+                    "execution",
+                    format!(
+                        "flow dependency '{}.{}' references unknown capacity '{}'",
+                        flow.name, dependency.name, dependency.capacity
+                    ),
+                    dependency.span.clone(),
+                )
+                .expected("declared capacity", &dependency.capacity),
+            ),
+        }
+        if let Some(provider) = &dependency.default {
+            check_flow_provider(
+                flow,
+                dependency,
+                provider,
+                &dependency.span,
+                declarations,
+                diagnostics,
+            );
+        }
+    }
+
+    for binding in &flow.bindings {
+        if bindings.insert(binding.port.as_str(), binding).is_some() {
+            diagnostics.push(Diagnostic::error(
+                "AXL-X812",
+                "execution",
+                format!(
+                    "flow dependency '{}.{}' is connected more than once",
+                    flow.name, binding.port
+                ),
+                binding.span.clone(),
+            ));
+        }
+        match dependencies.get(binding.port.as_str()) {
+            Some(dependency) => check_flow_provider(
+                flow,
+                dependency,
+                &binding.provider,
+                &binding.span,
+                declarations,
+                diagnostics,
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-X813",
+                    "execution",
+                    format!("flow '{}' has no dependency '{}'", flow.name, binding.port),
+                    binding.span.clone(),
+                )
+                .expected("declared flow dependency", binding.port.as_str()),
+            ),
+        }
+    }
+
+    for dependency in &flow.dependencies {
+        if dependency.default.is_none() && !bindings.contains_key(dependency.name.as_str()) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-X814",
+                    "execution",
+                    format!(
+                        "flow dependency '{}.{}' has no provider",
+                        flow.name, dependency.name
+                    ),
+                    dependency.span.clone(),
+                )
+                .expected(
+                    format!("provider of {}", dependency.capacity),
+                    "unconnected",
+                )
+                .repair(
+                    FixSafety::Risky,
+                    Repair {
+                        kind: "connect".into(),
+                        target: format!("{}.{}", flow.name, dependency.name),
+                        replacement: None,
+                        candidates: provider_candidates(&dependency.capacity, declarations),
+                    },
+                ),
+            );
+        }
+    }
+
+    for (index, statement) in flow.statements.iter().enumerate() {
+        match statement {
+            FlowStatement::Let {
+                name,
+                expression,
+                span,
+            } => {
+                if !valid_name(name, false) || name == "input" {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N801",
+                        "names",
+                        format!("invalid flow variable '{name}'"),
+                        span.clone(),
+                    ));
+                }
+                if let Some(type_name) =
+                    infer_source_expression(expression, span, &variables, declarations, diagnostics)
+                    && variables.insert(name.clone(), type_name).is_some()
+                {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N802",
+                        "names",
+                        format!("flow variable '{name}' is defined more than once"),
+                        span.clone(),
+                    ));
+                }
+            }
+            FlowStatement::Require {
+                expression, span, ..
+            } => {
+                if result_type.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X804",
+                            "execution",
+                            format!(
+                                "flow '{}' uses require but does not return Result",
+                                flow.name
+                            ),
+                            span.clone(),
+                        )
+                        .expected("Result<T>", &flow.output),
+                    );
+                }
+                if let Some(found) =
+                    infer_source_expression(expression, span, &variables, declarations, diagnostics)
+                    && found != "bool"
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X803",
+                            "execution",
+                            "require expression must be boolean",
+                            span.clone(),
+                        )
+                        .expected("bool", found),
+                    );
+                }
+            }
+            FlowStatement::Call {
+                name,
+                dependency,
+                operation,
+                argument,
+                propagate,
+                span,
+            } => {
+                if !valid_name(name, false) || name == "input" {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N801",
+                        "names",
+                        format!("invalid flow variable '{name}'"),
+                        span.clone(),
+                    ));
+                }
+                let Some(dependency_value) = dependencies.get(dependency.as_str()) else {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-X815",
+                        "execution",
+                        format!("call references unknown flow dependency '{dependency}'"),
+                        span.clone(),
+                    ));
+                    continue;
+                };
+                let Some(Declaration::Capacity(capacity)) =
+                    declarations.get(dependency_value.capacity.as_str())
+                else {
+                    continue;
+                };
+                let Some(operation_value) = capacity
+                    .operations
+                    .iter()
+                    .find(|candidate| candidate.name == *operation)
+                else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X816",
+                            "execution",
+                            format!(
+                                "capacity '{}' has no operation '{}'",
+                                capacity.name, operation
+                            ),
+                            span.clone(),
+                        )
+                        .expected("declared capacity operation", operation.as_str()),
+                    );
+                    continue;
+                };
+                if let Some(found) =
+                    infer_source_expression(argument, span, &variables, declarations, diagnostics)
+                    && !same_type(&found, &operation_value.input)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X817",
+                            "execution",
+                            format!(
+                                "call '{}.{}' receives the wrong argument type",
+                                dependency, operation
+                            ),
+                            span.clone(),
+                        )
+                        .expected(&operation_value.input, found),
+                    );
+                    continue;
+                }
+                let variable_type = match generic_inner(&operation_value.output, "Result") {
+                    Some(inner) if *propagate && result_type.is_some() => inner.to_string(),
+                    Some(_) if !*propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X818",
+                                "execution",
+                                "a Result operation call requires '?' propagation",
+                                span.clone(),
+                            )
+                            .expected("call value = port.operation(argument)?", "missing ?"),
+                        );
+                        continue;
+                    }
+                    Some(_) => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X819",
+                                "execution",
+                                "'?' requires the containing flow to return Result<T>",
+                                span.clone(),
+                            )
+                            .expected("Result<T> flow output", &flow.output),
+                        );
+                        continue;
+                    }
+                    None if *propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X820",
+                                "execution",
+                                "'?' can only propagate a Result<T> operation",
+                                span.clone(),
+                            )
+                            .expected("Result<T> operation output", &operation_value.output),
+                        );
+                        continue;
+                    }
+                    None => operation_value.output.clone(),
+                };
+                if variables.insert(name.clone(), variable_type).is_some() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N802",
+                        "names",
+                        format!("flow variable '{name}' is defined more than once"),
+                        span.clone(),
+                    ));
+                }
+            }
+            FlowStatement::Make {
+                name,
+                type_name,
+                fields,
+                span,
+            } => {
+                if !valid_name(name, false) || name == "input" {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N801",
+                        "names",
+                        format!("invalid flow variable '{name}'"),
+                        span.clone(),
+                    ));
+                }
+                let Some(Declaration::Entity(entity)) = declarations.get(type_name.as_str()) else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X831",
+                            "execution",
+                            format!("record constructor requires entity type '{type_name}'"),
+                            span.clone(),
+                        )
+                        .expected("declared entity", type_name),
+                    );
+                    continue;
+                };
+                let mut assigned = BTreeSet::new();
+                for field in fields {
+                    if !assigned.insert(field.name.as_str()) {
+                        diagnostics.push(Diagnostic::error(
+                            "AXL-X834",
+                            "execution",
+                            format!(
+                                "record '{}: {}' assigns field '{}' more than once",
+                                name, type_name, field.name
+                            ),
+                            field.span.clone(),
+                        ));
+                    }
+                    let Some(entity_field) = entity
+                        .fields
+                        .iter()
+                        .find(|candidate| candidate.name == field.name)
+                    else {
+                        diagnostics.push(Diagnostic::error(
+                            "AXL-X832",
+                            "execution",
+                            format!("entity '{}' has no field '{}'", entity.name, field.name),
+                            field.span.clone(),
+                        ));
+                        continue;
+                    };
+                    if let Some(found) = infer_source_expression(
+                        &field.expression,
+                        &field.span,
+                        &variables,
+                        declarations,
+                        diagnostics,
+                    ) && !same_type(&found, &entity_field.type_name)
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X833",
+                                "execution",
+                                format!(
+                                    "constructed field '{}.{}' has the wrong type",
+                                    entity.name, field.name
+                                ),
+                                field.span.clone(),
+                            )
+                            .expected(&entity_field.type_name, found),
+                        );
+                    }
+                }
+                for field in &entity.fields {
+                    let optional = field.qualifiers.iter().any(|value| value == "optional")
+                        || generic_inner(&field.type_name, "Option").is_some();
+                    if !optional && !assigned.contains(field.name.as_str()) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X835",
+                                "execution",
+                                format!(
+                                    "record '{}: {}' is missing required field '{}'",
+                                    name, type_name, field.name
+                                ),
+                                span.clone(),
+                            )
+                            .expected(format!("field {} = expression", field.name), "missing"),
+                        );
+                    }
+                }
+                if variables.insert(name.clone(), type_name.clone()).is_some() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N802",
+                        "names",
+                        format!("flow variable '{name}' is defined more than once"),
+                        span.clone(),
+                    ));
+                }
+            }
+            FlowStatement::Fold {
+                name,
+                type_name,
+                collection,
+                initial,
+                item,
+                update,
+                span,
+            } => {
+                check_type(type_name, span, declarations, diagnostics);
+                if !valid_name(name, false) || name == "input" {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N801",
+                        "names",
+                        format!("invalid flow variable '{name}'"),
+                        span.clone(),
+                    ));
+                }
+                if !valid_name(item, false) || matches!(item.as_str(), "input" | "value") {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N805",
+                        "names",
+                        format!("invalid fold item '{item}'"),
+                        span.clone(),
+                    ));
+                }
+                let collection_type = infer_source_expression(
+                    collection,
+                    span,
+                    &variables,
+                    declarations,
+                    diagnostics,
+                );
+                let item_type = collection_type.as_deref().and_then(|found| {
+                    generic_inner(found, "List").or_else(|| generic_inner(found, "Set"))
+                });
+                if collection_type.is_some() && item_type.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X841",
+                            "execution",
+                            "fold source must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected(
+                            "List<T>|Set<T>",
+                            collection_type.as_deref().unwrap_or("unknown"),
+                        ),
+                    );
+                }
+                if let Some(found) =
+                    infer_source_expression(initial, span, &variables, declarations, diagnostics)
+                    && !fold_compatible(&found, type_name)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X842",
+                            "execution",
+                            "fold initial value does not match its result type",
+                            span.clone(),
+                        )
+                        .expected(type_name, found),
+                    );
+                }
+                if let Some(item_type) = item_type {
+                    let mut fold_variables = variables.clone();
+                    fold_variables.insert("value".into(), type_name.clone());
+                    fold_variables.insert(item.clone(), item_type.to_string());
+                    if let Some(found) = infer_source_expression(
+                        update,
+                        span,
+                        &fold_variables,
+                        declarations,
+                        diagnostics,
+                    ) && !fold_compatible(&found, type_name)
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X843",
+                                "execution",
+                                "fold next value does not match its result type",
+                                span.clone(),
+                            )
+                            .expected(type_name, found),
+                        );
+                    }
+                }
+                if variables.insert(name.clone(), type_name.clone()).is_some() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N802",
+                        "names",
+                        format!("flow variable '{name}' is defined more than once"),
+                        span.clone(),
+                    ));
+                }
+            }
+            FlowStatement::Run {
+                name,
+                flow: target_name,
+                argument,
+                propagate,
+                span,
+            } => {
+                if !valid_name(name, false) || name == "input" {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N801",
+                        "names",
+                        format!("invalid flow variable '{name}'"),
+                        span.clone(),
+                    ));
+                }
+                let Some(Declaration::Flow(target)) = declarations.get(target_name.as_str()) else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X851",
+                            "execution",
+                            format!("run references unknown flow '{target_name}'"),
+                            span.clone(),
+                        )
+                        .expected("declared flow", target_name),
+                    );
+                    continue;
+                };
+                if target.name == flow.name {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-X856",
+                        "execution",
+                        format!("flow '{}' cannot directly run itself", flow.name),
+                        span.clone(),
+                    ));
+                    continue;
+                }
+                if let Some(found) =
+                    infer_source_expression(argument, span, &variables, declarations, diagnostics)
+                    && !same_type(&found, &target.input)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X852",
+                            "execution",
+                            format!("flow '{}' receives the wrong argument type", target.name),
+                            span.clone(),
+                        )
+                        .expected(&target.input, found),
+                    );
+                    continue;
+                }
+                let variable_type = match generic_inner(&target.output, "Result") {
+                    Some(inner) if *propagate && result_type.is_some() => inner.to_string(),
+                    Some(_) if !*propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X853",
+                                "execution",
+                                "a Result flow run requires '?' propagation",
+                                span.clone(),
+                            )
+                            .expected("run value = Flow(argument)?", "missing ?"),
+                        );
+                        continue;
+                    }
+                    Some(_) => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X854",
+                                "execution",
+                                "'?' requires the containing flow to return Result<T>",
+                                span.clone(),
+                            )
+                            .expected("Result<T> flow output", &flow.output),
+                        );
+                        continue;
+                    }
+                    None if *propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X855",
+                                "execution",
+                                "'?' can only propagate a Result<T> flow",
+                                span.clone(),
+                            )
+                            .expected("Result<T> target flow output", &target.output),
+                        );
+                        continue;
+                    }
+                    None => target.output.clone(),
+                };
+                if variables.insert(name.clone(), variable_type).is_some() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N802",
+                        "names",
+                        format!("flow variable '{name}' is defined more than once"),
+                        span.clone(),
+                    ));
+                }
+            }
+            FlowStatement::Match {
+                name,
+                type_name,
+                subject,
+                cases,
+                span,
+            } => {
+                check_type(type_name, span, declarations, diagnostics);
+                if !valid_name(name, false) || name == "input" {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N801",
+                        "names",
+                        format!("invalid flow variable '{name}'"),
+                        span.clone(),
+                    ));
+                }
+                let subject_type =
+                    infer_source_expression(subject, span, &variables, declarations, diagnostics);
+                let value_enum = subject_type
+                    .as_deref()
+                    .and_then(|found| declarations.get(found))
+                    .and_then(|declaration| match declaration {
+                        Declaration::Enum(value) => Some(value),
+                        _ => None,
+                    });
+                if subject_type.is_some() && value_enum.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X861",
+                            "execution",
+                            "match subject must be an enum",
+                            span.clone(),
+                        )
+                        .expected(
+                            "declared enum",
+                            subject_type.as_deref().unwrap_or("unknown"),
+                        ),
+                    );
+                }
+                if let Some(value_enum) = value_enum {
+                    let mut matched = BTreeSet::new();
+                    for case in cases {
+                        if !matched.insert(case.variant.as_str()) {
+                            diagnostics.push(Diagnostic::error(
+                                "AXL-X863",
+                                "execution",
+                                format!(
+                                    "duplicate match case '{}.{}'",
+                                    value_enum.name, case.variant
+                                ),
+                                case.span.clone(),
+                            ));
+                        }
+                        if !value_enum
+                            .variants
+                            .iter()
+                            .any(|variant| variant.name == case.variant)
+                        {
+                            diagnostics.push(Diagnostic::error(
+                                "AXL-X862",
+                                "execution",
+                                format!(
+                                    "enum '{}' has no variant '{}'",
+                                    value_enum.name, case.variant
+                                ),
+                                case.span.clone(),
+                            ));
+                        }
+                        if let Some(found) = infer_source_expression(
+                            &case.expression,
+                            &case.span,
+                            &variables,
+                            declarations,
+                            diagnostics,
+                        ) && !fold_compatible(&found, type_name)
+                        {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    "AXL-X865",
+                                    "execution",
+                                    format!("match case '{}' has the wrong type", case.variant),
+                                    case.span.clone(),
+                                )
+                                .expected(type_name, found),
+                            );
+                        }
+                    }
+                    let missing = value_enum
+                        .variants
+                        .iter()
+                        .filter(|variant| !matched.contains(variant.name.as_str()))
+                        .map(|variant| variant.name.clone())
+                        .collect::<Vec<_>>();
+                    if !missing.is_empty() {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X864",
+                                "execution",
+                                format!("match on '{}' is not exhaustive", value_enum.name),
+                                span.clone(),
+                            )
+                            .expected(
+                                format!("cases for {}", missing.join(", ")),
+                                "missing variants",
+                            ),
+                        );
+                    }
+                }
+                if variables.insert(name.clone(), type_name.clone()).is_some() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N802",
+                        "names",
+                        format!("flow variable '{name}' is defined more than once"),
+                        span.clone(),
+                    ));
+                }
+            }
+            FlowStatement::Return { expression, span } => {
+                return_count += 1;
+                if index + 1 != flow.statements.len() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-X805",
+                        "execution",
+                        "return must be the final flow statement",
+                        span.clone(),
+                    ));
+                }
+                if let Some(found) =
+                    infer_source_expression(expression, span, &variables, declarations, diagnostics)
+                    && !same_type(&found, expected_return)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X806",
+                            "execution",
+                            format!("flow '{}' returns the wrong type", flow.name),
+                            span.clone(),
+                        )
+                        .expected(expected_return, found),
+                    );
+                }
+            }
+        }
+    }
+
+    if return_count != 1 {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-X807",
+                "execution",
+                format!("flow '{}' requires exactly one return", flow.name),
+                flow.span.clone(),
+            )
+            .expected("one final return", return_count.to_string()),
+        );
+    }
+}
+
+fn check_flow_provider(
+    flow: &Flow,
+    dependency: &FlowDependency,
+    provider: &str,
+    span: &SourceSpan,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    match provider_type(provider, declarations) {
+        Some(provided) if provided == dependency.capacity => {}
+        Some(provided) => diagnostics.push(
+            Diagnostic::error(
+                "AXL-X821",
+                "execution",
+                format!(
+                    "provider '{}' does not satisfy flow dependency '{}.{}'",
+                    provider, flow.name, dependency.name
+                ),
+                span.clone(),
+            )
+            .expected(&dependency.capacity, provided),
+        ),
+        None => diagnostics.push(
+            Diagnostic::error(
+                "AXL-X822",
+                "execution",
+                format!("unknown flow provider '{provider}'"),
+                span.clone(),
+            )
+            .expected(
+                format!("provider of {}", dependency.capacity),
+                "unknown declaration",
+            ),
+        ),
+    }
+}
+
+fn infer_source_expression(
+    source: &str,
+    span: &SourceSpan,
+    variables: &BTreeMap<String, String>,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<String> {
+    match expression::parse(source) {
+        Ok(expression) => match infer_expression(&expression, variables, declarations) {
+            Ok(type_name) => Some(type_name),
+            Err(message) => {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-X802",
+                    "execution",
+                    message,
+                    span.clone(),
+                ));
+                None
+            }
+        },
+        Err(message) => {
+            diagnostics.push(Diagnostic::error(
+                "AXL-X801",
+                "execution",
+                message,
+                span.clone(),
+            ));
+            None
+        }
+    }
+}
+
+fn infer_expression(
+    expression: &Expr,
+    variables: &BTreeMap<String, String>,
+    declarations: &BTreeMap<&str, &Declaration>,
+) -> Result<String, String> {
+    match expression {
+        Expr::Path(path) => infer_path(path, variables, declarations),
+        Expr::Bool(_) => Ok("bool".into()),
+        Expr::Int(_) => Ok("int".into()),
+        Expr::Float(_) => Ok("float".into()),
+        Expr::String(_) => Ok("text".into()),
+        Expr::Unary(operator, value) => {
+            let found = infer_expression(value, variables, declarations)?;
+            match operator {
+                UnaryOp::Not if found == "bool" => Ok("bool".into()),
+                UnaryOp::Negate if numeric_type(&found) => Ok(found),
+                UnaryOp::Not => Err(format!("operator ! requires bool, found '{found}'")),
+                UnaryOp::Negate => Err(format!("unary - requires a numeric type, found '{found}'")),
+            }
+        }
+        Expr::Binary(left, operator, right) => {
+            let left = infer_expression(left, variables, declarations)?;
+            let right = infer_expression(right, variables, declarations)?;
+            match operator {
+                BinaryOp::Or | BinaryOp::And if left == "bool" && right == "bool" => {
+                    Ok("bool".into())
+                }
+                BinaryOp::Or | BinaryOp::And => Err(format!(
+                    "logical operator requires bool operands, found '{left}' and '{right}'"
+                )),
+                BinaryOp::Equal | BinaryOp::NotEqual
+                    if same_type(&left, &right)
+                        || (numeric_type(&left) && numeric_type(&right)) =>
+                {
+                    Ok("bool".into())
+                }
+                BinaryOp::Equal | BinaryOp::NotEqual => Err(format!(
+                    "equality operands are incompatible: '{left}' and '{right}'"
+                )),
+                BinaryOp::Greater
+                | BinaryOp::GreaterEqual
+                | BinaryOp::Less
+                | BinaryOp::LessEqual
+                    if (numeric_type(&left) && numeric_type(&right))
+                        || (left == right && ordered_type(&left, declarations)) =>
+                {
+                    Ok("bool".into())
+                }
+                BinaryOp::Greater
+                | BinaryOp::GreaterEqual
+                | BinaryOp::Less
+                | BinaryOp::LessEqual => Err(format!(
+                    "comparison operands are incompatible: '{left}' and '{right}'"
+                )),
+                BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide
+                    if numeric_type(&left) && numeric_type(&right) =>
+                {
+                    Ok(numeric_result(&left, &right).into())
+                }
+                BinaryOp::Add | BinaryOp::Subtract | BinaryOp::Multiply | BinaryOp::Divide => Err(
+                    format!("arithmetic requires numeric operands, found '{left}' and '{right}'"),
+                ),
+            }
+        }
+        Expr::Conditional {
+            condition,
+            when_true,
+            when_false,
+        } => {
+            let condition_type = infer_expression(condition, variables, declarations)?;
+            if condition_type != "bool" {
+                return Err(format!(
+                    "conditional requires bool, found '{condition_type}'"
+                ));
+            }
+            let true_type = infer_expression(when_true, variables, declarations)?;
+            let false_type = infer_expression(when_false, variables, declarations)?;
+            if same_type(&true_type, &false_type) {
+                Ok(true_type)
+            } else if numeric_type(&true_type) && numeric_type(&false_type) {
+                Ok(numeric_result(&true_type, &false_type).into())
+            } else {
+                Err(format!(
+                    "conditional branches are incompatible: '{true_type}' and '{false_type}'"
+                ))
+            }
+        }
+    }
+}
+
+fn infer_path(
+    path: &[String],
+    variables: &BTreeMap<String, String>,
+    declarations: &BTreeMap<&str, &Declaration>,
+) -> Result<String, String> {
+    let Some(first) = path.first() else {
+        return Err("empty value path".into());
+    };
+    if let Some(Declaration::Enum(value)) = declarations.get(first.as_str()) {
+        if path.len() == 2 && value.variants.iter().any(|variant| variant.name == path[1]) {
+            return Ok(value.name.clone());
+        }
+        return Err(format!("unknown enum variant '{}'", path.join(".")));
+    }
+
+    let mut current = variables
+        .get(first)
+        .cloned()
+        .ok_or_else(|| format!("unknown flow value '{first}'"))?;
+    for segment in &path[1..] {
+        let Some(Declaration::Entity(entity)) = declarations.get(current.as_str()) else {
+            return Err(format!("type '{current}' has no field '{segment}'"));
+        };
+        current = entity
+            .fields
+            .iter()
+            .find(|field| field.name == *segment)
+            .map(|field| field.type_name.clone())
+            .ok_or_else(|| format!("entity '{}' has no field '{segment}'", entity.name))?;
+    }
+    Ok(current)
+}
+
+fn numeric_type(value: &str) -> bool {
+    matches!(value, "int" | "float" | "money")
+}
+
+fn fold_compatible(found: &str, expected: &str) -> bool {
+    same_type(found, expected) || (numeric_type(found) && numeric_type(expected))
+}
+
+fn numeric_result<'a>(left: &'a str, right: &'a str) -> &'a str {
+    if left == "float" || right == "float" {
+        "float"
+    } else if left == "money" || right == "money" {
+        "money"
+    } else {
+        "int"
+    }
+}
+
+fn ordered_type(value: &str, declarations: &BTreeMap<&str, &Declaration>) -> bool {
+    matches!(
+        value,
+        "text" | "string" | "email" | "uuid" | "datetime" | "duration"
+    ) || matches!(declarations.get(value), Some(Declaration::Enum(_)))
+}
+
+fn same_type(left: &str, right: &str) -> bool {
+    left == right
+}
+
+fn generic_inner<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+    value
+        .strip_prefix(name)?
+        .strip_prefix('<')?
+        .strip_suffix('>')
+}
+
 fn check_provider(
     blueprint: &Blueprint,
     port: &Port,
@@ -829,11 +1856,13 @@ fn valid_name(value: &str, allow_dots: bool) -> bool {
 
 fn declaration_kind(declaration: &Declaration) -> &'static str {
     match declaration {
+        Declaration::Enum(_) => "enum",
         Declaration::Entity(_) => "entity",
         Declaration::Capacity(_) => "capacity",
         Declaration::Skill(_) => "skill",
         Declaration::Blueprint(_) => "blueprint",
         Declaration::Instance(_) => "instance",
+        Declaration::Flow(_) => "flow",
         Declaration::Agent(_) => "agent",
     }
 }
@@ -858,15 +1887,27 @@ fn lower(program: &Program) -> GraphIr {
 
     for declaration in &program.declarations {
         match declaration {
+            Declaration::Enum(value) => lower_enum(value, &mut graph),
             Declaration::Entity(entity) => lower_entity(entity, &mut graph),
             Declaration::Capacity(capacity) => lower_capacity(capacity, &mut graph),
             Declaration::Skill(skill) => lower_skill(skill, &mut graph),
             Declaration::Blueprint(blueprint) => lower_blueprint(blueprint, &mut graph),
             Declaration::Instance(instance) => lower_instance(instance, program, &mut graph),
+            Declaration::Flow(flow) => lower_flow(flow, &mut graph),
             Declaration::Agent(agent) => lower_agent(agent, &mut graph),
         }
     }
     graph
+}
+
+fn lower_enum(value: &Enum, graph: &mut GraphIr) {
+    let enum_id = format!("enum.{}", value.name);
+    graph.nodes.push(node(&enum_id, "enum", &value.name));
+    for variant in &value.variants {
+        let id = format!("{enum_id}.variant.{}", variant.name);
+        graph.nodes.push(node(&id, "variant", &variant.name));
+        graph.edges.push(edge(&enum_id, &id, "owns", None));
+    }
 }
 
 fn lower_entity(entity: &Entity, graph: &mut GraphIr) {
@@ -998,6 +2039,150 @@ fn lower_agent(agent: &Agent, graph: &mut GraphIr) {
     }
     append_grants(&agent_id, &agent.effects, &mut graph.effects);
     append_grants(&agent_id, &agent.capabilities, &mut graph.capabilities);
+}
+
+fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
+    let flow_id = format!("flow.{}", flow.name);
+    let mut flow_node = node(&flow_id, "flow", &flow.name);
+    flow_node.type_name = Some(format!("{}->{}", flow.input, flow.output));
+    graph.nodes.push(flow_node);
+
+    for dependency in &flow.dependencies {
+        let id = format!("{flow_id}.input.{}", dependency.name);
+        let mut value = node(&id, "input", &dependency.name);
+        value.type_name = Some(dependency.capacity.clone());
+        if let Some(default) = &dependency.default {
+            value.metadata.insert("default".into(), default.clone());
+            graph.edges.push(edge(
+                &id,
+                &provider_id(default),
+                "default",
+                Some(&dependency.capacity),
+            ));
+        }
+        graph.nodes.push(value);
+        graph.edges.push(edge(&flow_id, &id, "owns", None));
+    }
+
+    for binding in &flow.bindings {
+        if let Some(dependency) = flow
+            .dependencies
+            .iter()
+            .find(|dependency| dependency.name == binding.port)
+        {
+            graph.edges.push(edge(
+                &format!("{flow_id}.input.{}", dependency.name),
+                &provider_id(&binding.provider),
+                "bind",
+                Some(&dependency.capacity),
+            ));
+        }
+    }
+
+    for (index, statement) in flow.statements.iter().enumerate() {
+        let (kind, name) = match statement {
+            FlowStatement::Let { name, .. } => ("let", name.as_str()),
+            FlowStatement::Require { .. } => ("require", "require"),
+            FlowStatement::Call { name, .. } => ("call", name.as_str()),
+            FlowStatement::Make { name, .. } => ("make", name.as_str()),
+            FlowStatement::Fold { name, .. } => ("fold", name.as_str()),
+            FlowStatement::Run { name, .. } => ("run", name.as_str()),
+            FlowStatement::Match { name, .. } => ("match", name.as_str()),
+            FlowStatement::Return { .. } => ("return", "return"),
+        };
+        let id = format!("{flow_id}.{kind}.{index}");
+        let mut value = node(&id, kind, name);
+        value.metadata.insert("order".into(), index.to_string());
+        match statement {
+            FlowStatement::Let { expression, .. }
+            | FlowStatement::Require { expression, .. }
+            | FlowStatement::Return { expression, .. } => {
+                value
+                    .metadata
+                    .insert("expression".into(), expression.clone());
+            }
+            FlowStatement::Call {
+                dependency,
+                operation,
+                argument,
+                propagate,
+                ..
+            } => {
+                value
+                    .metadata
+                    .insert("dependency".into(), dependency.clone());
+                value.metadata.insert("operation".into(), operation.clone());
+                value.metadata.insert("argument".into(), argument.clone());
+                value
+                    .metadata
+                    .insert("propagate".into(), propagate.to_string());
+            }
+            FlowStatement::Make { type_name, .. } => {
+                value.type_name = Some(type_name.clone());
+            }
+            FlowStatement::Fold {
+                type_name,
+                collection,
+                initial,
+                item,
+                update,
+                ..
+            } => {
+                value.type_name = Some(type_name.clone());
+                value
+                    .metadata
+                    .insert("collection".into(), collection.clone());
+                value.metadata.insert("initial".into(), initial.clone());
+                value.metadata.insert("item".into(), item.clone());
+                value.metadata.insert("update".into(), update.clone());
+            }
+            FlowStatement::Run {
+                flow,
+                argument,
+                propagate,
+                ..
+            } => {
+                value.metadata.insert("flow".into(), flow.clone());
+                value.metadata.insert("argument".into(), argument.clone());
+                value
+                    .metadata
+                    .insert("propagate".into(), propagate.to_string());
+            }
+            FlowStatement::Match {
+                type_name, subject, ..
+            } => {
+                value.type_name = Some(type_name.clone());
+                value.metadata.insert("subject".into(), subject.clone());
+            }
+        }
+        if let FlowStatement::Require { message, .. } = statement {
+            value.metadata.insert("message".into(), message.clone());
+        }
+        graph.nodes.push(value);
+        graph.edges.push(edge(&flow_id, &id, "owns", None));
+        if let FlowStatement::Make { fields, .. } = statement {
+            for field in fields {
+                let assignment_id = format!("{id}.assign.{}", field.name);
+                let mut assignment = node(&assignment_id, "assign", &field.name);
+                assignment
+                    .metadata
+                    .insert("expression".into(), field.expression.clone());
+                graph.nodes.push(assignment);
+                graph.edges.push(edge(&id, &assignment_id, "owns", None));
+            }
+        }
+        if let FlowStatement::Match { cases, .. } = statement {
+            for case in cases {
+                let case_id = format!("{id}.case.{}", case.variant);
+                let mut case_node = node(&case_id, "case", &case.variant);
+                case_node
+                    .metadata
+                    .insert("expression".into(), case.expression.clone());
+                graph.nodes.push(case_node);
+                graph.edges.push(edge(&id, &case_id, "owns", None));
+            }
+        }
+    }
 }
 
 fn lower_instance(instance: &Instance, program: &Program, graph: &mut GraphIr) {
