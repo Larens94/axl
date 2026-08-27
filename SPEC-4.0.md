@@ -276,6 +276,41 @@ match signed: money = input.kind
 `match` requires an enum subject and exactly one compatible case for every
 variant. Missing, duplicate and unknown variants are compiler errors.
 
+Collection transforms are typed and multiline:
+
+```axl
+filter incomes: List<Movement> = input.movements as movement
+  where = movement.kind == MovementKind.income
+
+map amounts: List<money> = incomes as movement
+  value = movement.amount
+```
+
+`filter` preserves the exact source collection type and requires a boolean
+predicate. `map` requires a `List<T>` or `Set<T>` output and checks every mapped
+value against `T`. A mapped `Set<T>` removes duplicate values deterministically.
+
+### HTTP API
+
+An API exposes checked flows without handwritten controllers:
+
+```axl
+api CashflowApi
+  post /movements Movement -> Result<Movement> = ValidateAndStoreMovement
+  post /balance MovementBatch -> money = CalculateLedgerBalance
+```
+
+Implemented methods are `get`, `post`, `put`, `patch` and `delete`. Paths are
+currently exact absolute paths. Input/output types must exactly match the bound
+flow signature. Duplicate routes inside one API and conflicts across APIs are
+rejected.
+
+`axl-compiler serve` runs a generic Axum adapter over the HTTP nodes in Graph
+IR. JSON input is validated by the flow runtime. A successful value returns
+HTTP 200, an AXL `{ "error": ... }` returns 422, invalid input returns 400 and
+an unknown route returns 404. Each request currently creates a new built-in
+provider runtime, so memory and SQLite state do not persist between requests.
+
 ## 3. Type system
 
 Implemented built-ins:
@@ -363,6 +398,7 @@ axl-compiler blocks <input.axl>
 axl-compiler experiment <input.axl> <output-dir>
 axl-compiler unpack <packed.axl>
 axl-compiler eval <input.axl> <flow> <input.json>
+axl-compiler serve <input.axl> [address]
 ```
 
 `experiment` writes:
@@ -379,13 +415,15 @@ targets/
   sql/schema.sql
   agents/agents.json
   flows/flows.json
+  http/routes.json
 ```
 
 The current target adapters generate Rust data/capacity contracts, a React slot
 registry, SQL entity DDL, an agent manifest and an `axl-open-block/2` manifest
 that lists every blueprint surface. `flows/flows.json` exposes the ordered,
-typed executable bodies and dependencies using protocol `axl-flow/2`. They deliberately stop
-before claiming to generate a complete production application.
+typed executable bodies and dependencies using protocol `axl-flow/2`.
+`http/routes.json` uses `axl-http/1`. They deliberately stop before claiming to
+generate a complete production application.
 
 ## 8. Design sources adopted
 
@@ -403,9 +441,10 @@ before claiming to generate a complete production application.
 
 - contract expression type checking;
 - branch statement blocks and mutable variables;
-- collection literals, `map`, `filter`, grouping and sorting;
+- collection literals, grouping and sorting;
 - `parallel`, `race`, retry and timeout execution;
-- executable Rust handlers and React components from Graph IR;
+- generated standalone Rust handlers and React components from Graph IR;
+- path parameters, query decoding, middleware and streaming HTTP bodies;
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
 - durable provider configuration and database paths;

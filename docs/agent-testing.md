@@ -17,7 +17,7 @@ jq empty schema/axl-flow-2.schema.json
 ```
 
 The integration suite compiles nine valid documented programs, round-trips each
-through Packed Graph IR and verifies nine intentionally invalid programs.
+through Packed Graph IR and verifies ten intentionally invalid programs.
 
 The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
@@ -88,6 +88,10 @@ cargo run -p axl-compiler -- \
   examples/apps/inputs/movement-batch.json
 
 cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl IncomeAmounts \
+  examples/apps/inputs/movement-batch.json
+
+cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl StoreAndLoadMovement \
   examples/apps/inputs/movement-valid.json
 
@@ -137,6 +141,9 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   check examples/invalid/flow-matches.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-transforms.axl --json
 ```
 
 The first diagnostic set must include `AXL-O401`; the second must include
@@ -146,6 +153,7 @@ from `AXL-X816` through `AXL-X821`; the sixth must include every code from
 `AXL-X831` through `AXL-X835`; the seventh must include `AXL-N805` and
 `AXL-X841` through `AXL-X843`; the eighth must include `AXL-X851` through
 `AXL-X856`; the ninth must include `AXL-X861` through `AXL-X865`.
+The tenth must include `AXL-N806` and `AXL-X871` through `AXL-X875`.
 
 ## 7. Verify canonical formatting and transport
 
@@ -173,6 +181,7 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - conditional expressions and multiline records are typed and executable;
 - folds and composed flow runs survive formatting and Packed IR round-trips;
 - enum matches are exhaustive and executable;
+- map/filter transforms are scoped, typed and executable;
 - memory and SQLite providers execute through the same replaceable ABI;
 - documentation examples remain coupled to compiler tests.
 

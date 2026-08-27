@@ -1,0 +1,20 @@
+// Expected diagnostics: AXL-H901 through AXL-H907.
+axl 4
+app InvalidHttpRoutes
+
+entity Input
+  id: uuid required
+
+flow Identity Input -> Input
+  return input
+
+api Empty
+
+api Broken
+  trace invalid Input -> Input = Missing
+  post /duplicate Input -> Input = Identity
+  post /duplicate Input -> Input = Identity
+  post /wrong Input -> money = Identity
+
+api Conflicting
+  post /duplicate Input -> Input = Identity

@@ -185,10 +185,45 @@ pub fn format(program: &Program) -> String {
                                 output.push(format!("    {} => {}", case.variant, case.expression));
                             }
                         }
+                        FlowStatement::Map {
+                            name,
+                            type_name,
+                            collection,
+                            item,
+                            expression,
+                            ..
+                        } => {
+                            output.push(format!(
+                                "  map {name}: {type_name} = {collection} as {item}"
+                            ));
+                            output.push(format!("    value = {expression}"));
+                        }
+                        FlowStatement::Filter {
+                            name,
+                            type_name,
+                            collection,
+                            item,
+                            predicate,
+                            ..
+                        } => {
+                            output.push(format!(
+                                "  filter {name}: {type_name} = {collection} as {item}"
+                            ));
+                            output.push(format!("    where = {predicate}"));
+                        }
                         FlowStatement::Return { expression, .. } => {
                             output.push(format!("  return {expression}"));
                         }
                     }
+                }
+            }
+            Declaration::Api(api) => {
+                output.push(format!("api {}", api.name));
+                for route in &api.routes {
+                    output.push(format!(
+                        "  {} {} {} -> {} = {}",
+                        route.method, route.path, route.input, route.output, route.flow
+                    ));
                 }
             }
             Declaration::Agent(agent) => {

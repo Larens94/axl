@@ -29,6 +29,8 @@ cargo run -p axl-compiler -- experiment examples/next/crm.axl build/axl4
 cargo run -p axl-compiler -- unpack build/axl4/app.packed.axl
 cargo run -p axl-compiler -- eval examples/apps/cashflow-core.axl \
   CalculateBalance examples/apps/inputs/balance.json
+cargo run -p axl-compiler -- serve examples/apps/cashflow-core.axl \
+  127.0.0.1:8080
 ```
 
 `check` parses and semantically validates a program. `fmt` prints canonical
@@ -38,6 +40,7 @@ reconstructs JSON Graph IR. `experiment` writes all representations and target
 contracts. `eval` validates JSON input and executes an AXL flow. Flow Runtime 2
 can call a provider through the public ABI; built-in memory and SQLite store
 providers are available, while arbitrary native symbol loading is not.
+`serve` starts the generic Axum adapter for routes declared by `api` nodes.
 
 ## Experiment output
 
@@ -54,6 +57,7 @@ build/axl4/
     sql/schema.sql
     agents/agents.json
     flows/flows.json
+    http/routes.json
 ```
 
 `blocks/open-blocks.json` uses protocol identifier `axl-open-block/2` and exposes
@@ -64,6 +68,8 @@ a deployable CRM.
 Its JSON shape is documented by `schema/axl-open-block-2.schema.json`.
 The flow manifest uses `axl-flow/2` and is documented by
 `schema/axl-flow-2.schema.json`.
+The HTTP manifest uses `axl-http/1` and is documented by
+`schema/axl-http-1.schema.json`.
 
 ## Verification
 
@@ -74,6 +80,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 jq empty schema/axl-ir-4.0.schema.json
 jq empty schema/axl-open-block-2.schema.json
 jq empty schema/axl-flow-2.schema.json
+jq empty schema/axl-http-1.schema.json
 ```
 
 The documented examples are included at compile time in

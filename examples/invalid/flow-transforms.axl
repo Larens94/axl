@@ -1,0 +1,37 @@
+// Expected diagnostics: AXL-N806 and AXL-X871 through AXL-X875.
+axl 4
+app InvalidFlowTransforms
+
+entity Input
+  amount: money required
+  items: List<int> required
+
+flow NonCollection Input -> List<money>
+  map values: List<money> = input.amount as item
+    value = item
+  return values
+
+flow NonCollectionResult Input -> money
+  map values: money = input.items as item
+    value = item
+  return input.amount
+
+flow ChangedFilterType Input -> List<money>
+  filter values: List<money> = input.items as item
+    where = item > 0
+  return values
+
+flow NonBooleanFilter Input -> List<int>
+  filter values: List<int> = input.items as item
+    where = item
+  return values
+
+flow WrongMapValue Input -> List<int>
+  map values: List<int> = input.items as item
+    value = "invalid"
+  return values
+
+flow ReservedItem Input -> List<int>
+  map values: List<int> = input.items as input
+    value = input
+  return values

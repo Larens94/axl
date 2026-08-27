@@ -185,6 +185,58 @@ fn documented_invalid_examples_report_stable_codes() {
             "AXL-X865",
             include_str!("../../../examples/invalid/flow-matches.axl"),
         ),
+        (
+            "AXL-N806",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X871",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X872",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X873",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X874",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X875",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-H901",
+            include_str!("../../../examples/invalid/http-routes.axl"),
+        ),
+        (
+            "AXL-H902",
+            include_str!("../../../examples/invalid/http-routes.axl"),
+        ),
+        (
+            "AXL-H903",
+            include_str!("../../../examples/invalid/http-routes.axl"),
+        ),
+        (
+            "AXL-H904",
+            include_str!("../../../examples/invalid/http-routes.axl"),
+        ),
+        (
+            "AXL-H905",
+            include_str!("../../../examples/invalid/http-routes.axl"),
+        ),
+        (
+            "AXL-H906",
+            include_str!("../../../examples/invalid/http-routes.axl"),
+        ),
+        (
+            "AXL-H907",
+            include_str!("../../../examples/invalid/http-routes.axl"),
+        ),
     ];
 
     for (code, source) in cases {
@@ -233,6 +285,14 @@ fn documented_cashflow_core_executes() {
             .unwrap();
     assert_eq!(ledger, 80000);
 
+    let movements = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-batch.json"
+    ))
+    .unwrap();
+    let amounts =
+        axl_compiler::next::runtime::evaluate_flow(&graph, "IncomeAmounts", movements).unwrap();
+    assert_eq!(amounts, serde_json::json!([125000]));
+
     for flow in ["StoreAndLoadMovement", "StoreAndLoadMovementSqlite"] {
         let movement = serde_json::from_str(include_str!(
             "../../../examples/apps/inputs/movement-valid.json"
@@ -259,4 +319,20 @@ fn documented_cashflow_core_executes() {
         axl_compiler::next::runtime::evaluate_flow(&graph, "ValidateAndStoreMovement", invalid)
             .unwrap();
     assert_eq!(rejected["error"], "amount_must_be_positive");
+
+    let movement = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-valid.json"
+    ))
+    .unwrap();
+    let response = axl_compiler::next::http::dispatch(&graph, "post", "/movements", movement);
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body["ok"]["id"], "movement-001");
+
+    let batch = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-batch.json"
+    ))
+    .unwrap();
+    let response = axl_compiler::next::http::dispatch(&graph, "post", "/balance", batch);
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, 80000);
 }

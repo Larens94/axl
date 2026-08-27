@@ -80,6 +80,8 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             parse_instance(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("flow ") {
             parse_flow(line, body, &mut declarations, &mut diagnostics);
+        } else if line.text.starts_with("api ") {
+            parse_api(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("agent ") {
             parse_agent(line, body, &mut declarations, &mut diagnostics);
         } else {
@@ -935,6 +937,32 @@ fn parse_flow(
                 cases,
                 span: span(line),
             });
+        } else if let Some(value) = line.text.strip_prefix("map ") {
+            if let Some((name, type_name, collection, item, expression)) =
+                parse_transform(value, "value", line, body, line_index, diagnostics)
+            {
+                statements.push(FlowStatement::Map {
+                    name,
+                    type_name,
+                    collection,
+                    item,
+                    expression,
+                    span: span(line),
+                });
+            }
+        } else if let Some(value) = line.text.strip_prefix("filter ") {
+            if let Some((name, type_name, collection, item, predicate)) =
+                parse_transform(value, "where", line, body, line_index, diagnostics)
+            {
+                statements.push(FlowStatement::Filter {
+                    name,
+                    type_name,
+                    collection,
+                    item,
+                    predicate,
+                    span: span(line),
+                });
+            }
         } else if let Some(expression) = line.text.strip_prefix("return ") {
             statements.push(FlowStatement::Return {
                 expression: expression.trim().to_string(),
@@ -1094,6 +1122,100 @@ fn parse_flow_run(
     });
 }
 
+fn parse_transform(
+    value: &str,
+    body_keyword: &str,
+    line: &SourceLine,
+    body: &[SourceLine],
+    line_index: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(String, String, String, String, String)> {
+    let parsed = value.split_once('=').and_then(|(name_and_type, source)| {
+        let (name, type_name) = name_and_type.split_once(':')?;
+        let (collection, item) = source.rsplit_once(" as ")?;
+        Some((
+            name.trim(),
+            type_name.trim(),
+            collection.trim(),
+            item.trim(),
+        ))
+    });
+    let Some((name, type_name, collection, item)) = parsed else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P830",
+                "parse",
+                "a collection transform requires a result type, source and item",
+                span(line),
+            )
+            .expected(
+                format!("name: List<T> = collection as item\n  {body_keyword} = expression"),
+                &line.text,
+            ),
+        );
+        return None;
+    };
+    let nested = body
+        .iter()
+        .skip(line_index + 1)
+        .take_while(|candidate| candidate.indent > line.indent)
+        .collect::<Vec<_>>();
+    let Some(expression_line) = nested.first() else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P831",
+                "parse",
+                "a collection transform requires a body expression",
+                span(line),
+            )
+            .expected(format!("{body_keyword} = expression"), "missing"),
+        );
+        return None;
+    };
+    let Some((keyword, expression)) = expression_line.text.split_once('=') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P831",
+                "parse",
+                "a collection transform body binds an expression",
+                span(expression_line),
+            )
+            .expected(
+                format!("{body_keyword} = expression"),
+                &expression_line.text,
+            ),
+        );
+        return None;
+    };
+    if keyword.trim() != body_keyword {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P831",
+                "parse",
+                format!("a collection transform body begins with '{body_keyword} ='"),
+                span(expression_line),
+            )
+            .expected(
+                format!("{body_keyword} = expression"),
+                &expression_line.text,
+            ),
+        );
+        return None;
+    }
+    let mut expression = expression.trim().to_string();
+    for continuation in nested.iter().skip(1) {
+        expression.push(' ');
+        expression.push_str(continuation.text.trim());
+    }
+    Some((
+        name.into(),
+        type_name.into(),
+        collection.into(),
+        item.into(),
+        expression,
+    ))
+}
+
 fn parse_agent(
     header: &SourceLine,
     body: &[SourceLine],
@@ -1135,6 +1257,80 @@ fn parse_agent(
         }
     }
     declarations.push(Declaration::Agent(agent));
+}
+
+fn parse_api(
+    header: &SourceLine,
+    body: &[SourceLine],
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let name = header.text["api ".len()..].trim();
+    if name.is_empty() {
+        diagnostics.push(missing_name(header, "api"));
+        return;
+    }
+    let mut routes = Vec::new();
+    for line in body {
+        let Some((method, remainder)) = line.text.split_once(' ') else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P910",
+                    "parse",
+                    "an API route requires method, path, signature and flow",
+                    span(line),
+                )
+                .expected("post /path Input -> Output = Flow", &line.text),
+            );
+            continue;
+        };
+        let Some((signature, flow)) = remainder.rsplit_once('=') else {
+            diagnostics.push(
+                Diagnostic::error("AXL-P910", "parse", "an API route binds a flow", span(line))
+                    .expected("post /path Input -> Output = Flow", &line.text),
+            );
+            continue;
+        };
+        let Some((request, output)) = signature.split_once("->") else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P911",
+                    "parse",
+                    "an API route requires an output type",
+                    span(line),
+                )
+                .expected("post /path Input -> Output = Flow", &line.text),
+            );
+            continue;
+        };
+        let mut request = request.split_whitespace();
+        let (Some(path), Some(input), None) = (request.next(), request.next(), request.next())
+        else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P912",
+                    "parse",
+                    "an API route requires one path and input type",
+                    span(line),
+                )
+                .expected("post /path Input -> Output = Flow", &line.text),
+            );
+            continue;
+        };
+        routes.push(ApiRoute {
+            method: method.to_ascii_lowercase(),
+            path: path.into(),
+            input: input.into(),
+            output: output.trim().into(),
+            flow: flow.trim().into(),
+            span: span(line),
+        });
+    }
+    declarations.push(Declaration::Api(Api {
+        name: name.into(),
+        routes,
+        span: span(header),
+    }));
 }
 
 fn missing_name(line: &SourceLine, kind: &str) -> Diagnostic {

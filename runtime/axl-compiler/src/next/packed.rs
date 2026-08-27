@@ -315,6 +315,7 @@ fn reconstruct_id(
                 | "blueprint"
                 | "instance"
                 | "flow"
+                | "api"
                 | "agent"
         ) =>
         {
@@ -331,7 +332,16 @@ fn reconstruct_id(
         Some(parent)
             if matches!(
                 kind,
-                "let" | "require" | "call" | "make" | "fold" | "run" | "match" | "return"
+                "let"
+                    | "require"
+                    | "call"
+                    | "make"
+                    | "fold"
+                    | "run"
+                    | "match"
+                    | "map"
+                    | "filter"
+                    | "return"
             ) =>
         {
             let order = metadata.get("order").ok_or_else(|| {
@@ -341,6 +351,12 @@ fn reconstruct_id(
         }
         Some(parent) if kind == "assign" => Ok(format!("{parent}.assign.{name}")),
         Some(parent) if kind == "case" => Ok(format!("{parent}.case.{name}")),
+        Some(parent) if kind == "route" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("route node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.route.{order}"))
+        }
         Some(parent)
             if matches!(
                 kind,
@@ -407,6 +423,10 @@ fn node_kind_code(kind: &str) -> &str {
         "run" => "34",
         "match" => "35",
         "case" => "36",
+        "map" => "37",
+        "filter" => "38",
+        "api" => "39",
+        "route" => "40",
         other => other,
     }
 }
@@ -450,6 +470,10 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "34" => "run",
         "35" => "match",
         "36" => "case",
+        "37" => "map",
+        "38" => "filter",
+        "39" => "api",
+        "40" => "route",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())
@@ -462,6 +486,7 @@ fn edge_kind_code(kind: &str) -> &str {
         "bind" => "2",
         "default" => "3",
         "instantiates" => "4",
+        "dispatch" => "5",
         other => other,
     }
 }
@@ -473,6 +498,7 @@ fn edge_kind_from_code(code: &str) -> Result<String, PackedError> {
         "2" => "bind",
         "3" => "default",
         "4" => "instantiates",
+        "5" => "dispatch",
         _ => return Err(PackedError(format!("unknown edge kind code '{code}'"))),
     }
     .into())

@@ -3,6 +3,7 @@ pub mod ast;
 pub mod diagnostic;
 pub mod expression;
 pub mod formatter;
+pub mod http;
 pub mod ir;
 pub mod packed;
 pub mod parser;

@@ -55,7 +55,7 @@
         "operation",
         "argument",
         "propagate",
-        "record_type",
+        "type",
         "fields",
         "collection",
         "initial",
@@ -63,11 +63,12 @@
         "update",
         "flow",
         "subject",
-        "cases"
+        "cases",
+        "predicate"
       ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["let", "require", "call", "make", "fold", "run", "match", "return"] },
+        "kind": { "enum": ["let", "require", "call", "make", "fold", "run", "match", "map", "filter", "return"] },
         "name": { "type": "string" },
         "expression": { "type": ["string", "null"] },
         "message": { "type": ["string", "null"] },
@@ -75,7 +76,7 @@
         "operation": { "type": ["string", "null"] },
         "argument": { "type": ["string", "null"] },
         "propagate": { "type": ["boolean", "null"] },
-        "record_type": { "type": ["string", "null"] },
+        "type": { "type": ["string", "null"] },
         "fields": {
           "type": "array",
           "items": { "$ref": "#/$defs/field" }
@@ -89,7 +90,8 @@
         "cases": {
           "type": "array",
           "items": { "$ref": "#/$defs/case" }
-        }
+        },
+        "predicate": { "type": ["string", "null"] }
       }
     },
     "field": {

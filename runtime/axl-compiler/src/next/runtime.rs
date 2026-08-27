@@ -337,6 +337,54 @@ fn evaluate_flow_inner(
                 validate_value(graph, type_name, &value, "match result")?;
                 values.insert(statement.name.clone(), value);
             }
+            "map" => {
+                let type_name = statement.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no map result type", statement.id))
+                })?;
+                let collection = evaluated_collection(statement, &values)?;
+                let item_name = metadata(statement, "item")?;
+                let mapper = statement_expression(statement)?;
+                let mut mapped = Vec::with_capacity(collection.len());
+                let produces_set = generic(type_name, "Set").is_some();
+                for item in collection {
+                    let mut scope = values.clone();
+                    scope.insert(item_name.into(), item);
+                    let value = expression::evaluate(&mapper, &scope)
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                    if !produces_set || !mapped.contains(&value) {
+                        mapped.push(value);
+                    }
+                }
+                let mapped = Value::Array(mapped);
+                validate_value(graph, type_name, &mapped, "map result")?;
+                values.insert(statement.name.clone(), mapped);
+            }
+            "filter" => {
+                let type_name = statement.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no filter result type", statement.id))
+                })?;
+                let collection = evaluated_collection(statement, &values)?;
+                let item_name = metadata(statement, "item")?;
+                let predicate = expression::parse(metadata(statement, "predicate")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let mut filtered = Vec::new();
+                for item in collection {
+                    let mut scope = values.clone();
+                    scope.insert(item_name.into(), item.clone());
+                    let accepted = expression::evaluate(&predicate, &scope)
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?
+                        .as_bool()
+                        .ok_or_else(|| {
+                            RuntimeError(format!("{} predicate is not boolean", statement.id))
+                        })?;
+                    if accepted {
+                        filtered.push(item);
+                    }
+                }
+                let filtered = Value::Array(filtered);
+                validate_value(graph, type_name, &filtered, "filter result")?;
+                values.insert(statement.name.clone(), filtered);
+            }
             "return" => {
                 let expression = statement_expression(statement)?;
                 let value = expression::evaluate(&expression, &values)
@@ -367,6 +415,24 @@ fn statement_expression(statement: &GraphNode) -> Result<expression::Expr, Runti
     let source = metadata(statement, "expression")?;
     expression::parse(source)
         .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))
+}
+
+fn evaluated_collection(
+    statement: &GraphNode,
+    values: &BTreeMap<String, Value>,
+) -> Result<Vec<Value>, RuntimeError> {
+    let source = expression::parse(metadata(statement, "collection")?)
+        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+    expression::evaluate(&source, values)
+        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?
+        .as_array()
+        .cloned()
+        .ok_or_else(|| {
+            RuntimeError(format!(
+                "{} source did not evaluate to a collection",
+                statement.id
+            ))
+        })
 }
 
 fn memory_store_call(
@@ -488,6 +554,15 @@ fn validate_value(
         for (index, value) in values.iter().enumerate() {
             validate_value(graph, inner, value, &format!("{path}[{index}]"))?;
         }
+        if generic(type_name, "Set").is_some() {
+            for (index, value) in values.iter().enumerate() {
+                if values[..index].contains(value) {
+                    return Err(RuntimeError(format!(
+                        "{path} contains duplicate set values"
+                    )));
+                }
+            }
+        }
         return Ok(());
     }
     match type_name {
@@ -581,7 +656,16 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
         .filter(|node| {
             matches!(
                 node.kind.as_str(),
-                "let" | "require" | "call" | "make" | "fold" | "run" | "match" | "return"
+                "let"
+                    | "require"
+                    | "call"
+                    | "make"
+                    | "fold"
+                    | "run"
+                    | "match"
+                    | "map"
+                    | "filter"
+                    | "return"
             )
         })
         .collect::<Vec<_>>();

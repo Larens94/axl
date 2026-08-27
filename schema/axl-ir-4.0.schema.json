@@ -96,7 +96,11 @@
             "run",
             "match",
             "case",
+            "map",
+            "filter",
             "return",
+            "api",
+            "route",
             "agent",
             "belief",
             "goal",
@@ -132,7 +136,7 @@
           "type": "string"
         },
         "kind": {
-          "enum": ["owns", "provides", "bind", "default", "instantiates"]
+          "enum": ["owns", "provides", "bind", "default", "instantiates", "dispatch"]
         },
         "interface": {
           "type": "string"

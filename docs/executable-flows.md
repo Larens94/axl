@@ -86,6 +86,19 @@ match signed_amount: money = input.kind
 Unknown, duplicate or missing variants and incompatible case values are
 rejected before runtime.
 
+`filter` preserves a collection type and `map` transforms its items:
+
+```axl
+filter incomes: List<Movement> = input.movements as movement
+  where = movement.kind == MovementKind.income
+map amounts: List<money> = incomes as movement
+  value = movement.amount
+```
+
+Both statements create scoped immutable item variables. Sources and outputs are
+limited to `List<T>` and `Set<T>`; predicates and mapped values are checked
+statically and again at runtime.
+
 ## Provider ABI
 
 `ProviderRuntime` is public and replaceable. The interpreter passes it the
@@ -133,7 +146,7 @@ source parser.
 ## Current boundary
 
 Flow Runtime 2 does not implement mutable variables, branch statement blocks,
-collection literals/map/filter/group/sort, async execution, durable
+collection literals/group/sort, async execution, durable
 persistence, events, state mutation, concurrency or UI bindings. The next
 vertical slice is collection transforms and async semantics, then durable
 storage and HTTP.

@@ -1,7 +1,7 @@
 # Cashflow executable core
 
 `cashflow-core.axl` is the first AXL example that executes application behavior
-instead of stopping at contracts. It implements seven deliberately narrow flows:
+instead of stopping at contracts. It implements eight deliberately narrow flows:
 
 - `ValidateMovement` checks a typed movement kind and positive amount;
 - `CalculateBalance` subtracts expenses from income using `money` arithmetic.
@@ -10,6 +10,7 @@ instead of stopping at contracts. It implements seven deliberately narrow flows:
 - `StoreAndLoadMovement` calls a generic in-memory store provider;
 - `StoreAndLoadMovementSqlite` runs the same calls through SQLite.
 - `ValidateAndStoreMovement` composes validation and storage flows.
+- `IncomeAmounts` filters and maps the movement collection.
 
 Run from the repository root:
 
@@ -38,6 +39,10 @@ cargo run -p axl-compiler -- \
   examples/apps/inputs/movement-batch.json
 
 cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl IncomeAmounts \
+  examples/apps/inputs/movement-batch.json
+
+cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl StoreAndLoadMovement \
   examples/apps/inputs/movement-valid.json
 
@@ -57,6 +62,7 @@ Expected results:
 - the balance input returns `80000`.
 - the movement view returns direction `Entrata` and signed amount `125000`;
 - the ledger fold returns `80000`;
+- the filter/map pipeline returns `[125000]`;
 - both replaceable storage providers return movement `movement-001`.
 - the composed validation/storage flow returns the valid movement.
 

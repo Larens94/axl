@@ -10,7 +10,7 @@ fn main() -> Result<()> {
     }
 
     match args[1].as_str() {
-        "check" | "ir" | "pack" | "fmt" | "blocks" | "eval" | "experiment" | "unpack" => {
+        "check" | "ir" | "pack" | "fmt" | "blocks" | "eval" | "serve" | "experiment" | "unpack" => {
             run(&args[1..])
         }
         _ => {
@@ -97,6 +97,13 @@ fn run(args: &[String]) -> Result<()> {
             let result = next::runtime::evaluate_flow(&compilation.graph, flow, input)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
+        "serve" => {
+            let address = args.get(2).map(String::as_str).unwrap_or("127.0.0.1:8080");
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()?;
+            runtime.block_on(next::http::serve(compilation.graph, address))?;
+        }
         "experiment" => {
             let Some(output) = args.get(2) else {
                 bail!("experiment requires an output directory")
@@ -119,6 +126,6 @@ fn run(args: &[String]) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "Usage:\n  axl-compiler check <input.axl> [--json]\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler eval <input.axl> <flow> <input.json>\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>"
+        "Usage:\n  axl-compiler check <input.axl> [--json]\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler eval <input.axl> <flow> <input.json>\n  axl-compiler serve <input.axl> [address]\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>"
     );
 }

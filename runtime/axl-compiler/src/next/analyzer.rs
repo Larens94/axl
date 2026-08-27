@@ -49,9 +49,11 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
                 check_instance(instance, &declarations, &mut diagnostics)
             }
             Declaration::Flow(flow) => check_flow(flow, &declarations, &mut diagnostics),
+            Declaration::Api(api) => check_api(api, &declarations, &mut diagnostics),
             Declaration::Agent(agent) => check_agent(agent, &mut diagnostics),
         }
     }
+    check_global_api_routes(program, &mut diagnostics);
 
     if !diagnostics.is_empty() {
         return Err(diagnostics);
@@ -1367,6 +1369,161 @@ fn check_flow(
                     ));
                 }
             }
+            FlowStatement::Map {
+                name,
+                type_name,
+                collection,
+                item,
+                expression,
+                span,
+            } => {
+                check_type(type_name, span, declarations, diagnostics);
+                check_transform_names(name, item, span, diagnostics);
+                let source_type = infer_source_expression(
+                    collection,
+                    span,
+                    &variables,
+                    declarations,
+                    diagnostics,
+                );
+                let source_item = source_type
+                    .as_deref()
+                    .and_then(collection_inner)
+                    .map(|(_, inner)| inner);
+                if source_type.is_some() && source_item.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X871",
+                            "execution",
+                            "map source must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected(
+                            "List<T>|Set<T>",
+                            source_type.as_deref().unwrap_or("unknown"),
+                        ),
+                    );
+                }
+                let output_item = collection_inner(type_name).map(|(_, inner)| inner);
+                if output_item.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X872",
+                            "execution",
+                            "map result must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected("List<T>|Set<T>", type_name),
+                    );
+                }
+                if let (Some(source_item), Some(output_item)) = (source_item, output_item) {
+                    let mut transform_variables = variables.clone();
+                    transform_variables.insert(item.clone(), source_item.to_string());
+                    if let Some(found) = infer_source_expression(
+                        expression,
+                        span,
+                        &transform_variables,
+                        declarations,
+                        diagnostics,
+                    ) && !fold_compatible(&found, output_item)
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X875",
+                                "execution",
+                                "map value does not match its collection item type",
+                                span.clone(),
+                            )
+                            .expected(output_item, found),
+                        );
+                    }
+                }
+                bind_transform_result(name, type_name, span, &mut variables, diagnostics);
+            }
+            FlowStatement::Filter {
+                name,
+                type_name,
+                collection,
+                item,
+                predicate,
+                span,
+            } => {
+                check_type(type_name, span, declarations, diagnostics);
+                check_transform_names(name, item, span, diagnostics);
+                let source_type = infer_source_expression(
+                    collection,
+                    span,
+                    &variables,
+                    declarations,
+                    diagnostics,
+                );
+                let source_item = source_type
+                    .as_deref()
+                    .and_then(collection_inner)
+                    .map(|(_, inner)| inner);
+                if source_type.is_some() && source_item.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X871",
+                            "execution",
+                            "filter source must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected(
+                            "List<T>|Set<T>",
+                            source_type.as_deref().unwrap_or("unknown"),
+                        ),
+                    );
+                }
+                if source_type
+                    .as_deref()
+                    .is_some_and(|found| found != type_name)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X873",
+                            "execution",
+                            "filter result must preserve its source collection type",
+                            span.clone(),
+                        )
+                        .expected(source_type.as_deref().unwrap_or("unknown"), type_name),
+                    );
+                }
+                if collection_inner(type_name).is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X872",
+                            "execution",
+                            "filter result must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected("List<T>|Set<T>", type_name),
+                    );
+                }
+                if let Some(source_item) = source_item {
+                    let mut transform_variables = variables.clone();
+                    transform_variables.insert(item.clone(), source_item.to_string());
+                    if let Some(found) = infer_source_expression(
+                        predicate,
+                        span,
+                        &transform_variables,
+                        declarations,
+                        diagnostics,
+                    ) && found != "bool"
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X874",
+                                "execution",
+                                "filter predicate must be boolean",
+                                span.clone(),
+                            )
+                            .expected("bool", found),
+                        );
+                    }
+                }
+                bind_transform_result(name, type_name, span, &mut variables, diagnostics);
+            }
             FlowStatement::Return { expression, span } => {
                 return_count += 1;
                 if index + 1 != flow.statements.len() {
@@ -1443,6 +1600,135 @@ fn check_flow_provider(
             ),
         ),
     }
+}
+
+fn check_api(
+    api: &Api,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if api.routes.is_empty() {
+        diagnostics.push(Diagnostic::error(
+            "AXL-H901",
+            "http",
+            format!("api '{}' requires at least one route", api.name),
+            api.span.clone(),
+        ));
+    }
+    let mut routes = BTreeSet::new();
+    for route in &api.routes {
+        if !matches!(
+            route.method.as_str(),
+            "get" | "post" | "put" | "patch" | "delete"
+        ) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H902",
+                    "http",
+                    format!("unsupported HTTP method '{}'", route.method),
+                    route.span.clone(),
+                )
+                .expected("get|post|put|patch|delete", &route.method),
+            );
+        }
+        if !valid_http_path(&route.path) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H903",
+                    "http",
+                    format!("invalid HTTP path '{}'", route.path),
+                    route.span.clone(),
+                )
+                .expected("absolute path without query or fragment", &route.path),
+            );
+        }
+        if !routes.insert((route.method.as_str(), route.path.as_str())) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-H904",
+                "http",
+                format!(
+                    "api '{}' declares route '{} {}' more than once",
+                    api.name, route.method, route.path
+                ),
+                route.span.clone(),
+            ));
+        }
+        check_type(&route.input, &route.span, declarations, diagnostics);
+        check_type(&route.output, &route.span, declarations, diagnostics);
+        match declarations.get(route.flow.as_str()) {
+            Some(Declaration::Flow(flow)) => {
+                if flow.input != route.input || flow.output != route.output {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-H906",
+                            "http",
+                            format!(
+                                "route '{} {}' does not match flow '{}'",
+                                route.method, route.path, route.flow
+                            ),
+                            route.span.clone(),
+                        )
+                        .expected(
+                            format!("{} -> {}", flow.input, flow.output),
+                            format!("{} -> {}", route.input, route.output),
+                        ),
+                    );
+                }
+            }
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H905",
+                    "http",
+                    format!("route target '{}' is not a flow", route.flow),
+                    route.span.clone(),
+                )
+                .expected("flow", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H905",
+                    "http",
+                    format!("route references unknown flow '{}'", route.flow),
+                    route.span.clone(),
+                )
+                .expected("declared flow", &route.flow),
+            ),
+        }
+    }
+}
+
+fn check_global_api_routes(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let mut routes = BTreeMap::new();
+    for api in program
+        .declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Api(api) => Some(api),
+            _ => None,
+        })
+    {
+        for route in &api.routes {
+            let key = (route.method.as_str(), route.path.as_str());
+            if routes
+                .insert(key, api.name.as_str())
+                .is_some_and(|owner| owner != api.name)
+            {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-H907",
+                    "http",
+                    format!(
+                        "HTTP route '{} {}' conflicts across APIs",
+                        route.method, route.path
+                    ),
+                    route.span.clone(),
+                ));
+            }
+        }
+    }
+}
+
+fn valid_http_path(path: &str) -> bool {
+    path.starts_with('/') && !path.contains(['?', '#', ' ']) && !path.contains("//")
 }
 
 fn infer_source_expression(
@@ -1606,6 +1892,59 @@ fn numeric_type(value: &str) -> bool {
 
 fn fold_compatible(found: &str, expected: &str) -> bool {
     same_type(found, expected) || (numeric_type(found) && numeric_type(expected))
+}
+
+fn collection_inner(value: &str) -> Option<(&str, &str)> {
+    for kind in ["List", "Set"] {
+        if let Some(inner) = generic_inner(value, kind) {
+            return Some((kind, inner));
+        }
+    }
+    None
+}
+
+fn check_transform_names(
+    name: &str,
+    item: &str,
+    span: &SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !valid_name(name, false) || name == "input" {
+        diagnostics.push(Diagnostic::error(
+            "AXL-N801",
+            "names",
+            format!("invalid flow variable '{name}'"),
+            span.clone(),
+        ));
+    }
+    if !valid_name(item, false) || matches!(item, "input" | "value") {
+        diagnostics.push(Diagnostic::error(
+            "AXL-N806",
+            "names",
+            format!("invalid collection item '{item}'"),
+            span.clone(),
+        ));
+    }
+}
+
+fn bind_transform_result(
+    name: &str,
+    type_name: &str,
+    span: &SourceSpan,
+    variables: &mut BTreeMap<String, String>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if variables
+        .insert(name.to_string(), type_name.to_string())
+        .is_some()
+    {
+        diagnostics.push(Diagnostic::error(
+            "AXL-N802",
+            "names",
+            format!("flow variable '{name}' is defined more than once"),
+            span.clone(),
+        ));
+    }
 }
 
 fn numeric_result<'a>(left: &'a str, right: &'a str) -> &'a str {
@@ -1863,6 +2202,7 @@ fn declaration_kind(declaration: &Declaration) -> &'static str {
         Declaration::Blueprint(_) => "blueprint",
         Declaration::Instance(_) => "instance",
         Declaration::Flow(_) => "flow",
+        Declaration::Api(_) => "api",
         Declaration::Agent(_) => "agent",
     }
 }
@@ -1894,6 +2234,7 @@ fn lower(program: &Program) -> GraphIr {
             Declaration::Blueprint(blueprint) => lower_blueprint(blueprint, &mut graph),
             Declaration::Instance(instance) => lower_instance(instance, program, &mut graph),
             Declaration::Flow(flow) => lower_flow(flow, &mut graph),
+            Declaration::Api(api) => lower_api(api, &mut graph),
             Declaration::Agent(agent) => lower_agent(agent, &mut graph),
         }
     }
@@ -2088,6 +2429,8 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
             FlowStatement::Fold { name, .. } => ("fold", name.as_str()),
             FlowStatement::Run { name, .. } => ("run", name.as_str()),
             FlowStatement::Match { name, .. } => ("match", name.as_str()),
+            FlowStatement::Map { name, .. } => ("map", name.as_str()),
+            FlowStatement::Filter { name, .. } => ("filter", name.as_str()),
             FlowStatement::Return { .. } => ("return", "return"),
         };
         let id = format!("{flow_id}.{kind}.{index}");
@@ -2154,6 +2497,36 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                 value.type_name = Some(type_name.clone());
                 value.metadata.insert("subject".into(), subject.clone());
             }
+            FlowStatement::Map {
+                type_name,
+                collection,
+                item,
+                expression,
+                ..
+            } => {
+                value.type_name = Some(type_name.clone());
+                value
+                    .metadata
+                    .insert("collection".into(), collection.clone());
+                value.metadata.insert("item".into(), item.clone());
+                value
+                    .metadata
+                    .insert("expression".into(), expression.clone());
+            }
+            FlowStatement::Filter {
+                type_name,
+                collection,
+                item,
+                predicate,
+                ..
+            } => {
+                value.type_name = Some(type_name.clone());
+                value
+                    .metadata
+                    .insert("collection".into(), collection.clone());
+                value.metadata.insert("item".into(), item.clone());
+                value.metadata.insert("predicate".into(), predicate.clone());
+            }
         }
         if let FlowStatement::Require { message, .. } = statement {
             value.metadata.insert("message".into(), message.clone());
@@ -2182,6 +2555,28 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                 graph.edges.push(edge(&id, &case_id, "owns", None));
             }
         }
+    }
+}
+
+fn lower_api(api: &Api, graph: &mut GraphIr) {
+    let api_id = format!("api.{}", api.name);
+    graph.nodes.push(node(&api_id, "api", &api.name));
+    for (index, route) in api.routes.iter().enumerate() {
+        let id = format!("{api_id}.route.{index}");
+        let mut value = node(&id, "route", &format!("{} {}", route.method, route.path));
+        value.type_name = Some(format!("{}->{}", route.input, route.output));
+        value.metadata.insert("method".into(), route.method.clone());
+        value.metadata.insert("path".into(), route.path.clone());
+        value.metadata.insert("flow".into(), route.flow.clone());
+        value.metadata.insert("order".into(), index.to_string());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&api_id, &id, "owns", None));
+        graph.edges.push(edge(
+            &id,
+            &format!("flow.{}", route.flow),
+            "dispatch",
+            Some(&format!("{}->{}", route.input, route.output)),
+        ));
     }
 }
 

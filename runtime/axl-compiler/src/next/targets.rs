@@ -13,8 +13,9 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     let agent_dir = output.join("agents");
     let block_dir = output.join("blocks");
     let flow_dir = output.join("flows");
+    let http_dir = output.join("http");
     for directory in [
-        &rust_dir, &react_dir, &sql_dir, &agent_dir, &block_dir, &flow_dir,
+        &rust_dir, &react_dir, &sql_dir, &agent_dir, &block_dir, &flow_dir, &http_dir,
     ] {
         std::fs::create_dir_all(directory)?;
     }
@@ -32,6 +33,10 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     std::fs::write(
         flow_dir.join("flows.json"),
         serde_json::to_string_pretty(&flow_manifest(graph))?,
+    )?;
+    std::fs::write(
+        http_dir.join("routes.json"),
+        serde_json::to_string_pretty(&http_manifest(graph))?,
     )?;
     std::fs::write(
         output.join("manifest.json"),
@@ -252,6 +257,8 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                 .chain(children(graph, &flow.id, "fold"))
                 .chain(children(graph, &flow.id, "run"))
                 .chain(children(graph, &flow.id, "match"))
+                .chain(children(graph, &flow.id, "map"))
+                .chain(children(graph, &flow.id, "filter"))
                 .chain(children(graph, &flow.id, "return"))
                 .collect::<Vec<_>>();
             statements.sort_by_key(|statement| {
@@ -308,7 +315,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                         "argument": statement.metadata.get("argument"),
                         "propagate": statement.metadata.get("propagate")
                             .and_then(|value| value.parse::<bool>().ok()),
-                        "record_type": statement.type_name,
+                        "type": statement.type_name,
                         "fields": fields,
                         "collection": statement.metadata.get("collection"),
                         "initial": statement.metadata.get("initial"),
@@ -317,6 +324,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                         "flow": statement.metadata.get("flow"),
                         "subject": statement.metadata.get("subject"),
                         "cases": cases,
+                        "predicate": statement.metadata.get("predicate"),
                     })
                 }).collect::<Vec<_>>(),
             })
@@ -327,6 +335,43 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
         "app": graph.app,
         "runtime": "axl-flow/2",
         "flows": flows,
+    })
+}
+
+pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
+    let apis = nodes(graph, "api")
+        .into_iter()
+        .map(|api| {
+            let mut routes = children(graph, &api.id, "route");
+            routes.sort_by_key(|route| {
+                route
+                    .metadata
+                    .get("order")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
+            json!({
+                "name": api.name,
+                "routes": routes.into_iter().map(|route| {
+                    let (input, output) = route.type_name.as_deref()
+                        .and_then(|value| value.split_once("->"))
+                        .unwrap_or(("", ""));
+                    json!({
+                        "method": route.metadata.get("method"),
+                        "path": route.metadata.get("path"),
+                        "input": input,
+                        "output": output,
+                        "flow": route.metadata.get("flow"),
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "schema": graph.schema,
+        "app": graph.app,
+        "protocol": "axl-http/1",
+        "apis": apis,
     })
 }
 
@@ -380,7 +425,8 @@ fn target_manifest(graph: &GraphIr) -> serde_json::Value {
             "sql": "sql/schema.sql",
             "agents": "agents/agents.json",
             "blocks": "blocks/open-blocks.json",
-            "flows": "flows/flows.json"
+            "flows": "flows/flows.json",
+            "http": "http/routes.json"
         },
         "counts": {
             "nodes": graph.nodes.len(),
@@ -588,6 +634,8 @@ flow Save Customer -> Result<Customer>
   in store: CustomerStore = SqliteCustomers
   call saved = store.save(input)?
   return saved
+api DemoApi
+  post /customers Customer -> Customer = Identity
 "#;
 
     #[test]
@@ -598,6 +646,7 @@ flow Save Customer -> Result<Customer>
         let sql = sql_schema(&graph);
         let blocks = open_block_manifest(&graph);
         let flows = flow_manifest(&graph);
+        let http = http_manifest(&graph);
         assert!(rust.contains("pub enum CustomerStatus"));
         assert!(rust.contains("Active,"));
         assert!(rust.contains("pub trait CustomerStore"));
@@ -637,5 +686,8 @@ flow Save Customer -> Result<Customer>
         assert_eq!(save["statements"][0]["kind"], "call");
         assert_eq!(save["statements"][0]["operation"], "save");
         assert_eq!(save["statements"][0]["propagate"], true);
+        assert_eq!(http["protocol"], "axl-http/1");
+        assert_eq!(http["apis"][0]["routes"][0]["path"], "/customers");
+        assert_eq!(http["apis"][0]["routes"][0]["flow"], "Identity");
     }
 }

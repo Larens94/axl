@@ -40,6 +40,13 @@ Execute behavior written in AXL:
 This returns `80000`. The balance rule is an AXL flow, not an
 application-specific Rust function.
 
+Serve routes declared in AXL through the generic Axum runtime:
+
+```sh
+~/.cargo/bin/cargo run -p axl-compiler -- \
+  serve examples/apps/cashflow-core.axl 127.0.0.1:8080
+```
+
 ## Project map
 
 - `SPEC-4.0.md` — implemented language boundary.
@@ -48,6 +55,7 @@ application-specific Rust function.
 - `docs/agent-testing.md` — repeatable test handoff for another agent.
 - `docs/executable-flows.md` — executable Flow Runtime 2 semantics.
 - `docs/runtime-abi.md` — replaceable native provider contract.
+- `docs/backend-http.md` — executable Axum route adapter and current boundary.
 - `docs/roadmap.md` — executable autoloop gates and current position.
 - `presentation.html` — simplified, responsive project presentation.
 - `examples/blocks` — small examples compiled by the test suite.
@@ -58,6 +66,7 @@ application-specific Rust function.
 - `schema/axl-ir-4.0.schema.json` — Graph IR JSON schema.
 - `schema/axl-open-block-2.schema.json` — block and instance manifest schema.
 - `schema/axl-flow-2.schema.json` — executable flow and capacity-call manifest schema.
+- `schema/axl-http-1.schema.json` — checked HTTP route manifest schema.
 
 ## Build an open block
 

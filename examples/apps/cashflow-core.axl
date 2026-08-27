@@ -71,6 +71,13 @@ flow CalculateLedgerBalance MovementBatch -> money
       else value - movement.amount
   return balance
 
+flow IncomeAmounts MovementBatch -> List<money>
+  filter incomes: List<Movement> = input.movements as movement
+    where = movement.kind == MovementKind.income
+  map amounts: List<money> = incomes as movement
+    value = movement.amount
+  return amounts
+
 flow StoreAndLoadMovement Movement -> Result<Movement>
   in store: MovementStore = MemoryMovements
   call saved = store.save(input)?
@@ -88,3 +95,8 @@ flow ValidateAndStoreMovement Movement -> Result<Movement>
   run valid = ValidateMovement(input)?
   call saved = store.save(valid)?
   return saved
+
+api CashflowApi
+  post /movements Movement -> Result<Movement> = ValidateAndStoreMovement
+  post /balance MovementBatch -> money = CalculateLedgerBalance
+  post /income-amounts MovementBatch -> List<money> = IncomeAmounts

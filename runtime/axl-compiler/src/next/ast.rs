@@ -19,6 +19,7 @@ pub enum Declaration {
     Blueprint(Blueprint),
     Instance(Instance),
     Flow(Flow),
+    Api(Api),
     Agent(Agent),
 }
 
@@ -32,6 +33,7 @@ impl Declaration {
             Self::Blueprint(value) => &value.name,
             Self::Instance(value) => &value.name,
             Self::Flow(value) => &value.name,
+            Self::Api(value) => &value.name,
             Self::Agent(value) => &value.name,
         }
     }
@@ -45,6 +47,7 @@ impl Declaration {
             Self::Blueprint(value) => &value.span,
             Self::Instance(value) => &value.span,
             Self::Flow(value) => &value.span,
+            Self::Api(value) => &value.span,
             Self::Agent(value) => &value.span,
         }
     }
@@ -283,6 +286,22 @@ pub enum FlowStatement {
         cases: Vec<MatchCase>,
         span: SourceSpan,
     },
+    Map {
+        name: String,
+        type_name: String,
+        collection: String,
+        item: String,
+        expression: String,
+        span: SourceSpan,
+    },
+    Filter {
+        name: String,
+        type_name: String,
+        collection: String,
+        item: String,
+        predicate: String,
+        span: SourceSpan,
+    },
     Return {
         expression: String,
         span: SourceSpan,
@@ -299,6 +318,8 @@ impl FlowStatement {
             | Self::Fold { span, .. }
             | Self::Run { span, .. }
             | Self::Match { span, .. }
+            | Self::Map { span, .. }
+            | Self::Filter { span, .. }
             | Self::Return { span, .. } => span,
         }
     }
@@ -315,6 +336,23 @@ pub struct RecordFieldValue {
 pub struct MatchCase {
     pub variant: String,
     pub expression: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Api {
+    pub name: String,
+    pub routes: Vec<ApiRoute>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiRoute {
+    pub method: String,
+    pub path: String,
+    pub input: String,
+    pub output: String,
+    pub flow: String,
     pub span: SourceSpan,
 }
 
