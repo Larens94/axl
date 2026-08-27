@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://axl-lang.dev/schema/axl-ir-4.0.schema.json",
+  "title": "AXL Semantic Graph IR 4.0",
+  "type": "object",
+  "required": [
+    "schema",
+    "app",
+    "nodes",
+    "edges",
+    "contracts",
+    "effects",
+    "capabilities"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema": {
+      "const": "ax-ir/4.0"
+    },
+    "app": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/edge"
+      }
+    },
+    "contracts": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/contract"
+      }
+    },
+    "effects": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/grant"
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/grant"
+      }
+    }
+  },
+  "$defs": {
+    "node": {
+      "type": "object",
+      "required": ["id", "kind", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "enum": [
+            "app",
+            "entity",
+            "field",
+            "capacity",
+            "operation",
+            "skill",
+            "blueprint",
+            "input",
+            "output",
+            "slot",
+            "hook",
+            "agent",
+            "belief",
+            "goal",
+            "plan"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "type_name": {
+          "type": "string"
+        },
+        "implementation": {
+          "type": "string"
+        },
+        "metadata": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "edge": {
+      "type": "object",
+      "required": ["from", "to", "kind"],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string"
+        },
+        "to": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["owns", "provides", "bind", "default"]
+        },
+        "interface": {
+          "type": "string"
+        }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "required": ["owner", "kind", "expression"],
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["requires", "ensures", "invariant"]
+        },
+        "expression": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "grant": {
+      "type": "object",
+      "required": ["owner", "name"],
+      "additionalProperties": false,
+      "properties": {
+        "owner": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

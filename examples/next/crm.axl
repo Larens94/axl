@@ -1,0 +1,81 @@
+// AXL 4 experiment: semantic software graph with open, typed ports.
+axl 4
+app SalesCRM
+
+entity Customer
+  id: uuid key readonly
+  name: text required index
+  email: email required unique
+  status: text required index
+  created_at: datetime readonly
+
+entity Deal
+  id: uuid key readonly
+  customer: Customer required index
+  value: money required
+  stage: text required index
+
+capacity CustomerStore
+  op find uuid -> Result<Customer>
+  op save Customer -> Result<Customer>
+
+capacity AuthProvider
+  op authorize text -> Result<bool>
+
+capacity CustomerRow
+  op render Customer -> UI
+
+capacity CustomerCard
+  op render Customer -> UI
+
+capacity CustomerPolicy
+  op validate Customer -> Result<Customer>
+
+skill SqliteCustomers provides CustomerStore
+  native rust axl::store::sqlite_customers
+  effect db.read
+  effect db.write
+  capability crm.customer.write
+
+skill JwtAuth provides AuthProvider
+  native rust axl::auth::jwt
+  effect memory.read
+  capability auth.verify
+
+skill DefaultCustomerRow provides CustomerRow
+  native react crm::DefaultCustomerRow
+
+skill DefaultCustomerCard provides CustomerCard
+  native react crm::DefaultCustomerCard
+
+skill ValidateCustomer provides CustomerPolicy
+  native rust crm::validate_customer
+
+blueprint CustomerCRM
+  in store: CustomerStore
+  in auth: AuthProvider
+  out api: CrudApi<Customer>
+
+  slot table.row: CustomerRow = DefaultCustomerRow
+  slot mobile.card: CustomerCard = DefaultCustomerCard
+  hook before.save: CustomerPolicy = ValidateCustomer
+
+  use store = SqliteCustomers
+  use auth = JwtAuth
+
+  requires auth.authorized
+  ensures customer.persisted
+  invariant Customer.email unique
+
+  effect db.read
+  effect db.write
+  effect net.listen
+  capability crm.customer.manage
+
+agent SalesAssistant
+  believe crm.pipeline
+  goal qualify_lead
+  plan automatic_qualification
+  plan request_human_review
+  effect ai.generate
+  capability crm.lead.read

@@ -1,10 +1,9 @@
 [workspace]
-members = ["runtime/axl-core-rs", "runtime/axl-cli", "runtime/axl-compiler"]
-exclude = ["crm-backend", "generated"]
+members = ["runtime/axl-compiler"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0-alpha.1"
+version = "0.2.0-experiment.1"
 edition = "2024"
 license = "Apache-2.0"
 

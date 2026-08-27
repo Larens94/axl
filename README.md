@@ -1,128 +1,46 @@
-# AX / AXL — Agent eXecution
+# AXL
 
-**AXL** è il linguaggio sorgente principale per costruire applicazioni complete.
-Rust, React/TypeScript, SQL, WebAssembly e i bridge hardware sono target o dettagli
-di runtime: lo sviluppatore descrive sistema, dati, API, UI e agenti in AXL.
+AXL is an experimental agent-native semantic blueprint language.
 
-**Sito:** [larens94.github.io/axl](https://larens94.github.io/axl/) · **Presentazione:** [AXL Claude × Apple](https://larens94.github.io/axl/presentation.html) · **Docs:** [`docs/`](docs/) · **Specifica:** [`SPEC.md`](SPEC.md)
+The current compiler implements one focused pipeline:
 
 ```text
-AXL Source
-→ parser e analisi statica
-→ AX-IR tipizzata
-→ capability e target check
-  ├─ Rust              backend, CLI, sistemi e IoT
-  ├─ React/TypeScript  frontend web
-  ├─ SQL               schema e migrazioni
-  ├─ WebAssembly       browser ed edge (roadmap)
-  └─ AI/host bridges   modelli, tool e hardware
+readable AXL
+  -> typed AST
+  -> Semantic Graph IR
+  -> Packed Graph IR
+  -> Rust, React, SQL and agent contracts
 ```
 
-## Applicazione full-stack
+AXL describes software through entities, capacities, skills and blueprints with
+typed open ports. Rust and React are target implementations rather than the
+source language.
 
-```axl
-entity Customer {
-  field name: String
-  field email: String
-}
+## Try the experiment
 
-api Customer {
-  GET /api/customers → list
-  POST /api/customers → create
-}
+```sh
+~/.cargo/bin/cargo run -p axl-compiler -- \
+  check examples/next/crm.axl --json
+
+~/.cargo/bin/cargo run -p axl-compiler -- \
+  experiment examples/next/crm.axl build/axl4
 ```
 
-La UI usa frame numerici compatti, separati su più righe per restare leggibili:
+The second command generates canonical AXL, JSON Graph IR, Packed IR and initial
+target contracts.
 
-```axl
-3;60|2;
-  61|1000|64;
-    62|1|"customers"; 62|3|#25; 62|5|"cards";
-    61|1001|65; 62|1|"name"; 62|2|"Nome"; 62|4|#1; 99;
-    61|1002|65; 62|1|"email"; 62|2|"Email"; 62|4|#2; 99;
-  99;
-99;
+## Project map
+
+- `SPEC-4.0.md` — implemented language boundary.
+- `examples/next/crm.axl` — semantic CRM experiment.
+- `runtime/axl-compiler/src/next` — parser, analyzer, IR and target adapters.
+- `schema/axl-ir-4.0.schema.json` — Graph IR JSON schema.
+
+## Verification
+
+```sh
+~/.cargo/bin/cargo test --workspace
+~/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-La build produce backend Rust, frontend React/TypeScript e migrazioni SQL.
-
-Il formato Compact Source resta disponibile come rappresentazione canonica a
-basso livello per runtime, trasporto e generazione automatica. Nei file `.axl`
-viene formattato su più righe; spazi, rientri e newline non cambiano la semantica.
-
-```axl
-2;
-50|worker;
-  10|x|#1|i;
-  30|$x,#0,>;
-    12|$x;
-  99;
-99;
-```
-
-## Primitiva Native (90+)
-
-```axl
-# I/O
-!file_read/1       !file_write/2      !file_exists/1
-
-# Text
-!text_upper/1      !text_split/2      !text_find/2
-
-# Collections
-!list_push/2       !list_sort/1       !map_get/2
-
-# Math
-!math_add/2        !math_mul/2        !math_random/0
-
-# Crypto
-!hash_sha256/1     !encode_base64/1   !crypto_random_bytes/1
-
-# JSON
-!json_parse/1      !json_stringify/1
-
-# Network
-!http_get/1        !http_post/2
-
-# System
-!env_get/1         !time_now/0        !path_join/1
-
-# LLM
-!reason/2          !classify/3        !extract/2
-```
-
-## Avvio Rapido
-
-```bash
-cargo build --workspace
-cargo test --workspace
-cargo run -p axl-cli -- build examples/crm/crm.axl -o build/crm
-```
-
-Dopo l'installazione del binario:
-
-```bash
-axl build examples/crm/crm.axl -o build/crm
-axl check examples/crm/crm.axl
-axl fmt program.axl
-axl fmt program.axl --width 80 --check
-```
-
-## Workspace
-
-```text
-runtime/
-├── axl-core-rs/    # IR, runtime, primitive e AX-UI
-├── axl-cli/        # CLI `axl`
-└── axl-compiler/   # Analisi e target Rust/React/SQL
-```
-
-## Esempi
-
-- **CRM** — 6 entità, 30 operazioni CRUD, 7 viste compatte e target Rust/React/SQL
-
-AXL `0.1.0-alpha.1` è una proof of concept funzionante: la demo è completa, mentre compatibilità del linguaggio, sicurezza e deployment di produzione restano in evoluzione.
-
-## Licenza
-
-Apache-2.0
+Status: experiment. Executable full-stack Rust/React generation is the next gate.
