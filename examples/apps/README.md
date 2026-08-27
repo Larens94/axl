@@ -66,6 +66,7 @@ Expected results:
 - the typed sort returns `movement-002` before `movement-001`;
 - grouping creates `consulting` and `software` buckets with typed movements;
 - the multiline list literal creates the default category list;
+- the parallel flow builds movement views concurrently in source order;
 - both replaceable storage providers return movement `movement-001`.
 - the composed validation/storage flow returns the valid movement.
 
@@ -77,8 +78,8 @@ multiline `make name: Entity` record construction. Flow Runtime 2 adds typed `in
 `fold` provides immutable collection aggregation and `run` composes flows.
 
 The `CashflowApi` declaration exposes `/movements`, `/movement-by-id`,
-`/balance`, `/income-amounts`, `/movements/sorted`, `/movements/grouped` and
-`GET /categories` through the generic Axum runtime:
+`/balance`, `/income-amounts`, `/movements/sorted`, `/movements/grouped`,
+`GET /categories` and `/movement-views` through the generic Axum runtime:
 
 ```sh
 cargo run -p axl-compiler -- \

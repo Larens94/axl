@@ -24,6 +24,11 @@ The adapter returns a successful JSON value or a provider error string. The AXL
 runtime validates successful output. For `Result<T>` operations, `?` binds `T`
 or propagates the provider error from the surrounding `Result<T>` flow.
 
+`ProviderRuntime` is `Send` and exposes `fork`. The `parallel` statement asks
+for one fork per worker. A provider that cannot define safe concurrent behavior
+returns an explicit fork error instead of being silently serialized or cloned.
+The built-in runtime forks share synchronized memory and SQLite handles.
+
 ## Openness rule
 
 Application-specific logic must not be added to the interpreter. A new native
@@ -42,8 +47,9 @@ rust::axl::store::sqlite
 
 Both implement generic `save`, `find`, `delete` and `list` operation names.
 Saved records require a string `id`. Storage is namespaced by provider skill.
-The SQLite connection is currently in-memory and scoped to one runtime; durable
-configuration, schemas and transactions are not implemented yet.
+The SQLite connection is currently in-memory and scoped to one root runtime;
+its concurrent forks share that connection. Durable configuration, schemas and
+transactions are not implemented yet.
 
 ## Conformance gate for future adapters
 
@@ -56,3 +62,4 @@ Every backend, database, AI, IoT or agent-tool adapter must prove:
 5. no application-specific branching in the general runtime;
 6. positive, failure and Packed IR round-trip tests;
 7. documentation and manifest schema updates.
+8. explicit `fork` behavior when the adapter supports parallel execution.

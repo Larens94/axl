@@ -324,6 +324,18 @@ let categories = [
 Nested expressions are allowed. Numeric items use the normal numeric promotion
 rules; mixed incompatible items and untyped empty lists are compiler errors.
 
+`parallel` applies one typed flow concurrently while preserving source order:
+
+```axl
+parallel views: List<MovementView> = input.movements as movement
+  run = BuildMovementView(movement)
+```
+
+The source is `List<T>` or `Set<T>`, the argument must match the target flow
+input and the declared result is `List<Output>`. A `Result<T>` target requires
+`?` and propagates the first error in source order. Every worker receives a
+provider runtime fork; the built-in forks share synchronized provider state.
+
 ### HTTP API
 
 An API exposes checked flows without handwritten controllers:
@@ -477,7 +489,7 @@ generate a complete production application.
 
 - contract expression type checking;
 - branch statement blocks and mutable variables;
-- `parallel`, `race`, retry and timeout execution;
+- `race`, retry and timeout execution;
 - generated standalone Rust handlers and React components from Graph IR;
 - path parameters, query decoding, middleware and streaming HTTP bodies;
 - SQL relationships, migrations and target-specific schema evolution;

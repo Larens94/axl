@@ -134,6 +134,19 @@ let categories = [
 Items may be expressions and must have one compatible type. Empty lists are
 rejected until AXL gains an explicit contextual type annotation for them.
 
+`parallel` executes a target flow concurrently for every source item:
+
+```axl
+parallel views: List<MovementView> = input.movements as movement
+  run = BuildMovementView(movement)
+```
+
+Arguments, target signatures and `List<Output>` are checked statically. Results
+retain source order regardless of completion order. A target returning
+`Result<T>` requires `?`; errors propagate in source order. Provider-backed
+workers use the runtime `fork` contract, so integrations decide explicitly how
+their handles and state are shared.
+
 ## Provider ABI
 
 `ProviderRuntime` is public and replaceable. The interpreter passes it the
@@ -181,6 +194,6 @@ source parser.
 ## Current boundary
 
 Flow Runtime 2 does not implement mutable variables, branch statement blocks,
-async execution, durable persistence, events, state mutation, concurrency or UI
-bindings. The next vertical slice is async and concurrency semantics, then
-durable storage and richer HTTP behavior.
+`race`, timeout/retry policies, durable persistence, events, state mutation or
+UI bindings. The next vertical slice is resilience semantics, then durable
+storage and richer HTTP behavior.

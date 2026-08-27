@@ -1026,4 +1026,67 @@ flow EchoMovement Movement -> Result<Movement>
             evaluate_flow_with_runtime(&graph, "EchoMovement", movement, &mut EchoRuntime).unwrap();
         assert_eq!(result["ok"]["id"], "m3");
     }
+
+    #[test]
+    fn executes_parallel_workers_concurrently() {
+        const PARALLEL_SOURCE: &str = r#"axl 4
+app ParallelDemo
+entity Batch
+  values: List<int> required
+capacity Delay
+  op wait int -> int
+skill DelaySkill provides Delay
+  native rust test::delay
+flow Wait int -> int
+  in delay: Delay = DelaySkill
+  call output = delay.wait(input)
+  return output
+flow Concurrent Batch -> List<int>
+  parallel output: List<int> = input.values as item
+    run = Wait(item)
+  return output
+"#;
+
+        #[derive(Clone)]
+        struct ConcurrentRuntime {
+            active: Arc<std::sync::atomic::AtomicUsize>,
+            maximum: Arc<std::sync::atomic::AtomicUsize>,
+        }
+
+        impl ProviderRuntime for ConcurrentRuntime {
+            fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String> {
+                let active = self
+                    .active
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                    + 1;
+                self.maximum
+                    .fetch_max(active, std::sync::atomic::Ordering::SeqCst);
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                self.active
+                    .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(call.input)
+            }
+
+            fn fork(&self) -> Result<Box<dyn ProviderRuntime>, String> {
+                Ok(Box::new(self.clone()))
+            }
+        }
+
+        let graph = compile_source(PARALLEL_SOURCE).unwrap().graph;
+        let runtime = ConcurrentRuntime {
+            active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            maximum: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        let maximum = runtime.maximum.clone();
+        let mut runtime = runtime;
+        let result = evaluate_flow_with_runtime(
+            &graph,
+            "Concurrent",
+            json!({"values": [1, 2, 3, 4]}),
+            &mut runtime,
+        )
+        .unwrap();
+        assert_eq!(result, json!([1, 2, 3, 4]));
+        assert!(maximum.load(std::sync::atomic::Ordering::SeqCst) >= 2);
+    }
 }

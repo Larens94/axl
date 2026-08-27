@@ -386,12 +386,9 @@ fn documented_cashflow_core_executes() {
         "../../../examples/apps/inputs/movement-batch.json"
     ))
     .unwrap();
-    let views = axl_compiler::next::runtime::evaluate_flow(
-        &graph,
-        "BuildMovementViewsParallel",
-        movements,
-    )
-    .unwrap();
+    let views =
+        axl_compiler::next::runtime::evaluate_flow(&graph, "BuildMovementViewsParallel", movements)
+            .unwrap();
     assert_eq!(views[0]["id"], "movement-001");
     assert_eq!(views[1]["id"], "movement-002");
 

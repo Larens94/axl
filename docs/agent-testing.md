@@ -18,7 +18,7 @@ jq empty schema/axl-http-1.schema.json
 ```
 
 The integration suite compiles nine valid documented programs, round-trips each
-through Packed Graph IR and verifies eleven intentionally invalid programs.
+through Packed Graph IR and verifies twelve intentionally invalid programs.
 
 The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
@@ -180,6 +180,9 @@ cargo run -p axl-compiler -- \
   check examples/invalid/flow-transforms.axl --json
 
 cargo run -p axl-compiler -- \
+  check examples/invalid/flow-parallel.axl --json
+
+cargo run -p axl-compiler -- \
   check examples/invalid/http-routes.axl --json
 ```
 
@@ -192,7 +195,8 @@ from `AXL-X816` through `AXL-X821`; the sixth must include every code from
 `AXL-X856`; the ninth must include `AXL-X861` through `AXL-X865`.
 The tenth must include `AXL-X802`, `AXL-N806`, `AXL-X871` through `AXL-X879` and
 `AXL-X881` through `AXL-X884`.
-The eleventh must include every code from `AXL-H901` through `AXL-H907`.
+The eleventh must include every code from `AXL-X891` through `AXL-X895`.
+The twelfth must include every code from `AXL-H901` through `AXL-H907`.
 
 ## 8. Verify canonical formatting and transport
 
@@ -224,6 +228,7 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - stable ascending/descending sort is typed and executable;
 - grouping produces a checked `Map<K,List<T>>` without handwritten Rust;
 - non-empty list literals infer a common type and retain multiline formatting;
+- `parallel` uses concurrent provider forks and preserves source order;
 - HTTP routes dispatch through the generic Axum runtime;
 - consecutive HTTP requests share one process-local provider runtime;
 - memory and SQLite providers execute through the same replaceable ABI;
