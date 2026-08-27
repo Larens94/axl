@@ -106,6 +106,7 @@ impl ProviderRuntime for BuiltinRuntime {
             }
             "rust::axl::auth::bearer" => bearer_auth_call(call),
             "rust::axl::middleware::header_gate" => header_gate_call(call),
+            "rust::axl::middleware::response_headers" => response_headers_call(call),
             "rust::axl::event::log" => {
                 let mut logs = self
                     .event_logs
@@ -1066,6 +1067,48 @@ fn header_gate_call(call: ProviderCall<'_>) -> Result<Value, String> {
     } else {
         Err("middleware_rejected".into())
     }
+}
+
+fn response_headers_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    if call.operation != "process" {
+        return Err(format!(
+            "response headers does not implement operation '{}'",
+            call.operation
+        ));
+    }
+    let header = call
+        .config
+        .get("header")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "middleware_header_not_configured".to_string())?
+        .to_ascii_lowercase();
+    let value = call
+        .config
+        .get("value")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "middleware_value_not_configured".to_string())?;
+    let status = call
+        .input
+        .get("status")
+        .cloned()
+        .ok_or_else(|| "middleware_response_missing_status".to_string())?;
+    let body = call
+        .input
+        .get("body")
+        .cloned()
+        .ok_or_else(|| "middleware_response_missing_body".to_string())?;
+    let mut headers = call
+        .input
+        .get("headers")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    headers.insert(header, Value::String(value.into()));
+    Ok(json!({
+        "status": status,
+        "headers": headers,
+        "body": body,
+    }))
 }
 
 fn event_log_call(

@@ -86,17 +86,20 @@ claims due work, runs the bound flow with retry, and requeues schedules.
 Memory (`axl::job::memory`) and SQLite (`axl::job::sqlite`) adapters keep the
 provider replaceable; a configured SQLite path survives process restart.
 
-The body is the default flow input. Scalar and enum flows can bind a path or
-query value without a handwritten extractor:
+The body is the default flow input. Scalar and enum flows can bind a path,
+query, header or cookie value without a handwritten extractor:
 
 ```axl
 get /movements/{id} uuid -> Result<Movement> = FindDurableMovement from path.id
 get /movements/find uuid -> Result<Movement> = FindDurableMovement from query.id
+get /me text -> text = EchoText from header.x-user
+get /session text -> text = EchoText from cookie.sid
 ```
 
 The compiler checks placeholder/name alignment and rejects record inputs for a
-single scalar binding. Runtime extraction includes percent decoding and numeric
-or boolean conversion. Exact paths are matched before template paths.
+single scalar binding. Runtime extraction includes percent decoding, numeric
+or boolean conversion, case-insensitive headers and simple `Cookie` parsing.
+Exact paths are matched before template paths.
 
 Composite entity inputs join multiple surfaces explicitly:
 
@@ -105,11 +108,17 @@ post /accounts/{account}/movement-preview MovementPreviewRequest -> Result<Movem
   bind account = path.account
   bind movement = body
   bind dry_run = query.dry_run
+
+post /client-preview ClientSessionRequest -> Result<Movement> = PreviewWithClientSession
+  bind user = header.x-user
+  bind sid = cookie.sid
+  bind movement = body
 ```
 
 Bindings are checked against entity fields, including duplicates and required
 fields, and survive Graph/Packed IR as discoverable nodes. `body.field` extracts
-one member; `body` assigns the complete JSON body to a nested field.
+one member; `body` assigns the complete JSON body to a nested field. Sources are
+`body`, `path`, `query`, `header` and `cookie`.
 
 The compiler verifies:
 
@@ -159,13 +168,14 @@ Status mapping:
 
 ## Current boundary
 
-Scalar bindings and composite entity assembly are implemented. Ordered request
-middleware with typed envelopes is executable. Typed events and durable/scheduled
-jobs with replaceable JobStore providers are executable. Header/cookie fields and
-nested target paths are not yet request sources. Response-phase middleware and
-response header mutation are not implemented. Memory and unconfigured SQLite
-remain process-local; configured SQLite paths are durable for records and jobs.
-Transactions and migrations remain data gates. The built-in static bearer and
-header-gate providers are demo fixtures and their config is visible in the
-manifest; secret references, JWT/OAuth validation, CORS, streaming, cache, rate
-limits and observability remain later backend gates.
+Scalar bindings and composite entity assembly cover body, path, query, header
+and cookie sources. Ordered request middleware with typed envelopes is
+executable. Typed events and durable/scheduled jobs with replaceable JobStore
+providers are executable. Nested target paths beyond a single field name are
+not yet request sources. Response-phase middleware and response header mutation
+are not implemented. Memory and unconfigured SQLite remain process-local;
+configured SQLite paths are durable for records and jobs. Transactions and
+migrations remain data gates. The built-in static bearer and header-gate
+providers are demo fixtures and their config is visible in the manifest; secret
+references, JWT/OAuth validation, CORS, streaming, cache, rate limits and
+observability remain later backend gates.

@@ -240,7 +240,7 @@ instance CompactCustomerList of CustomerList
           <article class="card"><h3>Agenti</h3><p>Manifest di belief, goal e plan.</p></article>
           <article class="card"><h3>Open blocks</h3><p>Manifest delle superfici personalizzabili.</p></article>
           <article class="card"><h3>Flow Runtime 2</h3><p>Parallel, race, retry e timeout su provider aperti e idempotenti.</p></article>
-          <article class="card"><h3>HTTP Runtime 1</h3><p>Entità composte da body, path e query; auth tramite capacity sostituibile.</p></article>
+          <article class="card"><h3>HTTP Runtime 1</h3><p>Entità composte da body, path, query, header e cookie; auth tramite capacity sostituibile.</p></article>
           <article class="card"><h3>Provider manifest</h3><p>Configurazione tipizzata portata dal sorgente al runtime.</p></article>
           <article class="card"><h3>Graph IR</h3><p>JSON esplicito e canonico.</p></article>
           <article class="card"><h3>Packed IR</h3><p>Frame opcode reversibili.</p></article>
@@ -256,7 +256,7 @@ instance CompactCustomerList of CustomerList
           <article class="card"><h3 class="accent">Funziona oggi</h3><p>I flow trasformano dati, chiamano provider e sono esposti da route Axum dichiarate in AXL.</p></article>
           <article class="card"><h3 class="violet">Prossimo gate</h3><p>Secret/JWT e response middleware; poi cache e osservabilità.</p></article>
         </div>
-        <div class="callout">HTTP è eseguibile. Eventi tipizzati e job durevoli/schedulati con JobStore sostituibile sono provati. Un path SQLite dichiarato in AXL sopravvive al riavvio. UI runtime e agent runtime restano gate successivi.</div>
+        <div class="callout">HTTP è eseguibile con binding body/path/query/header/cookie. Eventi tipizzati e job durevoli/schedulati con JobStore sostituibile sono provati. Un path SQLite dichiarato in AXL sopravvive al riavvio. UI runtime e agent runtime restano gate successivi.</div>
       </div>
     </section>
 

@@ -109,6 +109,6 @@ commands, API, UI, events, jobs, observability, agent tools and scenarios.
 ```
 
 Status: experiment. Typed flows, replaceable configured providers, durable
-SQLite paths, composite body/path/query routes and capacity-backed bearer auth execute.
+SQLite paths, composite body/path/query/header/cookie routes and capacity-backed bearer auth execute.
 Production secrets/JWT, transactions, richer backend services and React runtime
 generation are not implemented yet.

@@ -17,6 +17,17 @@ use super::runtime::{BuiltinRuntime, ProviderCall, ProviderRuntime};
 pub struct HttpResult {
     pub status: u16,
     pub body: Value,
+    pub headers: BTreeMap<String, String>,
+}
+
+impl HttpResult {
+    fn new(status: u16, body: Value) -> Self {
+        Self {
+            status,
+            body,
+            headers: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -27,10 +38,10 @@ struct HttpState {
 
 pub fn dispatch(graph: &GraphIr, method: &str, path: &str, input: Value) -> HttpResult {
     let Ok(mut runtime) = BuiltinRuntime::new() else {
-        return HttpResult {
-            status: 500,
-            body: json!({ "error": "provider_runtime_initialization_failed" }),
-        };
+        return HttpResult::new(
+            500,
+            json!({ "error": "provider_runtime_initialization_failed" }),
+        );
     };
     dispatch_with_runtime(graph, &mut runtime, method, path, input)
 }
@@ -89,10 +100,7 @@ pub fn dispatch_with_headers(
             })
         });
     let Some((route, path_parameters)) = matched else {
-        return HttpResult {
-            status: 404,
-            body: json!({ "error": "route_not_found" }),
-        };
+        return HttpResult::new(404, json!({ "error": "route_not_found" }));
     };
     if let Some(result) =
         apply_request_middleware(graph, runtime, route, &method, request_path, headers)
@@ -107,35 +115,28 @@ pub fn dispatch_with_headers(
     ) {
         return result;
     }
-    let input = match bind_request_input(graph, route, input, &path_parameters, query) {
+    let input = match bind_request_input(graph, route, input, &path_parameters, query, headers) {
         Ok(input) => input,
         Err(message) => {
-            return HttpResult {
-                status: 400,
-                body: json!({ "error": message }),
-            };
+            return HttpResult::new(400, json!({ "error": message }));
         }
     };
     let Some(flow) = route.metadata.get("flow") else {
-        return HttpResult {
-            status: 500,
-            body: json!({ "error": "route_has_no_flow" }),
-        };
+        return HttpResult::new(500, json!({ "error": "route_has_no_flow" }));
     };
-    match runtime::evaluate_flow_with_runtime(graph, flow, input, runtime) {
-        Ok(body) => HttpResult {
-            status: if body.get("error").is_some() {
+    let mut result = match runtime::evaluate_flow_with_runtime(graph, flow, input, runtime) {
+        Ok(body) => HttpResult::new(
+            if body.get("error").is_some() {
                 422
             } else {
                 200
             },
             body,
-        },
-        Err(error) => HttpResult {
-            status: 400,
-            body: json!({ "error": error.to_string() }),
-        },
-    }
+        ),
+        Err(error) => HttpResult::new(400, json!({ "error": error.to_string() })),
+    };
+    apply_response_middleware(graph, runtime, route, &mut result);
+    result
 }
 
 fn match_http_path(pattern: &str, request: &str) -> Option<BTreeMap<String, String>> {
@@ -167,6 +168,7 @@ fn bind_request_input(
     body: Value,
     path: &BTreeMap<String, String>,
     query: &str,
+    headers: &BTreeMap<String, String>,
 ) -> Result<Value, String> {
     let source = route
         .metadata
@@ -174,7 +176,7 @@ fn bind_request_input(
         .map(String::as_str)
         .unwrap_or("body");
     if source == "composite" {
-        return bind_composite_input(graph, route, body, path, query);
+        return bind_composite_input(graph, route, body, path, query, headers);
     }
     if source == "body" {
         return Ok(body);
@@ -191,6 +193,8 @@ fn bind_request_input(
         "query" => {
             query_value(query, name).ok_or_else(|| format!("missing_query_parameter:{name}"))?
         }
+        "header" => header_value(headers, name).ok_or_else(|| format!("missing_header:{name}"))?,
+        "cookie" => cookie_value(headers, name).ok_or_else(|| format!("missing_cookie:{name}"))?,
         _ => return Err(format!("unsupported_request_source:{source}")),
     };
     let input_type = route
@@ -208,6 +212,7 @@ fn bind_composite_input(
     body: Value,
     path: &BTreeMap<String, String>,
     query: &str,
+    headers: &BTreeMap<String, String>,
 ) -> Result<Value, String> {
     let input_type = route
         .type_name
@@ -274,6 +279,14 @@ fn bind_composite_input(
                 .and_then(|name| query_value(query, name))
                 .map(|value| parse_bound_scalar(field_type, &value))
                 .transpose()?,
+            "header" => name
+                .and_then(|name| header_value(headers, name))
+                .map(|value| parse_bound_scalar(field_type, &value))
+                .transpose()?,
+            "cookie" => name
+                .and_then(|name| cookie_value(headers, name))
+                .map(|value| parse_bound_scalar(field_type, &value))
+                .transpose()?,
             _ => return Err(format!("unsupported_request_source:{source}")),
         };
         match value {
@@ -291,6 +304,19 @@ fn query_value(query: &str, name: &str) -> Option<String> {
     query.split('&').find_map(|pair| {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
         (percent_decode(key).as_deref() == Some(name)).then(|| percent_decode(value))?
+    })
+}
+
+fn header_value(headers: &BTreeMap<String, String>, name: &str) -> Option<String> {
+    headers.get(&name.to_ascii_lowercase()).cloned()
+}
+
+fn cookie_value(headers: &BTreeMap<String, String>, name: &str) -> Option<String> {
+    let cookie = headers.get("cookie")?;
+    cookie.split(';').find_map(|part| {
+        let part = part.trim();
+        let (key, value) = part.split_once('=')?;
+        (key.trim() == name).then(|| value.trim().to_string())
     })
 }
 
@@ -352,23 +378,10 @@ fn apply_request_middleware(
         .iter()
         .find(|edge| edge.kind == "owns" && edge.to == route.id)
         .map(|edge| edge.from.as_str())?;
-    let mut middlewares = graph
-        .edges
-        .iter()
-        .filter(|edge| edge.kind == "owns" && edge.from == api)
-        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
-        .filter(|node| node.kind == "middleware")
-        .collect::<Vec<_>>();
+    let middlewares = api_middlewares(graph, api, "request");
     if middlewares.is_empty() {
         return None;
     }
-    middlewares.sort_by_key(|middleware| {
-        middleware
-            .metadata
-            .get("order")
-            .and_then(|value| value.parse::<usize>().ok())
-            .unwrap_or(usize::MAX)
-    });
     let mut envelope = json!({
         "method": method,
         "path": path,
@@ -382,24 +395,21 @@ fn apply_request_middleware(
             .map(|edge| edge.to.as_str());
         let provider = provider_id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
         let Some(provider) = provider else {
-            return Some(HttpResult {
-                status: 500,
-                body: json!({ "error": "middleware_provider_missing" }),
-            });
+            return Some(HttpResult::new(
+                500,
+                json!({ "error": "middleware_provider_missing" }),
+            ));
         };
         let Some(implementation) = provider.implementation.as_deref() else {
-            return Some(HttpResult {
-                status: 500,
-                body: json!({ "error": "middleware_provider_has_no_binding" }),
-            });
+            return Some(HttpResult::new(
+                500,
+                json!({ "error": "middleware_provider_has_no_binding" }),
+            ));
         };
         let config = match runtime::provider_config(graph, &provider.id) {
             Ok(config) => config,
             Err(error) => {
-                return Some(HttpResult {
-                    status: 500,
-                    body: json!({ "error": error.to_string() }),
-                });
+                return Some(HttpResult::new(500, json!({ "error": error.to_string() })));
             }
         };
         match runtime.invoke(ProviderCall {
@@ -414,26 +424,154 @@ fn apply_request_middleware(
                 envelope = Value::Object(object);
             }
             Ok(Value::Object(object)) if object.get("error").is_some() => {
-                return Some(HttpResult {
-                    status: 403,
-                    body: Value::Object(object),
-                });
+                return Some(HttpResult::new(403, Value::Object(object)));
             }
             Ok(_) => {
-                return Some(HttpResult {
-                    status: 403,
-                    body: json!({ "error": "middleware_rejected" }),
-                });
+                return Some(HttpResult::new(
+                    403,
+                    json!({ "error": "middleware_rejected" }),
+                ));
             }
             Err(error) => {
-                return Some(HttpResult {
-                    status: 403,
-                    body: json!({ "error": error }),
-                });
+                return Some(HttpResult::new(403, json!({ "error": error })));
             }
         }
     }
     None
+}
+
+fn apply_response_middleware(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    route: &super::ir::GraphNode,
+    result: &mut HttpResult,
+) {
+    let Some(api) = graph
+        .edges
+        .iter()
+        .find(|edge| edge.kind == "owns" && edge.to == route.id)
+        .map(|edge| edge.from.as_str())
+    else {
+        return;
+    };
+    let middlewares = api_middlewares(graph, api, "response");
+    if middlewares.is_empty() {
+        return;
+    }
+    let body_text = match serde_json::to_string(&result.body) {
+        Ok(text) => text,
+        Err(error) => {
+            *result = HttpResult::new(500, json!({ "error": error.to_string() }));
+            return;
+        }
+    };
+    let mut envelope = json!({
+        "status": result.status,
+        "headers": result.headers,
+        "body": body_text,
+    });
+    for middleware in middlewares {
+        let provider_id = graph
+            .edges
+            .iter()
+            .find(|edge| edge.kind == "bind" && edge.from == middleware.id)
+            .map(|edge| edge.to.as_str());
+        let provider = provider_id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
+        let Some(provider) = provider else {
+            *result = HttpResult::new(500, json!({ "error": "middleware_provider_missing" }));
+            return;
+        };
+        let Some(implementation) = provider.implementation.as_deref() else {
+            *result = HttpResult::new(
+                500,
+                json!({ "error": "middleware_provider_has_no_binding" }),
+            );
+            return;
+        };
+        let config = match runtime::provider_config(graph, &provider.id) {
+            Ok(config) => config,
+            Err(error) => {
+                *result = HttpResult::new(500, json!({ "error": error.to_string() }));
+                return;
+            }
+        };
+        match runtime.invoke(ProviderCall {
+            provider: &provider.name,
+            capacity: middleware.type_name.as_deref().unwrap_or(""),
+            implementation,
+            operation: "process",
+            config,
+            input: envelope.clone(),
+        }) {
+            Ok(Value::Object(object)) if object.contains_key("status") => {
+                envelope = Value::Object(object);
+            }
+            Ok(Value::Object(object)) if object.get("error").is_some() => {
+                *result = HttpResult::new(403, Value::Object(object));
+                return;
+            }
+            Ok(_) => {
+                *result = HttpResult::new(403, json!({ "error": "middleware_rejected" }));
+                return;
+            }
+            Err(error) => {
+                *result = HttpResult::new(403, json!({ "error": error }));
+                return;
+            }
+        }
+    }
+    let status = envelope
+        .get("status")
+        .and_then(Value::as_u64)
+        .and_then(|value| u16::try_from(value).ok())
+        .unwrap_or(result.status);
+    let headers = envelope
+        .get("headers")
+        .and_then(Value::as_object)
+        .map(|object| {
+            object
+                .iter()
+                .filter_map(|(key, value)| {
+                    value
+                        .as_str()
+                        .map(|text| (key.to_ascii_lowercase(), text.to_string()))
+                })
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+    let body = match envelope.get("body").and_then(Value::as_str) {
+        Some(text) => serde_json::from_str(text).unwrap_or_else(|_| Value::String(text.into())),
+        None => result.body.clone(),
+    };
+    *result = HttpResult {
+        status,
+        body,
+        headers,
+    };
+}
+
+fn api_middlewares<'a>(
+    graph: &'a GraphIr,
+    api: &str,
+    phase: &str,
+) -> Vec<&'a super::ir::GraphNode> {
+    let mut middlewares = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == api)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .filter(|node| {
+            node.kind == "middleware" && node.metadata.get("phase").map(String::as_str) == Some(phase)
+        })
+        .collect::<Vec<_>>();
+    middlewares.sort_by_key(|middleware| {
+        middleware
+            .metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    middlewares
 }
 
 fn authorize_request(
@@ -453,10 +591,7 @@ fn authorize_request(
             .flatten()
             .filter(|node| node.kind == "auth")
     })?;
-    let unauthorized = || HttpResult {
-        status: 401,
-        body: json!({ "error": "authorization_required" }),
-    };
+    let unauthorized = || HttpResult::new(401, json!({ "error": "authorization_required" }));
     let Some(header) = authorization else {
         return Some(unauthorized());
     };
@@ -473,24 +608,21 @@ fn authorize_request(
         .map(|edge| edge.to.as_str());
     let provider = provider_id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
     let Some(provider) = provider else {
-        return Some(HttpResult {
-            status: 500,
-            body: json!({ "error": "auth_provider_missing" }),
-        });
+        return Some(HttpResult::new(
+            500,
+            json!({ "error": "auth_provider_missing" }),
+        ));
     };
     let Some(implementation) = provider.implementation.as_deref() else {
-        return Some(HttpResult {
-            status: 500,
-            body: json!({ "error": "auth_provider_has_no_binding" }),
-        });
+        return Some(HttpResult::new(
+            500,
+            json!({ "error": "auth_provider_has_no_binding" }),
+        ));
     };
     let config = match runtime::provider_config(graph, &provider.id) {
         Ok(config) => config,
         Err(error) => {
-            return Some(HttpResult {
-                status: 500,
-                body: json!({ "error": error.to_string() }),
-            });
+            return Some(HttpResult::new(500, json!({ "error": error.to_string() })));
         }
     };
     match runtime.invoke(ProviderCall {
@@ -502,14 +634,14 @@ fn authorize_request(
         input: Value::String(token.into()),
     }) {
         Ok(Value::Bool(true)) => None,
-        Ok(Value::Bool(false)) => Some(HttpResult {
-            status: 403,
-            body: json!({ "error": "authorization_denied" }),
-        }),
-        Ok(_) | Err(_) => Some(HttpResult {
-            status: 403,
-            body: json!({ "error": "authorization_failed" }),
-        }),
+        Ok(Value::Bool(false)) => Some(HttpResult::new(
+            403,
+            json!({ "error": "authorization_denied" }),
+        )),
+        Ok(_) | Err(_) => Some(HttpResult::new(
+            403,
+            json!({ "error": "authorization_failed" }),
+        )),
     }
 }
 
@@ -569,13 +701,20 @@ async fn handle(
                 &headers,
             )
         }
-        Err(_) => HttpResult {
-            status: 500,
-            body: json!({ "error": "provider_runtime_unavailable" }),
-        },
+        Err(_) => HttpResult::new(500, json!({ "error": "provider_runtime_unavailable" })),
     };
     let status = StatusCode::from_u16(result.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    (status, Json(result.body)).into_response()
+    let mut response = (status, Json(result.body)).into_response();
+    for (name, value) in result.headers {
+        let Ok(name) = axum::http::HeaderName::try_from(name) else {
+            continue;
+        };
+        let Ok(value) = axum::http::HeaderValue::try_from(value) else {
+            continue;
+        };
+        response.headers_mut().insert(name, value);
+    }
+    response
 }
 
 #[cfg(test)]
@@ -592,10 +731,16 @@ entity CompositeInput
   term: text required
   amount: money required
   verbose: bool optional
+  user: text optional
+  sid: text optional
 entity HttpRequest
   method: text required
   path: text required
   headers: Map<text,text> required
+entity HttpResponse
+  status: int required
+  headers: Map<text,text> required
+  body: text required
 flow Validate Input -> Result<Input>
   require input.amount > 0 else "amount_invalid"
   return input
@@ -607,6 +752,8 @@ capacity HttpAuth
   op authorize text -> Result<bool> idempotent
 capacity HttpMiddleware
   op process HttpRequest -> Result<HttpRequest> idempotent
+capacity HttpResponseMiddleware
+  op process HttpResponse -> Result<HttpResponse> idempotent
 skill DemoBearer provides HttpAuth
   native rust axl::auth::bearer
   config token: text = "secret"
@@ -614,21 +761,32 @@ skill DemoClientGate provides HttpMiddleware
   native rust axl::middleware::header_gate
   config header: text = "x-axl-client"
   config value: text = "demo"
+skill DemoResponseHeaders provides HttpResponseMiddleware
+  native rust axl::middleware::response_headers
+  config header: text = "x-axl-middleware"
+  config value: text = "ok"
 api DemoApi
   post /validate Input -> Result<Input> = Validate
   get /items/{id} text -> text = EchoText from path.id
   get /search text -> text = EchoText from query.term
+  get /me text -> text = EchoText from header.x-user
+  get /session text -> text = EchoText from cookie.sid
   put /items/{id} CompositeInput -> CompositeInput = EchoComposite
     bind id = path.id
     bind term = query.term
     bind amount = body.amount
     bind verbose = query.verbose
+    bind user = header.x-user
+    bind sid = cookie.sid
 api SecureApi
   auth bearer: HttpAuth = DemoBearer
   post /secure Input -> Result<Input> = Validate
 api GuardedApi
   middleware request: HttpMiddleware = DemoClientGate
   post /guarded Input -> Result<Input> = Validate
+api AnnotatedApi
+  middleware response: HttpResponseMiddleware = DemoResponseHeaders
+  post /annotated Input -> Result<Input> = Validate
 "#;
 
     #[test]
@@ -652,16 +810,54 @@ api GuardedApi
         let missing_query = dispatch(&graph, "get", "/search", Value::Null);
         assert_eq!(missing_query.status, 400);
         assert_eq!(missing_query.body["error"], "missing_query_parameter:term");
-        let composite = dispatch(
+        let missing_header = dispatch(&graph, "get", "/me", Value::Null);
+        assert_eq!(missing_header.status, 400);
+        assert_eq!(missing_header.body["error"], "missing_header:x-user");
+        let mut header_map = BTreeMap::new();
+        header_map.insert("x-user".into(), "alice".into());
+        let from_header = dispatch_with_headers(
             &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "get",
+            "/me",
+            Value::Null,
+            &header_map,
+        );
+        assert_eq!(from_header.status, 200);
+        assert_eq!(from_header.body, "alice");
+        let missing_cookie = dispatch(&graph, "get", "/session", Value::Null);
+        assert_eq!(missing_cookie.status, 400);
+        assert_eq!(missing_cookie.body["error"], "missing_cookie:sid");
+        header_map.insert("cookie".into(), "other=1; sid=session-42; keep=yes".into());
+        let from_cookie = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "get",
+            "/session",
+            Value::Null,
+            &header_map,
+        );
+        assert_eq!(from_cookie.status, 200);
+        assert_eq!(from_cookie.body, "session-42");
+        let composite = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
             "put",
             "/items/item-1?term=ledger&verbose=true",
             json!({"amount": 25}),
+            &header_map,
         );
         assert_eq!(composite.status, 200);
         assert_eq!(
             composite.body,
-            json!({"id": "item-1", "term": "ledger", "amount": 25, "verbose": true})
+            json!({
+                "id": "item-1",
+                "term": "ledger",
+                "amount": 25,
+                "verbose": true,
+                "user": "alice",
+                "sid": "session-42"
+            })
         );
 
         let mut runtime = BuiltinRuntime::new().unwrap();
@@ -723,5 +919,19 @@ api GuardedApi
             &headers,
         );
         assert_eq!(allowed_client.status, 200);
+
+        let annotated = dispatch_with_headers(
+            &graph,
+            &mut runtime,
+            "post",
+            "/annotated",
+            json!({"amount": 10}),
+            &BTreeMap::new(),
+        );
+        assert_eq!(annotated.status, 200);
+        assert_eq!(
+            annotated.headers.get("x-axl-middleware").map(String::as_str),
+            Some("ok")
+        );
     }
 }

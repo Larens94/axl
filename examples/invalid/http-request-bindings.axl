@@ -10,11 +10,19 @@ flow Identity Input -> Input
   return input
 flow IdentityComposite Composite -> Composite
   return input
+flow Echo text -> text
+  return input
 api BrokenBindings
   get /items/{other} Input -> Input = Identity from path.bad.name
   get /items/{duplicate} Input -> Input = Identity
+  get /header-entity Input -> Input = Identity from header.x-user
+  get /cookie-dots text -> text = Echo from cookie.bad.name
   post /compose/{id} Composite -> Composite = IdentityComposite
     bind unknown = path.id
     bind id = path.id
     bind id = query.id
     bind payload = query.payload
+  post /compose-header/{id} Composite -> Composite = IdentityComposite
+    bind id = path.id
+    bind payload = header.x-payload
+    bind required_missing = cookie.sid

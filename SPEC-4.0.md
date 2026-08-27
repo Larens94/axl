@@ -424,8 +424,33 @@ api GuardedApi
 ```
 
 Middleware runs in declaration order before auth. The built-in header gate is a
-replaceable fixture; rejection maps to HTTP 403. Response-phase middleware and
-response header mutation are not implemented yet.
+replaceable fixture; rejection maps to HTTP 403.
+
+An API can also attach ordered response-phase middleware over a typed response
+envelope. Providers may set or mutate response headers after the flow runs:
+
+```axl
+entity HttpResponse
+  status: int required
+  headers: Map<text,text> required
+  body: text required
+
+capacity HttpResponseMiddleware
+  op process HttpResponse -> Result<HttpResponse> idempotent
+
+skill DemoResponseHeaders provides HttpResponseMiddleware
+  native rust axl::middleware::response_headers
+  config header: text = "x-axl-middleware"
+  config value: text = "ok"
+
+api AnnotatedApi
+  middleware response: HttpResponseMiddleware = DemoResponseHeaders
+  post /annotated/balance MovementBatch -> money = CalculateLedgerBalance
+```
+
+Response middleware runs after the flow result is produced. The built-in
+`response_headers` skill merges one configured header; any compatible provider
+can replace it. The response body travels as JSON text inside the envelope.
 
 ### Events
 
@@ -504,16 +529,20 @@ same `JobStore` contract; a configured SQLite path survives runtime restart.
 Graph IR uses `job` (opcode 52) and `enqueue` (opcode 53).
 
 Route inputs use the JSON body by default. A scalar or enum input can instead
-come directly from a named path or query value:
+come directly from a named path, query, header or cookie value:
 
 ```axl
 get /movements/{id} uuid -> Result<Movement> = FindMovement from path.id
 get /movements/find uuid -> Result<Movement> = FindMovement from query.id
+get /me text -> text = EchoText from header.x-user
+get /session text -> text = EchoText from cookie.sid
 ```
 
 Path placeholders and binding names are checked. Runtime decoding converts
-`bool`, `int`, `float` and `money`, percent-decodes string-like values and lets
-the normal flow validator check the result. Exact paths win over templates.
+`bool`, `int`, `float` and `money`, percent-decodes string-like path/query
+values, reads headers case-insensitively and parses `Cookie` as
+`name=value` pairs separated by `;`. The normal flow validator checks the
+bound result. Exact paths win over templates.
 
 An entity input can be assembled from several request surfaces:
 
@@ -522,12 +551,18 @@ post /accounts/{account}/movement-preview MovementPreviewRequest -> Result<Movem
   bind account = path.account
   bind movement = body
   bind dry_run = query.dry_run
+
+post /client-preview ClientSessionRequest -> Result<Movement> = PreviewWithClientSession
+  bind user = header.x-user
+  bind sid = cookie.sid
+  bind movement = body
 ```
 
 Each `bind` is a first-class `request_binding` Graph/Packed IR node. Targets must
 be unique declared fields; every required field must be bound. `body.field`
 selects one JSON member, while plain `body` assigns the complete JSON value to a
-nested entity field. Missing optional fields are omitted.
+nested entity field. Missing optional fields are omitted. Request sources are
+`body`, `path`, `query`, `header` and `cookie`.
 
 Implemented methods are `get`, `post`, `put`, `patch` and `delete`. Paths are
 absolute and may contain named whole-segment placeholders. Input/output types must exactly match the bound
@@ -675,7 +710,7 @@ generate a complete production application. `providers/providers.json` uses
 - contract expression type checking;
 - branch statement blocks and mutable variables;
 - generated standalone Rust handlers and React components from Graph IR;
-- header/cookie request bindings, response middleware and streaming HTTP bodies;
+- response middleware and streaming HTTP bodies;
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
 - transactions, migrations, queries and multi-database adapters;

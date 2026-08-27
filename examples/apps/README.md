@@ -122,8 +122,11 @@ over the `{id}` template.
 JSON body and `dry_run` comes from the query. No Rust request DTO or extractor is
 specific to this route.
 
+`GET /me` and `GET /session` bind `header.x-user` and `cookie.sid` into a typed
+`text` flow. `POST /client-preview` assembles `ClientSessionRequest` from
+`header.x-user`, `cookie.sid` and the JSON body through the same open bind model.
+
 This is not yet the complete cashflow application. There are no transaction or
-migration primitives, general store queries, event emission, state mutation or
-rendered UI.
+migration primitives, general store queries, state mutation or rendered UI.
 Those missing capabilities must be added to AXL rather than implemented inside
 this application with handwritten Rust or React.

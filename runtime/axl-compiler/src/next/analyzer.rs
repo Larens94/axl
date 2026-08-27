@@ -2412,41 +2412,49 @@ fn check_api_middleware(
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if middleware.phase != "request" {
-        diagnostics.push(
-            Diagnostic::error(
-                "AXL-H918",
-                "http",
-                format!("unsupported middleware phase '{}'", middleware.phase),
-                middleware.span.clone(),
-            )
-            .expected("request", &middleware.phase),
-        );
-    }
+    let expected_contract = match middleware.phase.as_str() {
+        "request" => Some("op process HttpRequest -> Result<HttpRequest> idempotent"),
+        "response" => Some("op process HttpResponse -> Result<HttpResponse> idempotent"),
+        _ => {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H918",
+                    "http",
+                    format!("unsupported middleware phase '{}'", middleware.phase),
+                    middleware.span.clone(),
+                )
+                .expected("request or response", &middleware.phase),
+            );
+            None
+        }
+    };
     match declarations.get(middleware.capacity.as_str()) {
         Some(Declaration::Capacity(capacity)) => {
-            let process = capacity.operations.iter().find(|op| op.name == "process");
-            let valid = process.is_some_and(|op| {
-                op.idempotent
-                    && generic_inner(&op.output, "Result") == Some(op.input.as_str())
-                    && http_request_envelope(&op.input, declarations)
-            });
-            if !valid {
-                diagnostics.push(
-                    Diagnostic::error(
-                        "AXL-H919",
-                        "http",
-                        format!(
-                            "middleware capacity '{}' has an invalid contract",
-                            middleware.capacity
-                        ),
-                        middleware.span.clone(),
-                    )
-                    .expected(
-                        "op process HttpRequest -> Result<HttpRequest> idempotent",
-                        "missing or incompatible operation",
-                    ),
-                );
+            if let Some(expected) = expected_contract {
+                let process = capacity.operations.iter().find(|op| op.name == "process");
+                let valid = process.is_some_and(|op| {
+                    op.idempotent
+                        && generic_inner(&op.output, "Result") == Some(op.input.as_str())
+                        && match middleware.phase.as_str() {
+                            "request" => http_request_envelope(&op.input, declarations),
+                            "response" => http_response_envelope(&op.input, declarations),
+                            _ => false,
+                        }
+                });
+                if !valid {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-H919",
+                            "http",
+                            format!(
+                                "middleware capacity '{}' has an invalid contract",
+                                middleware.capacity
+                            ),
+                            middleware.span.clone(),
+                        )
+                        .expected(expected, "missing or incompatible operation"),
+                    );
+                }
             }
         }
         Some(found) => diagnostics.push(
@@ -2510,6 +2518,18 @@ fn http_request_envelope(type_name: &str, declarations: &BTreeMap<&str, &Declara
     method.is_some_and(|field| field.type_name == "text")
         && path.is_some_and(|field| field.type_name == "text")
         && headers.is_some_and(|field| field.type_name == "Map<text,text>")
+}
+
+fn http_response_envelope(type_name: &str, declarations: &BTreeMap<&str, &Declaration>) -> bool {
+    let Some(Declaration::Entity(entity)) = declarations.get(type_name) else {
+        return false;
+    };
+    let status = entity.fields.iter().find(|field| field.name == "status");
+    let headers = entity.fields.iter().find(|field| field.name == "headers");
+    let body = entity.fields.iter().find(|field| field.name == "body");
+    status.is_some_and(|field| field.type_name == "int")
+        && headers.is_some_and(|field| field.type_name == "Map<text,text>")
+        && body.is_some_and(|field| field.type_name == "text")
 }
 
 fn check_api(

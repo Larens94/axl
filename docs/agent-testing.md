@@ -227,6 +227,23 @@ curl -X POST \
 The response contains the validated movement. The flow input was assembled as
 `{ account, movement, dry_run }` from path, complete body and query.
 
+Verify header and cookie request bindings:
+
+```sh
+curl http://127.0.0.1:8080/me -H 'x-user: alice'
+curl http://127.0.0.1:8080/session -H 'cookie: sid=session-42'
+
+curl -X POST http://127.0.0.1:8080/client-preview \
+  -H 'content-type: application/json' \
+  -H 'x-user: alice' \
+  -H 'cookie: sid=session-42' \
+  --data-binary @examples/apps/inputs/movement-valid.json
+```
+
+The first two responses are `"alice"` and `"session-42"`. The composite route
+returns the validated movement after assembling `{ user, sid, movement }` from
+header, cookie and body.
+
 ## 7. Verify invalid programs
 
 These commands are expected to fail:
@@ -374,8 +391,8 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - ordered request middleware is capacity-backed over typed envelopes;
 - typed events reach multiple subscribers through `emit`;
 - capacity-backed jobs enqueue, tick, retry and survive SQLite runtime recreate;
-- scalar path/query bindings are checked, decoded and exact-route-safe;
-- composite request entities are assembled from checked body/path/query nodes;
+- scalar path/query/header/cookie bindings are checked, decoded and exact-route-safe;
+- composite request entities are assembled from checked body/path/query/header/cookie nodes;
 - documentation examples remain coupled to compiler tests.
 
 It does not prove transaction/migration semantics or runtime UI rendering.

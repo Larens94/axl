@@ -63,14 +63,13 @@ source text after compilation.
 
 Goal: complete Gate 2 without handwritten controllers.
 
-Starting evidence: Axum routes, body/path/query composite binding, capacity-based
-bearer auth, ordered request middleware, typed events/subscriptions,
+Starting evidence: Axum routes, body/path/query/header/cookie composite binding,
+capacity-based bearer auth, ordered request middleware, typed events/subscriptions,
 durable/scheduled jobs with retry, and durable SQLite are executable.
 
 Next deliverables:
 
 - response-phase middleware and response header mutation;
-- header and cookie request bindings;
 - cache and invalidation capacities;
 - tracing, metrics and structured logs;
 - CORS, rate-limit and production auth adapters behind capacities.
@@ -78,6 +77,9 @@ Next deliverables:
 Exit evidence: a server restart preserves durable state/jobs, middleware can be
 replaced without changing routes, events reach two consumers, and all HTTP
 status/header/body behavior is tested on a real listener.
+
+Header and cookie request bindings are executable through the same
+`request_binding` model as path/query/body (`header.<name>`, `cookie.<name>`).
 
 ## WP-03 — Data and multi-database runtime
 

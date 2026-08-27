@@ -35,6 +35,11 @@ entity MovementPreviewRequest
   movement: Movement required
   dry_run: bool required
 
+entity ClientSessionRequest
+  user: text required
+  sid: text required
+  movement: Movement required
+
 capacity MovementStore
   op save Movement -> Result<Movement>
   op find uuid -> Result<Movement> idempotent
@@ -47,8 +52,16 @@ entity HttpRequest
   path: text required
   headers: Map<text,text> required
 
+entity HttpResponse
+  status: int required
+  headers: Map<text,text> required
+  body: text required
+
 capacity HttpMiddleware
   op process HttpRequest -> Result<HttpRequest> idempotent
+
+capacity HttpResponseMiddleware
+  op process HttpResponse -> Result<HttpResponse> idempotent
 
 capacity EventLog
   op append text -> Result<text>
@@ -80,6 +93,12 @@ skill CashflowClientGate provides HttpMiddleware
   native rust axl::middleware::header_gate
   config header: text = "x-axl-client"
   config value: text = "cashflow-demo"
+  capability net.filter
+
+skill CashflowResponseHeaders provides HttpResponseMiddleware
+  native rust axl::middleware::response_headers
+  config header: text = "x-axl-middleware"
+  config value: text = "ok"
   capability net.filter
 
 skill MemoryEventLog provides EventLog
@@ -264,6 +283,13 @@ flow PreviewMovement MovementPreviewRequest -> Result<Movement>
   run valid = ValidateMovement(input.movement)?
   return valid
 
+flow EchoText text -> text
+  return input
+
+flow PreviewWithClientSession ClientSessionRequest -> Result<Movement>
+  run valid = ValidateMovement(input.movement)?
+  return valid
+
 api CashflowApi
   post /movements Movement -> Result<Movement> = ValidateAndStoreMovement
   post /movement-by-id uuid -> Result<Movement> = FindMovement
@@ -279,10 +305,16 @@ api CashflowApi
   post /movement-by-id/durable uuid -> Result<Movement> = FindDurableMovement
   get /movements/{id} uuid -> Result<Movement> = FindDurableMovement from path.id
   get /movements/find uuid -> Result<Movement> = FindDurableMovement from query.id
+  get /me text -> text = EchoText from header.x-user
+  get /session text -> text = EchoText from cookie.sid
   post /accounts/{account}/movement-preview MovementPreviewRequest -> Result<Movement> = PreviewMovement
     bind account = path.account
     bind movement = body
     bind dry_run = query.dry_run
+  post /client-preview ClientSessionRequest -> Result<Movement> = PreviewWithClientSession
+    bind user = header.x-user
+    bind sid = cookie.sid
+    bind movement = body
 
 api SecuredCashflowApi
   auth bearer: HttpAuth = CashflowDemoBearer
@@ -291,3 +323,7 @@ api SecuredCashflowApi
 api GuardedCashflowApi
   middleware request: HttpMiddleware = CashflowClientGate
   post /guarded/balance MovementBatch -> money = CalculateLedgerBalance
+
+api AnnotatedCashflowApi
+  middleware response: HttpResponseMiddleware = CashflowResponseHeaders
+  post /annotated/balance MovementBatch -> money = CalculateLedgerBalance

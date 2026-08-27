@@ -12,9 +12,12 @@ skill StoreProvider provides Store
   native rust axl::store::memory
 flow Identity text -> text
   return input
-api WrongPhaseAndContract
-  middleware response: BadMiddleware = MissingProvider
+api WrongPhase
+  middleware stream: BadMiddleware = MissingProvider
   post /one text -> text = Identity
+api WrongContract
+  middleware request: BadMiddleware = MissingProvider
+  post /three text -> text = Identity
 api WrongCapacityAndProvider
   middleware request: MissingMiddleware = StoreProvider
   post /two text -> text = Identity

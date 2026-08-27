@@ -7,12 +7,12 @@ Operational notes for the experimentation phase. Pairs with `AGENTS.md` and
 
 Gate 2 remainder → Gate 3 data → Gate 4 UI → Gates 5–9.
 
-Immediate next executable slice: **header/cookie request bindings** (WP-02), then
-response middleware, then Gate 3 data.
+Immediate next executable slice: **response-phase middleware / response header
+mutation** (WP-02), then cache/observability, then Gate 3 data.
 
 ## Autoloop
 
-A local session loop wakes about every 15 minutes to advance the next failing
+A local session loop wakes about every **5 minutes** to advance the next failing
 example → open primitive → proofs → docs. Prefer one ABI-touching package at a
 time (serial on `ast`/`parser`/`analyzer`/`packed`).
 

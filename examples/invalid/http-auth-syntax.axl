@@ -7,7 +7,7 @@ api BrokenApi
   auth bearer: HttpAuth = First
   auth bearer: HttpAuth = Second
   post /identity text -> text = Identity
-  get /broken text -> text = Identity from header.value
+  get /broken text -> text = Identity from form.value
   bind orphan = body
   get /mixed/{id} text -> text = Identity from path.id
     bind value = body

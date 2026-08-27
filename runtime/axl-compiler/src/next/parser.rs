@@ -2140,7 +2140,7 @@ fn parse_api(
                         span(line),
                     )
                     .expected(
-                        "middleware request: HttpMiddleware = MiddlewareProvider",
+                        "middleware request|response: Capacity = Provider",
                         &line.text,
                     ),
                 );
@@ -2156,7 +2156,7 @@ fn parse_api(
                         span(line),
                     )
                     .expected(
-                        "middleware request: HttpMiddleware = MiddlewareProvider",
+                        "middleware request|response: Capacity = Provider",
                         &line.text,
                     ),
                 );

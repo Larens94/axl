@@ -741,4 +741,59 @@ fn documented_cashflow_core_executes() {
     );
     assert_eq!(found.status, 200);
     assert_eq!(found.body["ok"]["id"], "movement-001");
+
+    let mut headers = std::collections::BTreeMap::new();
+    headers.insert("x-user".into(), "alice".into());
+    headers.insert("cookie".into(), "sid=session-42".into());
+    let me = axl_compiler::next::http::dispatch_with_headers(
+        &graph,
+        &mut runtime,
+        "get",
+        "/me",
+        serde_json::Value::Null,
+        &headers,
+    );
+    assert_eq!(me.status, 200);
+    assert_eq!(me.body, "alice");
+    let session = axl_compiler::next::http::dispatch_with_headers(
+        &graph,
+        &mut runtime,
+        "get",
+        "/session",
+        serde_json::Value::Null,
+        &headers,
+    );
+    assert_eq!(session.status, 200);
+    assert_eq!(session.body, "session-42");
+    let movement = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-valid.json"
+    ))
+    .unwrap();
+    let preview = axl_compiler::next::http::dispatch_with_headers(
+        &graph,
+        &mut runtime,
+        "post",
+        "/client-preview",
+        movement,
+        &headers,
+    );
+    assert_eq!(preview.status, 200);
+    assert_eq!(preview.body["ok"]["id"], "movement-001");
+
+    let annotated = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/annotated/balance",
+        batch,
+    );
+    assert_eq!(annotated.status, 200);
+    assert_eq!(annotated.body, 80000);
+    assert_eq!(
+        annotated
+            .headers
+            .get("x-axl-middleware")
+            .map(String::as_str),
+        Some("ok")
+    );
 }
