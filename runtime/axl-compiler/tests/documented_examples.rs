@@ -62,6 +62,54 @@ fn documented_invalid_examples_report_stable_codes() {
             include_str!("../../../examples/invalid/wrong-parameter.axl"),
         ),
         (
+            "AXL-P313",
+            include_str!("../../../examples/invalid/provider-config-syntax.axl"),
+        ),
+        (
+            "AXL-P913",
+            include_str!("../../../examples/invalid/http-auth-syntax.axl"),
+        ),
+        (
+            "AXL-P914",
+            include_str!("../../../examples/invalid/http-auth-syntax.axl"),
+        ),
+        (
+            "AXL-H908",
+            include_str!("../../../examples/invalid/http-auth.axl"),
+        ),
+        (
+            "AXL-H909",
+            include_str!("../../../examples/invalid/http-auth.axl"),
+        ),
+        (
+            "AXL-H910",
+            include_str!("../../../examples/invalid/http-auth.axl"),
+        ),
+        (
+            "AXL-H911",
+            include_str!("../../../examples/invalid/http-auth.axl"),
+        ),
+        (
+            "AXL-H912",
+            include_str!("../../../examples/invalid/http-auth.axl"),
+        ),
+        (
+            "AXL-P314",
+            include_str!("../../../examples/invalid/provider-config-syntax.axl"),
+        ),
+        (
+            "AXL-N303",
+            include_str!("../../../examples/invalid/provider-configs.axl"),
+        ),
+        (
+            "AXL-N304",
+            include_str!("../../../examples/invalid/provider-configs.axl"),
+        ),
+        (
+            "AXL-V305",
+            include_str!("../../../examples/invalid/provider-configs.axl"),
+        ),
+        (
             "AXL-I605",
             include_str!("../../../examples/invalid/instance-overrides.axl"),
         ),
@@ -266,6 +314,58 @@ fn documented_invalid_examples_report_stable_codes() {
             include_str!("../../../examples/invalid/flow-parallel.axl"),
         ),
         (
+            "AXL-X901",
+            include_str!("../../../examples/invalid/flow-attempts.axl"),
+        ),
+        (
+            "AXL-X902",
+            include_str!("../../../examples/invalid/flow-attempts.axl"),
+        ),
+        (
+            "AXL-X903",
+            include_str!("../../../examples/invalid/flow-attempts.axl"),
+        ),
+        (
+            "AXL-X904",
+            include_str!("../../../examples/invalid/flow-attempts.axl"),
+        ),
+        (
+            "AXL-X905",
+            include_str!("../../../examples/invalid/flow-attempts.axl"),
+        ),
+        (
+            "AXL-X906",
+            include_str!("../../../examples/invalid/flow-attempts.axl"),
+        ),
+        (
+            "AXL-X907",
+            include_str!("../../../examples/invalid/flow-attempts.axl"),
+        ),
+        (
+            "AXL-X911",
+            include_str!("../../../examples/invalid/flow-races.axl"),
+        ),
+        (
+            "AXL-X912",
+            include_str!("../../../examples/invalid/flow-races.axl"),
+        ),
+        (
+            "AXL-X913",
+            include_str!("../../../examples/invalid/flow-races.axl"),
+        ),
+        (
+            "AXL-X914",
+            include_str!("../../../examples/invalid/flow-races.axl"),
+        ),
+        (
+            "AXL-X915",
+            include_str!("../../../examples/invalid/flow-races.axl"),
+        ),
+        (
+            "AXL-X916",
+            include_str!("../../../examples/invalid/flow-races.axl"),
+        ),
+        (
             "AXL-H901",
             include_str!("../../../examples/invalid/http-routes.axl"),
         ),
@@ -454,6 +554,24 @@ fn documented_cashflow_core_executes() {
         "post",
         "/movement-by-id",
         serde_json::json!("movement-001"),
+    );
+    assert_eq!(found.status, 200);
+    assert_eq!(found.body["ok"]["id"], "movement-001");
+    let found = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/movement-by-id/resilient",
+        serde_json::json!("movement-001"),
+    );
+    assert_eq!(found.status, 200);
+    assert_eq!(found.body["ok"]["id"], "movement-001");
+    let found = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/movement-first",
+        serde_json::json!({"ids": ["missing", "movement-001"]}),
     );
     assert_eq!(found.status, 200);
     assert_eq!(found.body["ok"]["id"], "movement-001");

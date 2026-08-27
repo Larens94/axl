@@ -17,6 +17,7 @@ The Rust ABI is the public `ProviderRuntime` trait. Each invocation contains:
 
 - provider and capacity names;
 - native implementation identifier;
+- typed provider configuration from the skill declaration;
 - operation name;
 - JSON input already checked against the AXL operation type.
 
@@ -28,6 +29,15 @@ or propagates the provider error from the surrounding `Result<T>` flow.
 for one fork per worker. A provider that cannot define safe concurrent behavior
 returns an explicit fork error instead of being silently serialized or cloned.
 The built-in runtime forks share synchronized memory and SQLite handles.
+
+The same fork contract powers `attempt`. Each attempt runs on an isolated worker
+with a real deadline. Retry is statically restricted to capacity operations
+marked `idempotent`; late workers may finish, but repeating their operation is
+contractually safe.
+
+`race` also uses forked runtimes and may return before losing workers finish.
+The analyzer recursively checks that its target flow reaches only idempotent
+operations, making late completion safe by contract.
 
 ## Openness rule
 
@@ -47,9 +57,19 @@ rust::axl::store::sqlite
 
 Both implement generic `save`, `find`, `delete` and `list` operation names.
 Saved records require a string `id`. Storage is namespaced by provider skill.
-The SQLite connection is currently in-memory and scoped to one root runtime;
-its concurrent forks share that connection. Durable configuration, schemas and
-transactions are not implemented yet.
+SQLite is in-memory when the skill has no `path`. A typed path makes it durable:
+
+```axl
+skill DurableMovements provides MovementStore
+  native rust axl::store::sqlite
+  config path: text = "./build/movements.db"
+```
+
+Connections are selected lazily from AXL configuration. Concurrent forks share
+the connection registry, while two independent runtimes reopening the same path
+observe the same records. The generated `axl-provider/1` manifest exposes the
+configuration for external adapters. Transactions and migrations are not yet
+language primitives.
 
 ## Conformance gate for future adapters
 

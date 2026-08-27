@@ -335,6 +335,7 @@ fn reconstruct_id(
                 "let"
                     | "require"
                     | "call"
+                    | "attempt"
                     | "make"
                     | "fold"
                     | "run"
@@ -344,6 +345,7 @@ fn reconstruct_id(
                     | "sort"
                     | "group"
                     | "parallel"
+                    | "race"
                     | "return"
             ) =>
         {
@@ -376,6 +378,8 @@ fn reconstruct_id(
                     | "policy"
                     | "setting"
                     | "override"
+                    | "config"
+                    | "auth"
             ) =>
         {
             Ok(format!("{parent}.{kind}.{name}"))
@@ -433,6 +437,10 @@ fn node_kind_code(kind: &str) -> &str {
         "sort" => "41",
         "group" => "42",
         "parallel" => "43",
+        "attempt" => "44",
+        "race" => "45",
+        "config" => "46",
+        "auth" => "47",
         other => other,
     }
 }
@@ -483,6 +491,10 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "41" => "sort",
         "42" => "group",
         "43" => "parallel",
+        "44" => "attempt",
+        "45" => "race",
+        "46" => "config",
+        "47" => "auth",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

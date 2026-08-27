@@ -1,0 +1,61 @@
+// Expected diagnostics: AXL-X901 through AXL-X907.
+axl 4
+app InvalidAttempts
+
+entity Input
+  amount: int required
+
+capacity Remote
+  op fetch int -> Result<int> idempotent
+  op write int -> Result<int>
+
+skill RemoteSkill provides Remote
+  native rust test::remote
+
+flow UnknownDependency Input -> Result<int>
+  attempt result = missing.fetch(input.amount)?
+    retry = 0
+    timeout_ms = 100
+  return result
+
+flow UnknownOperation Input -> Result<int>
+  in remote: Remote = RemoteSkill
+  attempt result = remote.missing(input.amount)?
+    retry = 0
+    timeout_ms = 100
+  return result
+
+flow WrongArgument Input -> Result<int>
+  in remote: Remote = RemoteSkill
+  attempt result = remote.fetch("wrong")?
+    retry = 0
+    timeout_ms = 100
+  return result
+
+flow MissingPropagation Input -> Result<int>
+  in remote: Remote = RemoteSkill
+  attempt result = remote.fetch(input.amount)
+    retry = 0
+    timeout_ms = 100
+  return result
+
+flow UnsafeRetry Input -> Result<int>
+  in remote: Remote = RemoteSkill
+  attempt result = remote.write(input.amount)?
+    retry = 2
+    timeout_ms = 100
+  return result
+
+flow TooManyRetries Input -> Result<int>
+  in remote: Remote = RemoteSkill
+  attempt result = remote.fetch(input.amount)?
+    retry = 11
+    timeout_ms = 100
+  return result
+
+flow InvalidTimeout Input -> Result<int>
+  in remote: Remote = RemoteSkill
+  attempt result = remote.fetch(input.amount)?
+    retry = 0
+    timeout_ms = 0
+  return result

@@ -32,8 +32,15 @@ pub fn format(program: &Program) -> String {
                 output.push(format!("capacity {}", capacity.name));
                 for operation in &capacity.operations {
                     output.push(format!(
-                        "  op {} {} -> {}",
-                        operation.name, operation.input, operation.output
+                        "  op {} {} -> {}{}",
+                        operation.name,
+                        operation.input,
+                        operation.output,
+                        if operation.idempotent {
+                            " idempotent"
+                        } else {
+                            ""
+                        }
                     ));
                 }
             }
@@ -41,6 +48,12 @@ pub fn format(program: &Program) -> String {
                 output.push(format!("skill {} provides {}", skill.name, skill.provides));
                 if let Some(native) = &skill.native {
                     output.push(format!("  native {} {}", native.target, native.symbol));
+                }
+                for config in &skill.configs {
+                    output.push(format!(
+                        "  config {}: {} = {}",
+                        config.name, config.type_name, config.value
+                    ));
                 }
                 append_values(&mut output, "effect", &skill.effects);
                 append_values(&mut output, "capability", &skill.capabilities);
@@ -141,6 +154,23 @@ pub fn format(program: &Program) -> String {
                             "  call {name} = {dependency}.{operation}({argument}){}",
                             if *propagate { "?" } else { "" }
                         )),
+                        FlowStatement::Attempt {
+                            name,
+                            dependency,
+                            operation,
+                            argument,
+                            propagate,
+                            retry,
+                            timeout_ms,
+                            ..
+                        } => {
+                            output.push(format!(
+                                "  attempt {name} = {dependency}.{operation}({argument}){}",
+                                if *propagate { "?" } else { "" }
+                            ));
+                            output.push(format!("    retry = {retry}"));
+                            output.push(format!("    timeout_ms = {timeout_ms}"));
+                        }
                         FlowStatement::Make {
                             name,
                             type_name,
@@ -268,6 +298,24 @@ pub fn format(program: &Program) -> String {
                                 if *propagate { "?" } else { "" }
                             ));
                         }
+                        FlowStatement::Race {
+                            name,
+                            type_name,
+                            collection,
+                            item,
+                            flow,
+                            argument,
+                            propagate,
+                            ..
+                        } => {
+                            output.push(format!(
+                                "  race {name}: {type_name} = {collection} as {item}"
+                            ));
+                            output.push(format!(
+                                "    run = {flow}({argument}){}",
+                                if *propagate { "?" } else { "" }
+                            ));
+                        }
                         FlowStatement::Return { expression, .. } => {
                             output.push(format!("  return {expression}"));
                         }
@@ -276,6 +324,12 @@ pub fn format(program: &Program) -> String {
             }
             Declaration::Api(api) => {
                 output.push(format!("api {}", api.name));
+                if let Some(auth) = &api.auth {
+                    output.push(format!(
+                        "  auth {}: {} = {}",
+                        auth.scheme, auth.capacity, auth.provider
+                    ));
+                }
                 for route in &api.routes {
                     output.push(format!(
                         "  {} {} {} -> {} = {}",

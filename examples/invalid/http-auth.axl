@@ -1,0 +1,16 @@
+axl 4
+app InvalidHttpAuth
+capacity BadAuth
+  op authorize int -> bool
+capacity Store
+  op save text -> Result<text>
+skill StoreProvider provides Store
+  native rust axl::store::memory
+flow Identity text -> text
+  return input
+api WrongSchemeAndContract
+  auth basic: BadAuth = MissingProvider
+  post /one text -> text = Identity
+api WrongCapacityAndProvider
+  auth bearer: MissingAuth = StoreProvider
+  post /two text -> text = Identity

@@ -1,0 +1,9 @@
+axl 4
+app InvalidHttpAuthSyntax
+flow Identity text -> text
+  return input
+api BrokenApi
+  auth bearer HttpAuth
+  auth bearer: HttpAuth = First
+  auth bearer: HttpAuth = Second
+  post /identity text -> text = Identity

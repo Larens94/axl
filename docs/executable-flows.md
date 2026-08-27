@@ -27,6 +27,10 @@ capacity MovementStore
 skill MemoryMovements provides MovementStore
   native rust axl::store::memory
 
+skill DurableMovements provides MovementStore
+  native rust axl::store::sqlite
+  config path: text = "./build/movements.db"
+
 flow StoreAndLoadMovement Movement -> Result<Movement>
   in store: MovementStore = MemoryMovements
   call saved = store.save(input)?
@@ -147,11 +151,36 @@ retain source order regardless of completion order. A target returning
 workers use the runtime `fork` contract, so integrations decide explicitly how
 their handles and state are shared.
 
+`attempt` adds bounded resilience to an idempotent capacity operation:
+
+```axl
+attempt found = store.find(input)?
+  retry = 2
+  timeout_ms = 250
+```
+
+Every invocation runs behind a real timeout using a provider fork. Provider
+errors and deadlines are retried, then propagate through the normal `Result<T>`
+contract. The compiler refuses non-idempotent operations, more than ten retries
+and deadlines outside 1–60000 milliseconds.
+
+`race` returns the first successful concurrent candidate:
+
+```axl
+race found: Movement = input.ids as candidate
+  run = FindMovement(candidate)?
+```
+
+Losing workers are not treated as cancelled side effects, so the analyzer
+recursively permits only flows composed from idempotent operations. Result
+errors remain candidates for failure until every worker has failed; the final
+error is selected in source order.
+
 ## Provider ABI
 
 `ProviderRuntime` is public and replaceable. The interpreter passes it the
-provider name, capacity, native implementation identifier, operation and JSON
-input. A custom runtime can therefore implement backend, IoT, AI or agent tools
+provider name, capacity, native implementation identifier, typed configuration,
+operation and JSON input. A custom runtime can therefore implement backend, IoT, AI or agent tools
 without adding application-specific branches to the interpreter.
 
 Two general storage implementations exist today:
@@ -159,10 +188,12 @@ Two general storage implementations exist today:
 | Native binding | Operations | Current lifetime |
 |---|---|---|
 | `rust::axl::store::memory` | `save`, `find`, `delete`, `list` | one runtime |
-| `rust::axl::store::sqlite` | `save`, `find`, `delete`, `list` | in-memory SQLite, one runtime |
+| `rust::axl::store::sqlite` | `save`, `find`, `delete`, `list` | in-memory by default; durable with `config path` |
 
-The SQLite implementation uses the SQLite engine, but `eval` currently creates
-a fresh in-memory connection. Durable paths and migrations are a later gate.
+Skill configuration is a checked, first-class graph surface. `config path:
+text = "..."` reaches Graph IR, Packed IR, `axl-provider/1` and the runtime.
+Two separate `eval` processes can therefore reopen the same SQLite database.
+Migrations and transaction blocks are later data gates.
 
 ## Expression semantics
 
@@ -194,6 +225,5 @@ source parser.
 ## Current boundary
 
 Flow Runtime 2 does not implement mutable variables, branch statement blocks,
-`race`, timeout/retry policies, durable persistence, events, state mutation or
-UI bindings. The next vertical slice is resilience semantics, then durable
-storage and richer HTTP behavior.
+transactions, migrations, events, state mutation or UI bindings. The next
+backend slice is richer HTTP behavior.

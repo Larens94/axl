@@ -9,6 +9,7 @@ instead of stopping at contracts. It implements eight deliberately narrow flows:
 - `CalculateLedgerBalance` folds a list of movements into one balance;
 - `StoreAndLoadMovement` calls a generic in-memory store provider;
 - `StoreAndLoadMovementSqlite` runs the same calls through SQLite.
+- `SaveDurableMovement` and `FindDurableMovement` reopen a configured SQLite file.
 - `ValidateAndStoreMovement` composes validation and storage flows.
 - `IncomeAmounts` filters and maps the movement collection.
 
@@ -53,6 +54,14 @@ cargo run -p axl-compiler -- \
 cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl ValidateAndStoreMovement \
   examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl SaveDurableMovement \
+  examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl FindDurableMovement \
+  examples/apps/inputs/movement-id.json
 ```
 
 Expected results:
@@ -67,7 +76,10 @@ Expected results:
 - grouping creates `consulting` and `software` buckets with typed movements;
 - the multiline list literal creates the default category list;
 - the parallel flow builds movement views concurrently in source order;
+- resilient lookup uses bounded retry and timeout on an idempotent operation;
+- raced lookup ignores failed candidates and returns the first successful record;
 - both replaceable storage providers return movement `movement-001`.
+- two independent durable evaluations return movement `movement-001` from the same file;
 - the composed validation/storage flow returns the valid movement.
 
 The implemented expression operators are `!`, unary `-`, `*`, `/`, `+`, `-`,
@@ -79,20 +91,20 @@ multiline `make name: Entity` record construction. Flow Runtime 2 adds typed `in
 
 The `CashflowApi` declaration exposes `/movements`, `/movement-by-id`,
 `/balance`, `/income-amounts`, `/movements/sorted`, `/movements/grouped`,
-`GET /categories` and `/movement-views` through the generic Axum runtime:
+`GET /categories`, `/movement-views`, `/movement-by-id/resilient` and
+`/movement-first`, `/movements/durable` and `/movement-by-id/durable` through the generic Axum runtime:
 
 ```sh
 cargo run -p axl-compiler -- \
   serve examples/apps/cashflow-core.axl 127.0.0.1:8080
 ```
 
-The server shares one provider runtime across requests. A movement saved through
-`/movements` can be loaded by posting its JSON string ID to `/movement-by-id`.
-The state remains process-local and is lost when the server restarts.
+The server shares one provider runtime across requests. Memory state is
+process-local. The durable routes use the path declared on
+`DurableSqliteMovements` and survive a server restart.
 
-This is not yet the complete cashflow application. SQLite is currently an
-in-memory connection owned by one evaluation or server process; there is no
-durable database configuration, general store queries, event emission, state
-mutation or rendered UI.
+This is not yet the complete cashflow application. There are no transaction or
+migration primitives, general store queries, event emission, state mutation or
+rendered UI.
 Those missing capabilities must be added to AXL rather than implemented inside
 this application with handwritten Rust or React.

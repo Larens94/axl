@@ -3,14 +3,14 @@ use std::sync::{Arc, Mutex};
 
 use axum::body::Bytes;
 use axum::extract::State;
-use axum::http::{Method, StatusCode, Uri};
+use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::response::{IntoResponse, Response};
 use axum::{Json, Router};
 use serde_json::{Value, json};
 
 use super::ir::GraphIr;
 use super::runtime;
-use super::runtime::{BuiltinRuntime, ProviderRuntime};
+use super::runtime::{BuiltinRuntime, ProviderCall, ProviderRuntime};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HttpResult {
@@ -41,6 +41,17 @@ pub fn dispatch_with_runtime(
     path: &str,
     input: Value,
 ) -> HttpResult {
+    dispatch_with_authorization(graph, runtime, method, path, input, None)
+}
+
+pub fn dispatch_with_authorization(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    method: &str,
+    path: &str,
+    input: Value,
+    authorization: Option<&str>,
+) -> HttpResult {
     let method = method.to_ascii_lowercase();
     let route = graph.nodes.iter().find(|node| {
         node.kind == "route"
@@ -53,6 +64,9 @@ pub fn dispatch_with_runtime(
             body: json!({ "error": "route_not_found" }),
         };
     };
+    if let Some(result) = authorize_request(graph, runtime, route, authorization) {
+        return result;
+    }
     let Some(flow) = route.metadata.get("flow") else {
         return HttpResult {
             status: 500,
@@ -75,6 +89,83 @@ pub fn dispatch_with_runtime(
     }
 }
 
+fn authorize_request(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    route: &super::ir::GraphNode,
+    authorization: Option<&str>,
+) -> Option<HttpResult> {
+    let api = graph
+        .edges
+        .iter()
+        .find(|edge| edge.kind == "owns" && edge.to == route.id)
+        .map(|edge| edge.from.as_str())?;
+    let auth = graph.edges.iter().find_map(|edge| {
+        (edge.kind == "owns" && edge.from == api)
+            .then(|| graph.nodes.iter().find(|node| node.id == edge.to))
+            .flatten()
+            .filter(|node| node.kind == "auth")
+    })?;
+    let unauthorized = || HttpResult {
+        status: 401,
+        body: json!({ "error": "authorization_required" }),
+    };
+    let Some(header) = authorization else {
+        return Some(unauthorized());
+    };
+    let Some((scheme, token)) = header.split_once(' ') else {
+        return Some(unauthorized());
+    };
+    if !scheme.eq_ignore_ascii_case(&auth.name) || token.is_empty() {
+        return Some(unauthorized());
+    }
+    let provider_id = graph
+        .edges
+        .iter()
+        .find(|edge| edge.kind == "bind" && edge.from == auth.id)
+        .map(|edge| edge.to.as_str());
+    let provider = provider_id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
+    let Some(provider) = provider else {
+        return Some(HttpResult {
+            status: 500,
+            body: json!({ "error": "auth_provider_missing" }),
+        });
+    };
+    let Some(implementation) = provider.implementation.as_deref() else {
+        return Some(HttpResult {
+            status: 500,
+            body: json!({ "error": "auth_provider_has_no_binding" }),
+        });
+    };
+    let config = match runtime::provider_config(graph, &provider.id) {
+        Ok(config) => config,
+        Err(error) => {
+            return Some(HttpResult {
+                status: 500,
+                body: json!({ "error": error.to_string() }),
+            });
+        }
+    };
+    match runtime.invoke(ProviderCall {
+        provider: &provider.name,
+        capacity: auth.type_name.as_deref().unwrap_or(""),
+        implementation,
+        operation: "authorize",
+        config,
+        input: Value::String(token.into()),
+    }) {
+        Ok(Value::Bool(true)) => None,
+        Ok(Value::Bool(false)) => Some(HttpResult {
+            status: 403,
+            body: json!({ "error": "authorization_denied" }),
+        }),
+        Ok(_) | Err(_) => Some(HttpResult {
+            status: 403,
+            body: json!({ "error": "authorization_failed" }),
+        }),
+    }
+}
+
 pub async fn serve(graph: GraphIr, address: &str) -> anyhow::Result<()> {
     let address: SocketAddr = address.parse()?;
     let listener = tokio::net::TcpListener::bind(address).await?;
@@ -88,7 +179,13 @@ pub async fn serve(graph: GraphIr, address: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn handle(State(state): State<HttpState>, method: Method, uri: Uri, body: Bytes) -> Response {
+async fn handle(
+    State(state): State<HttpState>,
+    method: Method,
+    uri: Uri,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     let input = if body.is_empty() {
         Value::Null
     } else {
@@ -104,12 +201,15 @@ async fn handle(State(state): State<HttpState>, method: Method, uri: Uri, body: 
         }
     };
     let result = match state.runtime.lock() {
-        Ok(mut runtime) => dispatch_with_runtime(
+        Ok(mut runtime) => dispatch_with_authorization(
             &state.graph,
             &mut *runtime,
             method.as_str(),
             uri.path(),
             input,
+            headers
+                .get(axum::http::header::AUTHORIZATION)
+                .and_then(|value| value.to_str().ok()),
         ),
         Err(_) => HttpResult {
             status: 500,
@@ -132,8 +232,16 @@ entity Input
 flow Validate Input -> Result<Input>
   require input.amount > 0 else "amount_invalid"
   return input
+capacity HttpAuth
+  op authorize text -> Result<bool> idempotent
+skill DemoBearer provides HttpAuth
+  native rust axl::auth::bearer
+  config token: text = "secret"
 api DemoApi
   post /validate Input -> Result<Input> = Validate
+api SecureApi
+  auth bearer: HttpAuth = DemoBearer
+  post /secure Input -> Result<Input> = Validate
 "#;
 
     #[test]
@@ -148,5 +256,34 @@ api DemoApi
         assert_eq!(rejected.body["error"], "amount_invalid");
 
         assert_eq!(dispatch(&graph, "get", "/missing", Value::Null).status, 404);
+
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let missing = dispatch_with_authorization(
+            &graph,
+            &mut runtime,
+            "post",
+            "/secure",
+            json!({"amount": 10}),
+            None,
+        );
+        assert_eq!(missing.status, 401);
+        let denied = dispatch_with_authorization(
+            &graph,
+            &mut runtime,
+            "post",
+            "/secure",
+            json!({"amount": 10}),
+            Some("Bearer wrong"),
+        );
+        assert_eq!(denied.status, 403);
+        let authorized = dispatch_with_authorization(
+            &graph,
+            &mut runtime,
+            "post",
+            "/secure",
+            json!({"amount": 10}),
+            Some("Bearer secret"),
+        );
+        assert_eq!(authorized.status, 200);
     }
 }

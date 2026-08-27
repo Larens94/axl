@@ -66,11 +66,13 @@
         "cases",
         "predicate",
         "key",
-        "direction"
+        "direction",
+        "retry",
+        "timeout_ms"
       ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["let", "require", "call", "make", "fold", "run", "match", "map", "filter", "sort", "group", "parallel", "return"] },
+        "kind": { "enum": ["let", "require", "call", "attempt", "make", "fold", "run", "match", "map", "filter", "sort", "group", "parallel", "race", "return"] },
         "name": { "type": "string" },
         "expression": { "type": ["string", "null"] },
         "message": { "type": ["string", "null"] },
@@ -95,7 +97,9 @@
         },
         "predicate": { "type": ["string", "null"] },
         "key": { "type": ["string", "null"] },
-        "direction": { "type": ["string", "null"] }
+        "direction": { "type": ["string", "null"] },
+        "retry": { "type": ["integer", "null"], "minimum": 0 },
+        "timeout_ms": { "type": ["integer", "null"], "minimum": 1 }
       }
     },
     "field": {

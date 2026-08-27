@@ -67,6 +67,7 @@ Serve routes declared in AXL through the generic Axum runtime:
 - `schema/axl-open-block-2.schema.json` — block and instance manifest schema.
 - `schema/axl-flow-2.schema.json` — executable flow and capacity-call manifest schema.
 - `schema/axl-http-1.schema.json` — checked HTTP route manifest schema.
+- `schema/axl-provider-1.schema.json` — typed provider configuration manifest schema.
 
 ## Build an open block
 
@@ -101,6 +102,6 @@ commands, API, UI, events, jobs, observability, agent tools and scenarios.
 ~/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Status: experiment. Typed flows, replaceable providers and exact JSON HTTP
-routes execute. Durable persistence and React runtime generation are not
-implemented yet.
+Status: experiment. Typed flows, replaceable configured providers, durable
+SQLite paths and exact JSON HTTP routes execute. Transactions, richer backend
+services and React runtime generation are not implemented yet.

@@ -27,9 +27,15 @@ entity MovementView
 entity MovementBatch
   movements: List<Movement> required
 
+entity MovementLookupBatch
+  ids: List<uuid> required
+
 capacity MovementStore
   op save Movement -> Result<Movement>
-  op find uuid -> Result<Movement>
+  op find uuid -> Result<Movement> idempotent
+
+capacity HttpAuth
+  op authorize text -> Result<bool> idempotent
 
 skill MemoryMovements provides MovementStore
   native rust axl::store::memory
@@ -40,6 +46,18 @@ skill SqliteMovements provides MovementStore
   native rust axl::store::sqlite
   effect db.read
   effect db.write
+
+skill DurableSqliteMovements provides MovementStore
+  native rust axl::store::sqlite
+  config path: text = "./build/cashflow-core.db"
+  effect db.read
+  effect db.write
+
+// Demo-only credential. Production secrets require the planned secret provider.
+skill CashflowDemoBearer provides HttpAuth
+  native rust axl::auth::bearer
+  config token: text = "axl-cashflow-demo"
+  capability auth.verify
 
 flow ValidateMovement Movement -> Result<Movement>
   let known_kind = input.kind == MovementKind.income || input.kind == MovementKind.expense
@@ -113,6 +131,16 @@ flow StoreAndLoadMovementSqlite Movement -> Result<Movement>
   call loaded = store.find(saved.id)?
   return loaded
 
+flow SaveDurableMovement Movement -> Result<Movement>
+  in store: MovementStore = DurableSqliteMovements
+  call saved = store.save(input)?
+  return saved
+
+flow FindDurableMovement uuid -> Result<Movement>
+  in store: MovementStore = DurableSqliteMovements
+  call found = store.find(input)?
+  return found
+
 flow ValidateAndStoreMovement Movement -> Result<Movement>
   in store: MovementStore = MemoryMovements
   run valid = ValidateMovement(input)?
@@ -124,6 +152,18 @@ flow FindMovement uuid -> Result<Movement>
   call found = store.find(input)?
   return found
 
+flow FindMovementResilient uuid -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  attempt found = store.find(input)?
+    retry = 2
+    timeout_ms = 250
+  return found
+
+flow FindFirstMovement MovementLookupBatch -> Result<Movement>
+  race found: Movement = input.ids as candidate
+    run = FindMovement(candidate)?
+  return found
+
 api CashflowApi
   post /movements Movement -> Result<Movement> = ValidateAndStoreMovement
   post /movement-by-id uuid -> Result<Movement> = FindMovement
@@ -133,3 +173,11 @@ api CashflowApi
   post /movements/grouped MovementBatch -> Map<text,List<Movement>> = GroupMovementsByCategory
   get /categories unit -> List<text> = DefaultCategories
   post /movement-views MovementBatch -> List<MovementView> = BuildMovementViewsParallel
+  post /movement-by-id/resilient uuid -> Result<Movement> = FindMovementResilient
+  post /movement-first MovementLookupBatch -> Result<Movement> = FindFirstMovement
+  post /movements/durable Movement -> Result<Movement> = SaveDurableMovement
+  post /movement-by-id/durable uuid -> Result<Movement> = FindDurableMovement
+
+api SecuredCashflowApi
+  auth bearer: HttpAuth = CashflowDemoBearer
+  post /secure/balance MovementBatch -> money = CalculateLedgerBalance

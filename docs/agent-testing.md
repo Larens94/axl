@@ -15,10 +15,11 @@ jq empty schema/axl-ir-4.0.schema.json
 jq empty schema/axl-open-block-2.schema.json
 jq empty schema/axl-flow-2.schema.json
 jq empty schema/axl-http-1.schema.json
+jq empty schema/axl-provider-1.schema.json
 ```
 
 The integration suite compiles nine valid documented programs, round-trips each
-through Packed Graph IR and verifies twelve intentionally invalid programs.
+through Packed Graph IR and verifies sixteen intentionally invalid programs.
 
 The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
@@ -103,13 +104,23 @@ cargo run -p axl-compiler -- \
 cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl ValidateAndStoreMovement \
   examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl SaveDurableMovement \
+  examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl FindDurableMovement \
+  examples/apps/inputs/movement-id.json
 ```
 
 The first results must respectively contain an `ok` movement, the error
 `amount_must_be_positive`, the integer `80000`, a view with direction `Entrata`
 and a folded ledger balance of `80000`. The storage evaluations must return
 movement `movement-001`; the composed flow must validate before saving. No
-application-specific Rust function contains these rules.
+application-specific Rust function contains these rules. The final two commands
+run in independent processes and must still find `movement-001`, proving that
+the configured SQLite path survives a runtime restart.
 
 ## 6. Verify the HTTP backend
 
@@ -141,8 +152,9 @@ curl -X POST http://127.0.0.1:8080/movement-by-id \
   --data-binary '"movement-001"'
 ```
 
-Both responses must contain movement `movement-001`. This proves shared
-process-local provider state, not restart durability.
+Both responses must contain movement `movement-001`. The analogous `/durable`
+routes use a configured SQLite file and remain readable after restarting the
+server.
 
 ## 7. Verify invalid programs
 
@@ -183,7 +195,19 @@ cargo run -p axl-compiler -- \
   check examples/invalid/flow-parallel.axl --json
 
 cargo run -p axl-compiler -- \
+  check examples/invalid/flow-attempts.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-races.axl --json
+
+cargo run -p axl-compiler -- \
   check examples/invalid/http-routes.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/provider-config-syntax.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/provider-configs.axl --json
 ```
 
 The first diagnostic set must include `AXL-O401`; the second must include
@@ -196,7 +220,11 @@ from `AXL-X816` through `AXL-X821`; the sixth must include every code from
 The tenth must include `AXL-X802`, `AXL-N806`, `AXL-X871` through `AXL-X879` and
 `AXL-X881` through `AXL-X884`.
 The eleventh must include every code from `AXL-X891` through `AXL-X895`.
-The twelfth must include every code from `AXL-H901` through `AXL-H907`.
+The twelfth must include every code from `AXL-X901` through `AXL-X907`.
+The thirteenth must include every code from `AXL-X911` through `AXL-X916`.
+The fourteenth must include every code from `AXL-H901` through `AXL-H907`.
+The fifteenth must include `AXL-P313` and `AXL-P314`. The sixteenth must include
+`AXL-N303`, `AXL-N304` and `AXL-V305`.
 
 ## 8. Verify canonical formatting and transport
 
@@ -229,11 +257,15 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - grouping produces a checked `Map<K,List<T>>` without handwritten Rust;
 - non-empty list literals infer a common type and retain multiline formatting;
 - `parallel` uses concurrent provider forks and preserves source order;
+- `attempt` enforces idempotency, bounded retry and real deadlines;
+- `race` returns the first successful idempotent worker;
 - HTTP routes dispatch through the generic Axum runtime;
 - consecutive HTTP requests share one process-local provider runtime;
 - memory and SQLite providers execute through the same replaceable ABI;
+- typed provider config survives Graph/Packed IR and `axl-provider/1` generation;
+- configured SQLite data survives destruction and recreation of the runtime;
 - documentation examples remain coupled to compiler tests.
 
-It does not prove durable persistence or runtime UI rendering. HTTP execution
-and process-local state continuity are proven; the SQLite provider still uses
-an in-memory connection. Generated target files are not yet a deployable app.
+It does not prove transaction/migration semantics or runtime UI rendering.
+HTTP execution, process-local memory and restart-durable configured SQLite are
+proven. Generated target files are not yet a deployable app.

@@ -14,8 +14,16 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     let block_dir = output.join("blocks");
     let flow_dir = output.join("flows");
     let http_dir = output.join("http");
+    let provider_dir = output.join("providers");
     for directory in [
-        &rust_dir, &react_dir, &sql_dir, &agent_dir, &block_dir, &flow_dir, &http_dir,
+        &rust_dir,
+        &react_dir,
+        &sql_dir,
+        &agent_dir,
+        &block_dir,
+        &flow_dir,
+        &http_dir,
+        &provider_dir,
     ] {
         std::fs::create_dir_all(directory)?;
     }
@@ -39,10 +47,47 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
         serde_json::to_string_pretty(&http_manifest(graph))?,
     )?;
     std::fs::write(
+        provider_dir.join("providers.json"),
+        serde_json::to_string_pretty(&provider_manifest(graph))?,
+    )?;
+    std::fs::write(
         output.join("manifest.json"),
         serde_json::to_string_pretty(&target_manifest(graph))?,
     )?;
     Ok(())
+}
+
+pub fn provider_manifest(graph: &GraphIr) -> serde_json::Value {
+    let providers = nodes(graph, "skill")
+        .into_iter()
+        .map(|skill| {
+            let configs = children(graph, &skill.id, "config")
+                .into_iter()
+                .map(|config| {
+                    let raw = config.metadata.get("value").cloned().unwrap_or_default();
+                    json!({
+                        "name": config.name,
+                        "type": config.type_name,
+                        "value": serde_json::from_str::<serde_json::Value>(&raw)
+                            .unwrap_or(serde_json::Value::String(raw)),
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "name": skill.name,
+                "capacity": skill.type_name,
+                "implementation": skill.implementation,
+                "config": configs,
+                "effects": grants_for(&graph.effects, &skill.id),
+                "capabilities": grants_for(&graph.capabilities, &skill.id),
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "protocol": "axl-provider/1",
+        "app": graph.app,
+        "providers": providers,
+    })
 }
 
 pub fn rust_contracts(graph: &GraphIr) -> String {
@@ -86,6 +131,9 @@ pub fn rust_contracts(graph: &GraphIr) -> String {
     for capacity in nodes(graph, "capacity") {
         output.push(format!("pub trait {} {{", capacity.name));
         for operation in children(graph, &capacity.id, "operation") {
+            if operation.metadata.get("idempotent").map(String::as_str) == Some("true") {
+                output.push("    /// AXL contract: idempotent.".into());
+            }
             let signature = operation.type_name.as_deref().unwrap_or("unit->unit");
             let (input, result) = signature.split_once("->").unwrap_or(("unit", "unit"));
             output.push(format!(
@@ -253,6 +301,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                 .into_iter()
                 .chain(children(graph, &flow.id, "require"))
                 .chain(children(graph, &flow.id, "call"))
+                .chain(children(graph, &flow.id, "attempt"))
                 .chain(children(graph, &flow.id, "make"))
                 .chain(children(graph, &flow.id, "fold"))
                 .chain(children(graph, &flow.id, "run"))
@@ -262,6 +311,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                 .chain(children(graph, &flow.id, "sort"))
                 .chain(children(graph, &flow.id, "group"))
                 .chain(children(graph, &flow.id, "parallel"))
+                .chain(children(graph, &flow.id, "race"))
                 .chain(children(graph, &flow.id, "return"))
                 .collect::<Vec<_>>();
             statements.sort_by_key(|statement| {
@@ -330,6 +380,10 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                         "predicate": statement.metadata.get("predicate"),
                         "key": statement.metadata.get("key"),
                         "direction": statement.metadata.get("direction"),
+                        "retry": statement.metadata.get("retry")
+                            .and_then(|value| value.parse::<u32>().ok()),
+                        "timeout_ms": statement.metadata.get("timeout_ms")
+                            .and_then(|value| value.parse::<u64>().ok()),
                     })
                 }).collect::<Vec<_>>(),
             })
@@ -347,6 +401,16 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
     let apis = nodes(graph, "api")
         .into_iter()
         .map(|api| {
+            let auth = children(graph, &api.id, "auth")
+                .into_iter()
+                .next()
+                .map(|auth| {
+                    json!({
+                        "scheme": auth.name,
+                        "capacity": auth.type_name,
+                        "provider": auth.metadata.get("provider"),
+                    })
+                });
             let mut routes = children(graph, &api.id, "route");
             routes.sort_by_key(|route| {
                 route
@@ -357,6 +421,7 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
             });
             json!({
                 "name": api.name,
+                "auth": auth,
                 "routes": routes.into_iter().map(|route| {
                     let (input, output) = route.type_name.as_deref()
                         .and_then(|value| value.split_once("->"))
@@ -431,7 +496,8 @@ fn target_manifest(graph: &GraphIr) -> serde_json::Value {
             "agents": "agents/agents.json",
             "blocks": "blocks/open-blocks.json",
             "flows": "flows/flows.json",
-            "http": "http/routes.json"
+            "http": "http/routes.json",
+            "providers": "providers/providers.json"
         },
         "counts": {
             "nodes": graph.nodes.len(),
@@ -615,6 +681,7 @@ capacity CustomerRow
   op render Customer -> UI
 skill SqliteCustomers provides CustomerStore
   native rust crm::sqlite
+  config path: text = "./demo.db"
 skill DefaultRow provides CustomerRow
   native react crm::DefaultRow
 skill CompactRow provides CustomerRow
@@ -652,6 +719,7 @@ api DemoApi
         let blocks = open_block_manifest(&graph);
         let flows = flow_manifest(&graph);
         let http = http_manifest(&graph);
+        let providers = provider_manifest(&graph);
         assert!(rust.contains("pub enum CustomerStatus"));
         assert!(rust.contains("Active,"));
         assert!(rust.contains("pub trait CustomerStore"));
@@ -694,5 +762,14 @@ api DemoApi
         assert_eq!(http["protocol"], "axl-http/1");
         assert_eq!(http["apis"][0]["routes"][0]["path"], "/customers");
         assert_eq!(http["apis"][0]["routes"][0]["flow"], "Identity");
+        let sqlite = providers["providers"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|provider| provider["name"] == "SqliteCustomers")
+            .unwrap();
+        assert_eq!(providers["protocol"], "axl-provider/1");
+        assert_eq!(sqlite["config"][0]["name"], "path");
+        assert_eq!(sqlite["config"][0]["value"], "./demo.db");
     }
 }

@@ -1,0 +1,54 @@
+// Expected diagnostics: AXL-X911 through AXL-X916.
+axl 4
+app InvalidRaces
+
+entity Batch
+  amount: int required
+  items: List<int> required
+
+capacity Remote
+  op read int -> Result<int> idempotent
+  op write int -> Result<int>
+
+skill RemoteSkill provides Remote
+  native rust test::remote
+
+flow Read int -> Result<int>
+  in remote: Remote = RemoteSkill
+  call result = remote.read(input)?
+  return result
+
+flow Write int -> Result<int>
+  in remote: Remote = RemoteSkill
+  call result = remote.write(input)?
+  return result
+
+flow NonCollection Batch -> Result<int>
+  race result: int = input.amount as item
+    run = Read(item)?
+  return result
+
+flow UnknownTarget Batch -> Result<int>
+  race result: int = input.items as item
+    run = Missing(item)?
+  return result
+
+flow WrongArgument Batch -> Result<int>
+  race result: int = input.items as item
+    run = Read("wrong")?
+  return result
+
+flow MissingPropagation Batch -> Result<int>
+  race result: int = input.items as item
+    run = Read(item)
+  return result
+
+flow WrongOutput Batch -> Result<text>
+  race result: text = input.items as item
+    run = Read(item)?
+  return result
+
+flow UnsafeTarget Batch -> Result<int>
+  race result: int = input.items as item
+    run = Write(item)?
+  return result

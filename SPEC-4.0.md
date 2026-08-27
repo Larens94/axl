@@ -77,7 +77,8 @@ A skill implements a capacity.
 
 ```axl
 skill SqliteCustomers provides CustomerStore
-  native rust axl::store::sqlite_customers
+  native rust axl::store::sqlite
+  config path: text = "./data/crm.db"
   effect db.read
   effect db.write
   capability crm.customer.write
@@ -89,7 +90,10 @@ Implemented native targets:
 rust react sql ai iot wasm
 ```
 
-AXL validates the declared target and capacity. Target ABI validation is planned.
+AXL validates the declared target and capacity. A skill may expose typed scalar
+`config` values. Config names, types and values are checked, lowered as owned
+Graph IR nodes and delivered to the provider ABI; applications do not hardcode
+provider paths in Rust. Target ABI validation is planned.
 
 ### Blueprint
 
@@ -239,12 +243,13 @@ comparisons, equality, `&&` and `||`, with normal operator precedence. The
 compiler checks every expression, call argument and return type.
 
 The public Rust `ProviderRuntime` ABI receives provider, capacity,
-implementation, operation and JSON input. The built-in experiment implements
+implementation, typed configuration, operation and JSON input. The built-in experiment implements
 generic `save`, `find`, `delete` and `list` operations for
 `rust::axl::store::memory` and `rust::axl::store::sqlite`. They are not tied to
-`Movement` or to the cashflow application. The CLI currently constructs a new
-runtime for each `eval`; its SQLite connection is therefore in-memory and not
-durable across CLI processes.
+`Movement` or to the cashflow application. SQLite uses an in-memory connection
+when no path is configured and opens a durable file when the skill declares a
+`path` config. Independent runtimes configured with the same file observe the
+same records.
 
 Flows compose other flows with the same explicit `Result` propagation:
 
@@ -336,6 +341,35 @@ input and the declared result is `List<Output>`. A `Result<T>` target requires
 `?` and propagates the first error in source order. Every worker receives a
 provider runtime fork; the built-in forks share synchronized provider state.
 
+Capacity operations may declare a machine-checked resilience contract:
+
+```axl
+capacity MovementStore
+  op find uuid -> Result<Movement> idempotent
+
+attempt found = store.find(input)?
+  retry = 2
+  timeout_ms = 250
+```
+
+`attempt` runs each invocation behind a real deadline and retries provider
+errors or timeouts up to the declared count. It is rejected unless the operation
+is `idempotent`, preventing invisible duplicate writes. Retry is limited to ten
+and timeout to 1–60000 milliseconds.
+
+`race` returns the first successful result from concurrent candidates:
+
+```axl
+race found: Movement = input.ids as candidate
+  run = FindMovement(candidate)?
+```
+
+The target flow, argument and output are checked like `parallel`. The compiler
+recursively proves that every capacity operation reachable from the target is
+`idempotent`, because losing workers may still finish. Result errors are ignored
+while another candidate can succeed; if all fail, the first source-order error
+is propagated deterministically.
+
 ### HTTP API
 
 An API exposes checked flows without handwritten controllers:
@@ -356,8 +390,9 @@ rejected.
 IR. JSON input is validated by the flow runtime. A successful value returns
 HTTP 200, an AXL `{ "error": ... }` returns 422, invalid input returns 400 and
 an unknown route returns 404. One built-in provider runtime is shared by all
-requests for the lifetime of the server process. Memory and in-memory SQLite
-state therefore survive consecutive requests, but not a server restart.
+requests for the lifetime of the server process. Memory and unconfigured SQLite
+state survive consecutive requests only; a configured SQLite file also survives
+server and CLI restarts.
 
 ## 3. Type system
 
@@ -464,6 +499,7 @@ targets/
   agents/agents.json
   flows/flows.json
   http/routes.json
+  providers/providers.json
 ```
 
 The current target adapters generate Rust data/capacity contracts, a React slot
@@ -471,7 +507,8 @@ registry, SQL entity DDL, an agent manifest and an `axl-open-block/2` manifest
 that lists every blueprint surface. `flows/flows.json` exposes the ordered,
 typed executable bodies and dependencies using protocol `axl-flow/2`.
 `http/routes.json` uses `axl-http/1`. They deliberately stop before claiming to
-generate a complete production application.
+generate a complete production application. `providers/providers.json` uses
+`axl-provider/1` and preserves each skill's typed runtime configuration.
 
 ## 8. Design sources adopted
 
@@ -489,12 +526,11 @@ generate a complete production application.
 
 - contract expression type checking;
 - branch statement blocks and mutable variables;
-- `race`, retry and timeout execution;
 - generated standalone Rust handlers and React components from Graph IR;
 - path parameters, query decoding, middleware and streaming HTTP bodies;
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
-- durable provider configuration and database paths;
+- transactions, migrations, queries and multi-database adapters;
 - blueprint package registry;
 - package imports and cross-package blueprint overlays;
 - runtime behavior for state, events, actions, errors and policies;

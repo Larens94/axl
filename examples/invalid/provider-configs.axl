@@ -1,0 +1,9 @@
+axl 4
+app InvalidProviderConfigs
+capacity Store
+  op list unit -> List<text>
+skill BrokenStore provides Store
+  native rust axl::store::sqlite
+  config bad.name: text = "./bad.db"
+  config path: text = 42
+  config path: text = "./duplicate.db"

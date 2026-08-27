@@ -93,6 +93,7 @@ pub struct Operation {
     pub name: String,
     pub input: String,
     pub output: String,
+    pub idempotent: bool,
     pub span: SourceSpan,
 }
 
@@ -101,8 +102,17 @@ pub struct Skill {
     pub name: String,
     pub provides: String,
     pub native: Option<NativeBinding>,
+    pub configs: Vec<SkillConfig>,
     pub effects: Vec<String>,
     pub capabilities: Vec<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SkillConfig {
+    pub name: String,
+    pub type_name: String,
+    pub value: String,
     pub span: SourceSpan,
 }
 
@@ -257,6 +267,16 @@ pub enum FlowStatement {
         propagate: bool,
         span: SourceSpan,
     },
+    Attempt {
+        name: String,
+        dependency: String,
+        operation: String,
+        argument: String,
+        propagate: bool,
+        retry: u32,
+        timeout_ms: u64,
+        span: SourceSpan,
+    },
     Make {
         name: String,
         type_name: String,
@@ -329,6 +349,16 @@ pub enum FlowStatement {
         propagate: bool,
         span: SourceSpan,
     },
+    Race {
+        name: String,
+        type_name: String,
+        collection: String,
+        item: String,
+        flow: String,
+        argument: String,
+        propagate: bool,
+        span: SourceSpan,
+    },
     Return {
         expression: String,
         span: SourceSpan,
@@ -341,6 +371,7 @@ impl FlowStatement {
             Self::Let { span, .. }
             | Self::Require { span, .. }
             | Self::Call { span, .. }
+            | Self::Attempt { span, .. }
             | Self::Make { span, .. }
             | Self::Fold { span, .. }
             | Self::Run { span, .. }
@@ -350,6 +381,7 @@ impl FlowStatement {
             | Self::Sort { span, .. }
             | Self::Group { span, .. }
             | Self::Parallel { span, .. }
+            | Self::Race { span, .. }
             | Self::Return { span, .. } => span,
         }
     }
@@ -372,7 +404,16 @@ pub struct MatchCase {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Api {
     pub name: String,
+    pub auth: Option<ApiAuth>,
     pub routes: Vec<ApiRoute>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiAuth {
+    pub scheme: String,
+    pub capacity: String,
+    pub provider: String,
     pub span: SourceSpan,
 }
 

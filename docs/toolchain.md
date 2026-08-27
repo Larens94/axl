@@ -58,6 +58,7 @@ build/axl4/
     agents/agents.json
     flows/flows.json
     http/routes.json
+    providers/providers.json
 ```
 
 `blocks/open-blocks.json` uses protocol identifier `axl-open-block/2` and exposes
@@ -70,6 +71,8 @@ The flow manifest uses `axl-flow/2` and is documented by
 `schema/axl-flow-2.schema.json`.
 The HTTP manifest uses `axl-http/1` and is documented by
 `schema/axl-http-1.schema.json`.
+The provider manifest uses `axl-provider/1` and is documented by
+`schema/axl-provider-1.schema.json`.
 
 ## Verification
 
@@ -81,6 +84,7 @@ jq empty schema/axl-ir-4.0.schema.json
 jq empty schema/axl-open-block-2.schema.json
 jq empty schema/axl-flow-2.schema.json
 jq empty schema/axl-http-1.schema.json
+jq empty schema/axl-provider-1.schema.json
 ```
 
 The documented examples are included at compile time in

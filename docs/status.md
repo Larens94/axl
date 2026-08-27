@@ -4,17 +4,17 @@ This table is the short source of truth for the current experiment.
 
 | Area | Implemented now | Not implemented yet |
 |---|---|---|
-| Source | multiline AXL, typed list literals, enum match, map/filter/sort/group/fold, `parallel` and flows with `make`, `run`, `call`, `return` | branch blocks, race and resilience policies |
+| Source | multiline AXL, typed list literals, transforms, flows, enum match, `parallel`, idempotent `attempt` and `race` | mutable statement blocks intentionally deferred |
 | Types | built-ins, entities, enums, capacities, recursive generics | tuples and record operation parameters |
 | Blocks | open protocol, typed instances/overrides and fourteen foundation contracts | package imports, cross-package overlays and registry |
 | Contracts | `requires`, `ensures`, `invariant` stored in IR | expression type checking and execution |
 | Safety | diagnostics, repair candidates, safety levels | automatic application of risky repairs |
 | Policies | effects and capabilities validated and stored | runtime budgets and enforcement |
 | Agents | belief/goal/plan graph model | planning and execution runtime |
-| Runtime | records, collection transforms, concurrent `parallel`, flow/capacity calls, `Result` propagation, forkable provider ABI and HTTP | race/retry/timeout, state, events, durable persistence and UI |
-| Storage | generic in-memory and SQLite `save/find/delete/list` providers | durable paths, transactions, migrations, queries and other databases |
-| Backend | checked `api` routes, Graph IR dispatch, Axum JSON server and process-local shared provider state | durable runtime configuration, params/query, auth, middleware, events and jobs |
-| Targets | Rust/React/SQL contracts plus agent, block, flow and HTTP manifests | executable full-stack application generation |
+| Runtime | records, transforms, `parallel`, `race`, retry/timeout, flow/capacity calls, `Result` propagation, forkable configured provider ABI and HTTP | state, events and UI |
+| Storage | generic memory and SQLite providers; typed durable SQLite paths | transactions, migrations, queries and other databases |
+| Backend | checked `api` routes, Axum JSON server, shared state and restart-durable SQLite | params/query, auth, middleware, events and jobs |
+| Targets | Rust/React/SQL contracts plus agent, block, flow, HTTP and provider manifests | executable full-stack application generation |
 | IR | canonical JSON graph, packed opcode round-trip | stable compatibility guarantee |
 
 ## Evidence
@@ -27,8 +27,7 @@ This table is the short source of truth for the current experiment.
 - `cargo clippy --workspace --all-targets -- -D warnings` is the lint gate.
 
 The project remains an experiment. AXL flows call replaceable capacities; the
-same cashflow graph executes against memory and SQLite. HTTP requests share one
-provider runtime for the server process and the test saves in one request and
-reads in the next. Durable database configuration, auth and middleware are the
-next backend milestones; race, retry and timeout remain language and runtime
-resilience gates.
+same cashflow graph executes against memory and SQLite. A runtime test saves to
+a configured SQLite file, destroys the runtime and reads through a new runtime.
+Auth, middleware, request extraction, events and jobs are the next backend
+milestones.

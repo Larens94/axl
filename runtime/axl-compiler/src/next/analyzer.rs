@@ -210,6 +210,40 @@ fn check_skill(
             .expected("rust|react|sql|ai|iot|wasm", &native.target),
         );
     }
+    let mut config_names = BTreeSet::new();
+    for config in &skill.configs {
+        if !valid_name(&config.name, false) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-N303",
+                "names",
+                format!("invalid skill config '{}.{}'", skill.name, config.name),
+                config.span.clone(),
+            ));
+        }
+        if !config_names.insert(&config.name) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-N304",
+                "names",
+                format!("duplicate skill config '{}.{}'", skill.name, config.name),
+                config.span.clone(),
+            ));
+        }
+        check_type(&config.type_name, &config.span, declarations, diagnostics);
+        if !scalar_value_matches(&config.type_name, &config.value) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-V305",
+                    "values",
+                    format!(
+                        "config '{}' does not match type '{}'",
+                        config.value, config.type_name
+                    ),
+                    config.span.clone(),
+                )
+                .expected(parameter_value_hint(&config.type_name), &config.value),
+            );
+        }
+    }
     check_grants(&skill.effects, "effect", &skill.span, diagnostics);
     check_grants(&skill.capabilities, "capability", &skill.span, diagnostics);
 }
@@ -426,15 +460,7 @@ fn check_blueprint(
 }
 
 fn check_parameter_default(port: &Port, value: &str, diagnostics: &mut Vec<Diagnostic>) {
-    let valid = match port.type_name.as_str() {
-        "bool" => matches!(value, "true" | "false"),
-        "int" => value.parse::<i64>().is_ok(),
-        "float" | "money" => value.parse::<f64>().is_ok(),
-        "text" | "string" | "email" | "uuid" | "datetime" | "duration" => {
-            serde_json::from_str::<String>(value).is_ok()
-        }
-        _ => false,
-    };
+    let valid = scalar_value_matches(&port.type_name, value);
     if !valid {
         diagnostics.push(
             Diagnostic::error(
@@ -448,6 +474,18 @@ fn check_parameter_default(port: &Port, value: &str, diagnostics: &mut Vec<Diagn
             )
             .expected(parameter_value_hint(&port.type_name), value),
         );
+    }
+}
+
+fn scalar_value_matches(type_name: &str, value: &str) -> bool {
+    match type_name {
+        "bool" => matches!(value, "true" | "false"),
+        "int" => value.parse::<i64>().is_ok(),
+        "float" | "money" => value.parse::<f64>().is_ok(),
+        "text" | "string" | "email" | "uuid" | "datetime" | "duration" => {
+            serde_json::from_str::<String>(value).is_ok()
+        }
+        _ => false,
     }
 }
 
@@ -947,6 +985,158 @@ fn check_flow(
                     None => operation_value.output.clone(),
                 };
                 if variables.insert(name.clone(), variable_type).is_some() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N802",
+                        "names",
+                        format!("flow variable '{name}' is defined more than once"),
+                        span.clone(),
+                    ));
+                }
+            }
+            FlowStatement::Attempt {
+                name,
+                dependency,
+                operation,
+                argument,
+                propagate,
+                retry,
+                timeout_ms,
+                span,
+            } => {
+                if !valid_name(name, false) || name == "input" {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-N801",
+                        "names",
+                        format!("invalid flow variable '{name}'"),
+                        span.clone(),
+                    ));
+                }
+                if *retry > 10 {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X906",
+                            "resilience",
+                            "attempt retry count exceeds the safety limit",
+                            span.clone(),
+                        )
+                        .expected("0..10", retry.to_string()),
+                    );
+                }
+                if !(1..=60_000).contains(timeout_ms) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X907",
+                            "resilience",
+                            "attempt timeout is outside the safety limits",
+                            span.clone(),
+                        )
+                        .expected("1..60000 milliseconds", timeout_ms.to_string()),
+                    );
+                }
+                let Some(dependency_value) = dependencies.get(dependency.as_str()) else {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-X901",
+                        "resilience",
+                        format!("attempt references unknown dependency '{dependency}'"),
+                        span.clone(),
+                    ));
+                    continue;
+                };
+                let Some(Declaration::Capacity(capacity)) =
+                    declarations.get(dependency_value.capacity.as_str())
+                else {
+                    continue;
+                };
+                let Some(operation_value) = capacity
+                    .operations
+                    .iter()
+                    .find(|candidate| candidate.name == *operation)
+                else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X902",
+                            "resilience",
+                            format!(
+                                "capacity '{}' has no resilient operation '{}'",
+                                capacity.name, operation
+                            ),
+                            span.clone(),
+                        )
+                        .expected("declared capacity operation", operation),
+                    );
+                    continue;
+                };
+                if !operation_value.idempotent {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X905",
+                            "resilience",
+                            format!(
+                                "attempt requires idempotent operation '{}.{}'",
+                                capacity.name, operation
+                            ),
+                            span.clone(),
+                        )
+                        .expected("operation qualifier 'idempotent'", "not idempotent"),
+                    );
+                }
+                if let Some(found) =
+                    infer_source_expression(argument, span, &variables, declarations, diagnostics)
+                    && found != operation_value.input
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X903",
+                            "resilience",
+                            "attempt operation receives the wrong argument type",
+                            span.clone(),
+                        )
+                        .expected(&operation_value.input, found),
+                    );
+                }
+                let variable_type = match generic_inner(&operation_value.output, "Result") {
+                    Some(inner) if *propagate && result_type.is_some() => Some(inner.to_string()),
+                    Some(_) if !*propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X904",
+                                "resilience",
+                                "a resilient Result operation requires '?' propagation",
+                                span.clone(),
+                            )
+                            .expected("attempt value = port.operation(argument)?", "missing ?"),
+                        );
+                        None
+                    }
+                    Some(_) => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X904",
+                                "resilience",
+                                "attempt '?' requires a Result<T> containing flow",
+                                span.clone(),
+                            )
+                            .expected("Result<T> flow output", &flow.output),
+                        );
+                        None
+                    }
+                    None if *propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X904",
+                                "resilience",
+                                "attempt '?' requires a Result<T> operation",
+                                span.clone(),
+                            )
+                            .expected("Result<T> operation output", &operation_value.output),
+                        );
+                        None
+                    }
+                    None => Some(operation_value.output.clone()),
+                };
+                if let Some(variable_type) = variable_type
+                    && variables.insert(name.clone(), variable_type).is_some()
+                {
                     diagnostics.push(Diagnostic::error(
                         "AXL-N802",
                         "names",
@@ -1861,6 +2051,162 @@ fn check_flow(
                 }
                 bind_transform_result(name, type_name, span, &mut variables, diagnostics);
             }
+            FlowStatement::Race {
+                name,
+                type_name,
+                collection,
+                item,
+                flow: target_name,
+                argument,
+                propagate,
+                span,
+            } => {
+                check_type(type_name, span, declarations, diagnostics);
+                check_transform_names(name, item, span, diagnostics);
+                let source_type = infer_source_expression(
+                    collection,
+                    span,
+                    &variables,
+                    declarations,
+                    diagnostics,
+                );
+                let source_item = source_type
+                    .as_deref()
+                    .and_then(collection_inner)
+                    .map(|(_, inner)| inner);
+                if source_type.is_some() && source_item.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X911",
+                            "resilience",
+                            "race source must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected(
+                            "List<T>|Set<T>",
+                            source_type.as_deref().unwrap_or("unknown"),
+                        ),
+                    );
+                }
+                let target = declarations.get(target_name.as_str()).and_then(|value| {
+                    if let Declaration::Flow(target) = value {
+                        Some(target)
+                    } else {
+                        None
+                    }
+                });
+                let Some(target) = target else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X912",
+                            "resilience",
+                            format!("race references unknown flow '{target_name}'"),
+                            span.clone(),
+                        )
+                        .expected("declared flow", target_name),
+                    );
+                    continue;
+                };
+                if target.name == flow.name {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-X912",
+                        "resilience",
+                        format!("flow '{}' cannot race itself", flow.name),
+                        span.clone(),
+                    ));
+                    continue;
+                }
+                if !flow_is_idempotent(target, declarations, &mut BTreeSet::new()) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X916",
+                            "resilience",
+                            format!("race target flow '{}' is not idempotent", target.name),
+                            span.clone(),
+                        )
+                        .expected("flow using only idempotent operations", &target.name),
+                    );
+                }
+                if let Some(source_item) = source_item {
+                    let mut race_variables = variables.clone();
+                    race_variables.insert(item.clone(), source_item.to_string());
+                    if let Some(found) = infer_source_expression(
+                        argument,
+                        span,
+                        &race_variables,
+                        declarations,
+                        diagnostics,
+                    ) && found != target.input
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X913",
+                                "resilience",
+                                format!(
+                                    "race flow '{}' receives the wrong argument type",
+                                    target.name
+                                ),
+                                span.clone(),
+                            )
+                            .expected(&target.input, found),
+                        );
+                    }
+                }
+                let effective_output = match generic_inner(&target.output, "Result") {
+                    Some(inner) if *propagate && result_type.is_some() => Some(inner),
+                    Some(_) if !*propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X914",
+                                "resilience",
+                                "race Result flow requires '?' propagation",
+                                span.clone(),
+                            )
+                            .expected("run = Flow(argument)?", "missing ?"),
+                        );
+                        None
+                    }
+                    Some(_) => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X914",
+                                "resilience",
+                                "race '?' requires a Result<T> containing flow",
+                                span.clone(),
+                            )
+                            .expected("Result<T> flow output", &flow.output),
+                        );
+                        None
+                    }
+                    None if *propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X914",
+                                "resilience",
+                                "race '?' requires a Result<T> target flow",
+                                span.clone(),
+                            )
+                            .expected("Result<T> target output", &target.output),
+                        );
+                        None
+                    }
+                    None => Some(target.output.as_str()),
+                };
+                if let Some(effective_output) = effective_output
+                    && type_name != effective_output
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X915",
+                            "resilience",
+                            "race result must match the target flow output",
+                            span.clone(),
+                        )
+                        .expected(effective_output, type_name),
+                    );
+                }
+                bind_transform_result(name, type_name, span, &mut variables, diagnostics);
+            }
             FlowStatement::Return { expression, span } => {
                 return_count += 1;
                 if index + 1 != flow.statements.len() {
@@ -1900,6 +2246,52 @@ fn check_flow(
             .expected("one final return", return_count.to_string()),
         );
     }
+}
+
+fn flow_is_idempotent(
+    flow: &Flow,
+    declarations: &BTreeMap<&str, &Declaration>,
+    visiting: &mut BTreeSet<String>,
+) -> bool {
+    if !visiting.insert(flow.name.clone()) {
+        return false;
+    }
+    let safe = flow.statements.iter().all(|statement| match statement {
+        FlowStatement::Call {
+            dependency,
+            operation,
+            ..
+        }
+        | FlowStatement::Attempt {
+            dependency,
+            operation,
+            ..
+        } => flow
+            .dependencies
+            .iter()
+            .find(|candidate| candidate.name == *dependency)
+            .and_then(|dependency| declarations.get(dependency.capacity.as_str()))
+            .and_then(|declaration| match declaration {
+                Declaration::Capacity(capacity) => capacity
+                    .operations
+                    .iter()
+                    .find(|candidate| candidate.name == *operation),
+                _ => None,
+            })
+            .is_some_and(|operation| operation.idempotent),
+        FlowStatement::Run { flow, .. }
+        | FlowStatement::Parallel { flow, .. }
+        | FlowStatement::Race { flow, .. } => declarations
+            .get(flow.as_str())
+            .and_then(|declaration| match declaration {
+                Declaration::Flow(flow) => Some(flow),
+                _ => None,
+            })
+            .is_some_and(|flow| flow_is_idempotent(flow, declarations, visiting)),
+        _ => true,
+    });
+    visiting.remove(&flow.name);
+    safe
 }
 
 fn check_flow_provider(
@@ -1944,6 +2336,79 @@ fn check_api(
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
+    if let Some(auth) = &api.auth {
+        if auth.scheme != "bearer" {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H908",
+                    "http",
+                    format!("unsupported auth scheme '{}'", auth.scheme),
+                    auth.span.clone(),
+                )
+                .expected("bearer", &auth.scheme),
+            );
+        }
+        match declarations.get(auth.capacity.as_str()) {
+            Some(Declaration::Capacity(capacity)) => {
+                let authorize = capacity.operations.iter().find(|op| op.name == "authorize");
+                if !authorize.is_some_and(|op| {
+                    op.input == "text" && op.output == "Result<bool>" && op.idempotent
+                }) {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-H909",
+                            "http",
+                            format!("auth capacity '{}' has an invalid contract", auth.capacity),
+                            auth.span.clone(),
+                        )
+                        .expected(
+                            "op authorize text -> Result<bool> idempotent",
+                            "missing or incompatible operation",
+                        ),
+                    );
+                }
+            }
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H910",
+                    "http",
+                    format!("auth type '{}' is not a capacity", auth.capacity),
+                    auth.span.clone(),
+                )
+                .expected("capacity", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H910",
+                    "http",
+                    format!("unknown auth capacity '{}'", auth.capacity),
+                    auth.span.clone(),
+                )
+                .expected("declared capacity", &auth.capacity),
+            ),
+        }
+        match provider_type(&auth.provider, declarations) {
+            Some(provided) if provided == auth.capacity => {}
+            Some(provided) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H911",
+                    "http",
+                    format!("auth provider '{}' is incompatible", auth.provider),
+                    auth.span.clone(),
+                )
+                .expected(&auth.capacity, provided),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H912",
+                    "http",
+                    format!("unknown auth provider '{}'", auth.provider),
+                    auth.span.clone(),
+                )
+                .expected(format!("provider of {}", auth.capacity), "unknown provider"),
+            ),
+        }
+    }
     if api.routes.is_empty() {
         diagnostics.push(Diagnostic::error(
             "AXL-H901",
@@ -2659,6 +3124,9 @@ fn lower_capacity(capacity: &Capacity, graph: &mut GraphIr) {
         let id = format!("{capacity_id}.op.{}", operation.name);
         let mut value = node(&id, "operation", &operation.name);
         value.type_name = Some(format!("{}->{}", operation.input, operation.output));
+        value
+            .metadata
+            .insert("idempotent".into(), operation.idempotent.to_string());
         graph.nodes.push(value);
         graph.edges.push(edge(&capacity_id, &id, "owns", None));
     }
@@ -2673,6 +3141,14 @@ fn lower_skill(skill: &Skill, graph: &mut GraphIr) {
         .as_ref()
         .map(|native| format!("{}::{}", native.target, native.symbol));
     graph.nodes.push(value);
+    for config in &skill.configs {
+        let config_id = format!("{id}.config.{}", config.name);
+        let mut value = node(&config_id, "config", &config.name);
+        value.type_name = Some(config.type_name.clone());
+        value.metadata.insert("value".into(), config.value.clone());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&id, &config_id, "owns", None));
+    }
     graph.edges.push(edge(
         &id,
         &format!("capacity.{}", skill.provides),
@@ -2807,6 +3283,7 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
             FlowStatement::Let { name, .. } => ("let", name.as_str()),
             FlowStatement::Require { .. } => ("require", "require"),
             FlowStatement::Call { name, .. } => ("call", name.as_str()),
+            FlowStatement::Attempt { name, .. } => ("attempt", name.as_str()),
             FlowStatement::Make { name, .. } => ("make", name.as_str()),
             FlowStatement::Fold { name, .. } => ("fold", name.as_str()),
             FlowStatement::Run { name, .. } => ("run", name.as_str()),
@@ -2816,6 +3293,7 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
             FlowStatement::Sort { name, .. } => ("sort", name.as_str()),
             FlowStatement::Group { name, .. } => ("group", name.as_str()),
             FlowStatement::Parallel { name, .. } => ("parallel", name.as_str()),
+            FlowStatement::Race { name, .. } => ("race", name.as_str()),
             FlowStatement::Return { .. } => ("return", "return"),
         };
         let id = format!("{flow_id}.{kind}.{index}");
@@ -2844,6 +3322,28 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                 value
                     .metadata
                     .insert("propagate".into(), propagate.to_string());
+            }
+            FlowStatement::Attempt {
+                dependency,
+                operation,
+                argument,
+                propagate,
+                retry,
+                timeout_ms,
+                ..
+            } => {
+                value
+                    .metadata
+                    .insert("dependency".into(), dependency.clone());
+                value.metadata.insert("operation".into(), operation.clone());
+                value.metadata.insert("argument".into(), argument.clone());
+                value
+                    .metadata
+                    .insert("propagate".into(), propagate.to_string());
+                value.metadata.insert("retry".into(), retry.to_string());
+                value
+                    .metadata
+                    .insert("timeout_ms".into(), timeout_ms.to_string());
             }
             FlowStatement::Make { type_name, .. } => {
                 value.type_name = Some(type_name.clone());
@@ -2962,6 +3462,26 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                     .metadata
                     .insert("propagate".into(), propagate.to_string());
             }
+            FlowStatement::Race {
+                type_name,
+                collection,
+                item,
+                flow,
+                argument,
+                propagate,
+                ..
+            } => {
+                value.type_name = Some(type_name.clone());
+                value
+                    .metadata
+                    .insert("collection".into(), collection.clone());
+                value.metadata.insert("item".into(), item.clone());
+                value.metadata.insert("flow".into(), flow.clone());
+                value.metadata.insert("argument".into(), argument.clone());
+                value
+                    .metadata
+                    .insert("propagate".into(), propagate.to_string());
+            }
         }
         if let FlowStatement::Require { message, .. } = statement {
             value.metadata.insert("message".into(), message.clone());
@@ -2996,6 +3516,22 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
 fn lower_api(api: &Api, graph: &mut GraphIr) {
     let api_id = format!("api.{}", api.name);
     graph.nodes.push(node(&api_id, "api", &api.name));
+    if let Some(auth) = &api.auth {
+        let id = format!("{api_id}.auth.{}", auth.scheme);
+        let mut value = node(&id, "auth", &auth.scheme);
+        value.type_name = Some(auth.capacity.clone());
+        value
+            .metadata
+            .insert("provider".into(), auth.provider.clone());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&api_id, &id, "owns", None));
+        graph.edges.push(edge(
+            &id,
+            &provider_id(&auth.provider),
+            "bind",
+            Some(&auth.capacity),
+        ));
+    }
     for (index, route) in api.routes.iter().enumerate() {
         let id = format!("{api_id}.route.{index}");
         let mut value = node(&id, "route", &format!("{} {}", route.method, route.path));

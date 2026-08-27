@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://axl-lang.dev/schema/axl-provider-1.schema.json",
+  "title": "AXL Provider Manifest 1",
+  "type": "object",
+  "required": ["protocol", "app", "providers"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": { "const": "axl-provider/1" },
+    "app": { "type": "string", "minLength": 1 },
+    "providers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "capacity", "implementation", "config", "effects", "capabilities"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "capacity": { "type": "string", "minLength": 1 },
+          "implementation": { "type": ["string", "null"] },
+          "config": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["name", "type", "value"],
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "type": { "type": "string", "minLength": 1 },
+                "value": {}
+              }
+            }
+          },
+          "effects": { "type": "array", "items": { "type": "string" } },
+          "capabilities": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

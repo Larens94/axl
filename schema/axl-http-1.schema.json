@@ -17,10 +17,25 @@
   "$defs": {
     "api": {
       "type": "object",
-      "required": ["name", "routes"],
+      "required": ["name", "auth", "routes"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string", "minLength": 1 },
+        "auth": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["scheme", "capacity", "provider"],
+              "additionalProperties": false,
+              "properties": {
+                "scheme": { "const": "bearer" },
+                "capacity": { "type": "string", "minLength": 1 },
+                "provider": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
+        },
         "routes": {
           "type": "array",
           "items": { "$ref": "#/$defs/route" },

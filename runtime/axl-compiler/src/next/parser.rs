@@ -344,10 +344,27 @@ fn parse_capacity(
             );
             continue;
         };
+        let mut output = output.split_whitespace();
+        let output_type = output.next().unwrap_or_default();
+        let qualifiers = output.collect::<Vec<_>>();
+        for qualifier in &qualifiers {
+            if *qualifier != "idempotent" {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P213",
+                        "parse",
+                        format!("unknown operation qualifier '{qualifier}'"),
+                        span(line),
+                    )
+                    .expected("idempotent", *qualifier),
+                );
+            }
+        }
         operations.push(Operation {
             name: operation_name.to_string(),
             input: input.to_string(),
-            output: output.trim().to_string(),
+            output: output_type.to_string(),
+            idempotent: qualifiers.contains(&"idempotent"),
             span: span(line),
         });
     }
@@ -381,6 +398,7 @@ fn parse_skill(
         name: name.trim().to_string(),
         provides: provides.trim().to_string(),
         native: None,
+        configs: Vec::new(),
         effects: Vec::new(),
         capabilities: Vec::new(),
         span: span(header),
@@ -403,6 +421,37 @@ fn parse_skill(
             skill.native = Some(NativeBinding {
                 target: target.to_string(),
                 symbol: symbol.to_string(),
+                span: span(line),
+            });
+        } else if let Some(value) = line.text.strip_prefix("config ") {
+            let Some((declaration, config_value)) = value.split_once(" = ") else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P313",
+                        "parse",
+                        "a skill config needs a typed name and value",
+                        span(line),
+                    )
+                    .expected("config name: type = value", &line.text),
+                );
+                continue;
+            };
+            let Some((name, type_name)) = declaration.split_once(':') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P314",
+                        "parse",
+                        "a skill config needs an explicit type",
+                        span(line),
+                    )
+                    .expected("config name: type = value", &line.text),
+                );
+                continue;
+            };
+            skill.configs.push(SkillConfig {
+                name: name.trim().to_string(),
+                type_name: type_name.trim().to_string(),
+                value: config_value.trim().to_string(),
                 span: span(line),
             });
         } else if let Some(effect) = line.text.strip_prefix("effect ") {
@@ -787,6 +836,8 @@ fn parse_flow(
             }
         } else if let Some(value) = line.text.strip_prefix("call ") {
             parse_flow_call(value, line, &mut statements, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("attempt ") {
+            parse_attempt(value, line, body, line_index, &mut statements, diagnostics);
         } else if let Some(value) = line.text.strip_prefix("run ") {
             parse_flow_run(value, line, &mut statements, diagnostics);
         } else if let Some(value) = line.text.strip_prefix("make ") {
@@ -1027,6 +1078,21 @@ fn parse_flow(
                     span: span(line),
                 });
             }
+        } else if let Some(value) = line.text.strip_prefix("race ") {
+            if let Some((name, type_name, collection, item, flow, argument, propagate)) =
+                parse_race(value, line, body, line_index, diagnostics)
+            {
+                statements.push(FlowStatement::Race {
+                    name,
+                    type_name,
+                    collection,
+                    item,
+                    flow,
+                    argument,
+                    propagate,
+                    span: span(line),
+                });
+            }
         } else if let Some(expression) = line.text.strip_prefix("return ") {
             statements.push(FlowStatement::Return {
                 expression: expression.trim().to_string(),
@@ -1182,6 +1248,82 @@ fn parse_flow_run(
         flow: flow.into(),
         argument: argument.into(),
         propagate,
+        span: span(line),
+    });
+}
+
+fn parse_attempt(
+    value: &str,
+    line: &SourceLine,
+    body: &[SourceLine],
+    line_index: usize,
+    statements: &mut Vec<FlowStatement>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let invocation = value.split_once('=').and_then(|(name, invocation)| {
+        let invocation = invocation.trim();
+        let (invocation, propagate) = invocation
+            .strip_suffix('?')
+            .map_or((invocation, false), |value| (value.trim(), true));
+        let (target, argument) = invocation.split_once('(')?;
+        let argument = argument.strip_suffix(')')?;
+        let (dependency, operation) = target.trim().split_once('.')?;
+        Some((
+            name.trim(),
+            dependency.trim(),
+            operation.trim(),
+            argument.trim(),
+            propagate,
+        ))
+    });
+    let Some((name, dependency, operation, argument, propagate)) = invocation else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P836",
+                "parse",
+                "attempt requires a provider operation invocation",
+                span(line),
+            )
+            .expected("attempt name = dependency.operation(argument)?", &line.text),
+        );
+        return;
+    };
+    let nested = body
+        .iter()
+        .skip(line_index + 1)
+        .take_while(|candidate| candidate.indent > line.indent)
+        .collect::<Vec<_>>();
+    let value = |keyword: &str| {
+        nested.iter().find_map(|nested_line| {
+            let (found, value) = nested_line.text.split_once('=')?;
+            (found.trim() == keyword).then_some(value.trim())
+        })
+    };
+    let retry = value("retry").and_then(|value| value.parse::<u32>().ok());
+    let timeout_ms = value("timeout_ms").and_then(|value| value.parse::<u64>().ok());
+    let (Some(retry), Some(timeout_ms)) = (retry, timeout_ms) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P837",
+                "parse",
+                "attempt requires numeric retry and timeout_ms clauses",
+                span(line),
+            )
+            .expected(
+                "retry = count\n  timeout_ms = milliseconds",
+                "missing or invalid",
+            ),
+        );
+        return;
+    };
+    statements.push(FlowStatement::Attempt {
+        name: name.into(),
+        dependency: dependency.into(),
+        operation: operation.into(),
+        argument: argument.into(),
+        propagate,
+        retry,
+        timeout_ms,
         span: span(line),
     });
 }
@@ -1423,6 +1565,79 @@ fn parse_parallel(
     ))
 }
 
+#[allow(clippy::type_complexity)]
+fn parse_race(
+    value: &str,
+    line: &SourceLine,
+    body: &[SourceLine],
+    line_index: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(String, String, String, String, String, String, bool)> {
+    let header = value.split_once('=').and_then(|(name_and_type, source)| {
+        let (name, type_name) = name_and_type.split_once(':')?;
+        let (collection, item) = source.rsplit_once(" as ")?;
+        Some((
+            name.trim(),
+            type_name.trim(),
+            collection.trim(),
+            item.trim(),
+        ))
+    });
+    let Some((name, type_name, collection, item)) = header else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P838",
+                "parse",
+                "race requires a result type, collection and item",
+                span(line),
+            )
+            .expected("race name: T = collection as item", &line.text),
+        );
+        return None;
+    };
+    let run_line = body
+        .iter()
+        .skip(line_index + 1)
+        .take_while(|candidate| candidate.indent > line.indent)
+        .next();
+    let invocation = run_line.and_then(|run_line| {
+        let (keyword, invocation) = run_line.text.split_once('=')?;
+        (keyword.trim() == "run").then_some(invocation.trim())
+    });
+    let parsed = invocation.and_then(|invocation| {
+        let (invocation, propagate) = invocation
+            .strip_suffix('?')
+            .map_or((invocation, false), |value| (value.trim(), true));
+        let (flow, argument) = invocation.split_once('(')?;
+        let argument = argument.strip_suffix(')')?;
+        Some((flow.trim(), argument.trim(), propagate))
+    });
+    let Some((flow, argument, propagate)) = parsed else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P839",
+                "parse",
+                "race requires a flow invocation",
+                span(line),
+            )
+            .expected(
+                "run = Flow(item)?",
+                run_line.map_or("missing", |line| &line.text),
+            ),
+        );
+        return None;
+    };
+    Some((
+        name.into(),
+        type_name.into(),
+        collection.into(),
+        item.into(),
+        flow.into(),
+        argument.into(),
+        propagate,
+    ))
+}
+
 fn parse_agent(
     header: &SourceLine,
     body: &[SourceLine],
@@ -1478,7 +1693,42 @@ fn parse_api(
         return;
     }
     let mut routes = Vec::new();
+    let mut auth = None;
     for line in body {
+        if let Some(value) = line.text.strip_prefix("auth ") {
+            let parsed = value.split_once('=').and_then(|(surface, provider)| {
+                let (scheme, capacity) = surface.split_once(':')?;
+                Some((scheme.trim(), capacity.trim(), provider.trim()))
+            });
+            let Some((scheme, capacity, provider)) = parsed else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P913",
+                        "parse",
+                        "API auth requires a scheme, capacity and provider",
+                        span(line),
+                    )
+                    .expected("auth bearer: HttpAuth = AuthProvider", &line.text),
+                );
+                continue;
+            };
+            if auth.is_some() {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-P914",
+                    "parse",
+                    "an API can declare auth only once",
+                    span(line),
+                ));
+                continue;
+            }
+            auth = Some(ApiAuth {
+                scheme: scheme.into(),
+                capacity: capacity.into(),
+                provider: provider.into(),
+                span: span(line),
+            });
+            continue;
+        }
         let Some((method, remainder)) = line.text.split_once(' ') else {
             diagnostics.push(
                 Diagnostic::error(
@@ -1535,6 +1785,7 @@ fn parse_api(
     }
     declarations.push(Declaration::Api(Api {
         name: name.into(),
+        auth,
         routes,
         span: span(header),
     }));

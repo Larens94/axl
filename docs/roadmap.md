@@ -24,16 +24,18 @@ Gate 0 is implemented: capacity ports and calls are type checked, lowered to
 Graph/Packed IR and executed through a replaceable ABI. Memory and SQLite
 adapters prove two implementations behind the same `MovementStore` capacity.
 
-Gate 1 is active. Typed multiline records, lazy conditionals, functional `fold`
+Gate 1 is complete for the executable foundation. Typed multiline records, lazy conditionals, functional `fold`
 loops, flow-to-flow `run` calls, enum `match`, `map`, `filter`, stable typed
 `sort`, typed `group` and inferred multiline list literals are implemented.
 `parallel` executes forked provider runtimes concurrently and preserves source
-order. Race, retry and timeout semantics remain. Durable SQLite is
-intentionally deferred to the data gate because the current adapter proves
-invocation and replacement, not process-level persistence.
+order. Idempotent `attempt` adds bounded retry and real deadlines; `race`
+returns the first successful idempotent flow. The first Gate 3 slice is now
+complete: typed skill configuration reaches the provider ABI and a SQLite path
+survives independent runtime instances.
 
 Gate 2 has started without closing Gate 1: `api` declarations now compile to
 `axl-http/1` and execute through a generic Axum server. Exact JSON routes and
 status mapping work. One process-local provider runtime is shared across
-requests. Durable runtime configuration, path/query extraction, auth,
-middleware, events, jobs, cache and observability remain.
+requests. Path/query extraction, auth, middleware, events, jobs, cache and
+observability remain. Gate 3 continues with transactions, migrations and
+additional database families.

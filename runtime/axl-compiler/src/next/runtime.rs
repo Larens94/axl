@@ -25,6 +25,7 @@ pub struct ProviderCall<'a> {
     pub capacity: &'a str,
     pub implementation: &'a str,
     pub operation: &'a str,
+    pub config: BTreeMap<String, Value>,
     pub input: Value,
 }
 
@@ -39,26 +40,46 @@ pub trait ProviderRuntime: Send {
 #[derive(Clone)]
 pub struct BuiltinRuntime {
     memory: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
-    sqlite: Arc<Mutex<Connection>>,
+    sqlite: Arc<Mutex<BTreeMap<String, Arc<Mutex<Connection>>>>>,
 }
 
 impl BuiltinRuntime {
     pub fn new() -> Result<Self, RuntimeError> {
-        let sqlite = Connection::open_in_memory()
-            .map_err(|error| RuntimeError(format!("cannot initialize SQLite provider: {error}")))?;
-        sqlite
-            .execute_batch(
-                "CREATE TABLE axl_records (\
-                 provider TEXT NOT NULL, \
-                 record_id TEXT NOT NULL, \
-                 payload TEXT NOT NULL, \
-                 PRIMARY KEY (provider, record_id));",
-            )
-            .map_err(|error| RuntimeError(format!("cannot initialize SQLite schema: {error}")))?;
         Ok(Self {
             memory: Arc::new(Mutex::new(BTreeMap::new())),
-            sqlite: Arc::new(Mutex::new(sqlite)),
+            sqlite: Arc::new(Mutex::new(BTreeMap::new())),
         })
+    }
+
+    fn sqlite_connection(&self, call: &ProviderCall<'_>) -> Result<Arc<Mutex<Connection>>, String> {
+        let configured_path = call.config.get("path").and_then(Value::as_str);
+        let key = configured_path
+            .map(str::to_string)
+            .unwrap_or_else(|| format!(":memory:{}", call.provider));
+        let mut connections = self
+            .sqlite
+            .lock()
+            .map_err(|_| "SQLite connection registry is unavailable".to_string())?;
+        if let Some(connection) = connections.get(&key) {
+            return Ok(connection.clone());
+        }
+        let connection = match configured_path {
+            Some(":memory:") | None => Connection::open_in_memory(),
+            Some(path) => {
+                if let Some(parent) = std::path::Path::new(path).parent()
+                    && !parent.as_os_str().is_empty()
+                {
+                    std::fs::create_dir_all(parent)
+                        .map_err(|error| format!("cannot create SQLite directory: {error}"))?;
+                }
+                Connection::open(path)
+            }
+        }
+        .map_err(|error| format!("cannot initialize SQLite provider: {error}"))?;
+        initialize_sqlite(&connection)?;
+        let connection = Arc::new(Mutex::new(connection));
+        connections.insert(key, connection.clone());
+        Ok(connection)
     }
 }
 
@@ -73,12 +94,13 @@ impl ProviderRuntime for BuiltinRuntime {
                 memory_store_call(&mut memory, call)
             }
             "rust::axl::store::sqlite" => {
-                let sqlite = self
-                    .sqlite
+                let connection = self.sqlite_connection(&call)?;
+                let sqlite = connection
                     .lock()
                     .map_err(|_| "SQLite provider state is unavailable".to_string())?;
                 sqlite_store_call(&sqlite, call)
             }
+            "rust::axl::auth::bearer" => bearer_auth_call(call),
             implementation => Err(format!(
                 "unsupported provider implementation '{implementation}'"
             )),
@@ -214,6 +236,7 @@ fn evaluate_flow_inner(
                     capacity: capacity_name,
                     implementation,
                     operation: operation_name,
+                    config: provider_config(graph, &provider.id)?,
                     input: argument,
                 });
                 let propagate = metadata(statement, "propagate")? == "true";
@@ -236,6 +259,113 @@ fn evaluate_flow_inner(
                     _ => {
                         return Err(RuntimeError(format!(
                             "{} has inconsistent Result propagation metadata",
+                            statement.id
+                        )));
+                    }
+                }
+            }
+            "attempt" => {
+                let dependency_name = metadata(statement, "dependency")?;
+                let operation_name = metadata(statement, "operation")?;
+                let argument = expression::parse(metadata(statement, "argument")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let argument = expression::evaluate(&argument, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let dependency = children(graph, &flow.id, "input")
+                    .into_iter()
+                    .find(|node| node.name == dependency_name)
+                    .ok_or_else(|| {
+                        RuntimeError(format!(
+                            "{} references missing dependency '{dependency_name}'",
+                            statement.id
+                        ))
+                    })?;
+                let capacity_name = dependency.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no capacity type", dependency.id))
+                })?;
+                let provider_id = provider_for(graph, &dependency.id).ok_or_else(|| {
+                    RuntimeError(format!("{} has no bound provider", dependency.id))
+                })?;
+                let provider = graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == provider_id)
+                    .ok_or_else(|| RuntimeError(format!("missing provider '{provider_id}'")))?;
+                let implementation = provider.implementation.as_deref().ok_or_else(|| {
+                    RuntimeError(format!(
+                        "provider '{}' has no native binding",
+                        provider.name
+                    ))
+                })?;
+                let capacity = graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.kind == "capacity" && node.name == capacity_name)
+                    .ok_or_else(|| RuntimeError(format!("missing capacity '{capacity_name}'")))?;
+                let operation = children(graph, &capacity.id, "operation")
+                    .into_iter()
+                    .find(|node| node.name == operation_name)
+                    .ok_or_else(|| {
+                        RuntimeError(format!(
+                            "capacity '{capacity_name}' has no operation '{operation_name}'"
+                        ))
+                    })?;
+                if operation.metadata.get("idempotent").map(String::as_str) != Some("true") {
+                    return Err(RuntimeError(format!(
+                        "{} resilient operation is not idempotent",
+                        statement.id
+                    )));
+                }
+                let (operation_input, operation_output) = operation
+                    .type_name
+                    .as_deref()
+                    .and_then(|value| value.split_once("->"))
+                    .ok_or_else(|| {
+                        RuntimeError(format!("{} has no valid signature", operation.id))
+                    })?;
+                validate_value(graph, operation_input, &argument, "attempt argument")?;
+                let retry = metadata(statement, "retry")?.parse::<u32>().map_err(|_| {
+                    RuntimeError(format!("{} has invalid retry metadata", statement.id))
+                })?;
+                let timeout_ms =
+                    metadata(statement, "timeout_ms")?
+                        .parse::<u64>()
+                        .map_err(|_| {
+                            RuntimeError(format!("{} has invalid timeout metadata", statement.id))
+                        })?;
+                let result = invoke_with_resilience(
+                    runtime,
+                    OwnedProviderCall {
+                        provider: provider.name.clone(),
+                        capacity: capacity_name.into(),
+                        implementation: implementation.into(),
+                        operation: operation_name.into(),
+                        config: provider_config(graph, &provider.id)?,
+                        input: argument,
+                    },
+                    retry,
+                    timeout_ms,
+                );
+                let propagate = metadata(statement, "propagate")? == "true";
+                match (result, generic(operation_output, "Result"), propagate) {
+                    (Ok(value), Some(inner), true) => {
+                        validate_value(graph, inner, &value, "attempt result")?;
+                        values.insert(statement.name.clone(), value);
+                    }
+                    (Err(message), Some(_), true) => return Ok(json!({ "error": message })),
+                    (Ok(value), None, false) => {
+                        validate_value(graph, operation_output, &value, "attempt result")?;
+                        values.insert(statement.name.clone(), value);
+                    }
+                    (Err(message), None, false) => {
+                        return Err(RuntimeError(format!(
+                            "resilient provider '{}' failed: {message}",
+                            provider.name
+                        )));
+                    }
+                    _ => {
+                        return Err(RuntimeError(format!(
+                            "{} has inconsistent attempt propagation metadata",
                             statement.id
                         )));
                     }
@@ -570,6 +700,112 @@ fn evaluate_flow_inner(
                 validate_value(graph, type_name, &output, "parallel result")?;
                 values.insert(statement.name.clone(), output);
             }
+            "race" => {
+                let type_name = statement.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no race result type", statement.id))
+                })?;
+                let collection = evaluated_collection(statement, &values)?;
+                if collection.is_empty() {
+                    return Err(RuntimeError(format!(
+                        "{} race source is empty",
+                        statement.id
+                    )));
+                }
+                let item_name = metadata(statement, "item")?;
+                let target_name = metadata(statement, "flow")?;
+                let argument_expression = expression::parse(metadata(statement, "argument")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let target = graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.kind == "flow" && node.name == target_name)
+                    .ok_or_else(|| RuntimeError(format!("unknown flow '{target_name}'")))?;
+                let target_output = target
+                    .type_name
+                    .as_deref()
+                    .and_then(|value| value.split_once("->"))
+                    .map(|(_, output)| output)
+                    .ok_or_else(|| {
+                        RuntimeError(format!("flow '{target_name}' has no signature"))
+                    })?;
+                let (sender, receiver) = std::sync::mpsc::channel();
+                let task_count = collection.len();
+                for (index, item) in collection.into_iter().enumerate() {
+                    let mut scope = values.clone();
+                    scope.insert(item_name.into(), item);
+                    let argument = expression::evaluate(&argument_expression, &scope)
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                    let mut worker = runtime
+                        .fork()
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                    let graph = graph.clone();
+                    let target_name = target_name.to_string();
+                    let sender = sender.clone();
+                    std::thread::spawn(move || {
+                        let result = evaluate_flow_inner(
+                            &graph,
+                            &target_name,
+                            argument,
+                            &mut *worker,
+                            depth + 1,
+                        );
+                        let _ = sender.send((index, result));
+                    });
+                }
+                drop(sender);
+                let propagate = metadata(statement, "propagate")? == "true";
+                let mut failures = vec![None; task_count];
+                let mut winner = None;
+                for _ in 0..task_count {
+                    let (index, result) = receiver.recv().map_err(|_| {
+                        RuntimeError(format!("{} race workers disconnected", statement.id))
+                    })?;
+                    match (result, generic(target_output, "Result"), propagate) {
+                        (Ok(result), Some(inner), true) => {
+                            let object = result.as_object().ok_or_else(|| {
+                                RuntimeError(format!(
+                                    "race flow '{target_name}' returned invalid Result"
+                                ))
+                            })?;
+                            if let Some(value) = object.get("ok") {
+                                validate_value(graph, inner, value, "race winner")?;
+                                winner = Some(value.clone());
+                                break;
+                            }
+                            failures[index] = object.get("error").map(|error| {
+                                error
+                                    .as_str()
+                                    .map_or_else(|| error.to_string(), str::to_string)
+                            });
+                        }
+                        (Ok(result), None, false) => {
+                            validate_value(graph, type_name, &result, "race winner")?;
+                            winner = Some(result);
+                            break;
+                        }
+                        (Err(error), _, _) => failures[index] = Some(error.to_string()),
+                        _ => {
+                            return Err(RuntimeError(format!(
+                                "{} has inconsistent race propagation metadata",
+                                statement.id
+                            )));
+                        }
+                    }
+                }
+                if let Some(winner) = winner {
+                    values.insert(statement.name.clone(), winner);
+                } else {
+                    let message = failures
+                        .into_iter()
+                        .flatten()
+                        .next()
+                        .unwrap_or_else(|| "race_no_success".into());
+                    if generic(target_output, "Result").is_some() && propagate {
+                        return Ok(json!({ "error": message }));
+                    }
+                    return Err(RuntimeError(message));
+                }
+            }
             "return" => {
                 let expression = statement_expression(statement)?;
                 let value = expression::evaluate(&expression, &values)
@@ -714,6 +950,37 @@ fn sqlite_store_call(connection: &Connection, call: ProviderCall<'_>) -> Result<
             call.capacity
         )),
     }
+}
+
+fn bearer_auth_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    if call.operation != "authorize" {
+        return Err(format!(
+            "bearer auth does not implement operation '{}'",
+            call.operation
+        ));
+    }
+    let expected = call
+        .config
+        .get("token")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "bearer_token_not_configured".to_string())?;
+    let supplied = call
+        .input
+        .as_str()
+        .ok_or_else(|| "bearer authorize requires a text token".to_string())?;
+    Ok(Value::Bool(supplied == expected))
+}
+
+fn initialize_sqlite(connection: &Connection) -> Result<(), String> {
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS axl_records (\
+             provider TEXT NOT NULL, \
+             record_id TEXT NOT NULL, \
+             payload TEXT NOT NULL, \
+             PRIMARY KEY (provider, record_id));",
+        )
+        .map_err(|error| format!("cannot initialize SQLite schema: {error}"))
 }
 
 fn record_id(value: &Value) -> Result<String, String> {
@@ -870,6 +1137,7 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
                 "let"
                     | "require"
                     | "call"
+                    | "attempt"
                     | "make"
                     | "fold"
                     | "run"
@@ -879,6 +1147,7 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
                     | "sort"
                     | "group"
                     | "parallel"
+                    | "race"
                     | "return"
             )
         })
@@ -915,6 +1184,74 @@ fn provider_for(graph: &GraphIr, dependency: &str) -> Option<String> {
                 .find(|edge| edge.from == dependency && edge.kind == "default")
         })
         .map(|edge| edge.to.clone())
+}
+
+pub(crate) fn provider_config(
+    graph: &GraphIr,
+    provider: &str,
+) -> Result<BTreeMap<String, Value>, RuntimeError> {
+    children(graph, provider, "config")
+        .into_iter()
+        .map(|config| {
+            let raw = config
+                .metadata
+                .get("value")
+                .ok_or_else(|| RuntimeError(format!("{} has no config value", config.id)))?;
+            let value = serde_json::from_str(raw)
+                .map_err(|error| RuntimeError(format!("{}: {error}", config.id)))?;
+            Ok((config.name.clone(), value))
+        })
+        .collect()
+}
+
+struct OwnedProviderCall {
+    provider: String,
+    capacity: String,
+    implementation: String,
+    operation: String,
+    config: BTreeMap<String, Value>,
+    input: Value,
+}
+
+fn invoke_with_resilience(
+    runtime: &mut dyn ProviderRuntime,
+    call: OwnedProviderCall,
+    retry: u32,
+    timeout_ms: u64,
+) -> Result<Value, String> {
+    let mut last_error = "attempt did not run".to_string();
+    for _ in 0..=retry {
+        let mut worker = runtime.fork()?;
+        let provider = call.provider.clone();
+        let capacity = call.capacity.clone();
+        let implementation = call.implementation.clone();
+        let operation = call.operation.clone();
+        let config = call.config.clone();
+        let input = call.input.clone();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        std::thread::spawn(move || {
+            let result = worker.invoke(ProviderCall {
+                provider: &provider,
+                capacity: &capacity,
+                implementation: &implementation,
+                operation: &operation,
+                config,
+                input,
+            });
+            let _ = sender.send(result);
+        });
+        match receiver.recv_timeout(std::time::Duration::from_millis(timeout_ms)) {
+            Ok(Ok(value)) => return Ok(value),
+            Ok(Err(message)) => last_error = message,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                last_error = format!("timeout_after_{timeout_ms}ms")
+            }
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                last_error = "provider_worker_disconnected".into()
+            }
+        }
+    }
+    Err(last_error)
 }
 
 fn generic<'a>(value: &'a str, name: &str) -> Option<&'a str> {
@@ -1088,5 +1425,177 @@ flow Concurrent Batch -> List<int>
         .unwrap();
         assert_eq!(result, json!([1, 2, 3, 4]));
         assert!(maximum.load(std::sync::atomic::Ordering::SeqCst) >= 2);
+    }
+
+    #[test]
+    fn retries_transient_errors_and_enforces_timeouts() {
+        const ATTEMPT_SOURCE: &str = r#"axl 4
+app AttemptDemo
+capacity Remote
+  op fetch int -> Result<int> idempotent
+skill RemoteSkill provides Remote
+  native rust test::remote
+flow Retry int -> Result<int>
+  in remote: Remote = RemoteSkill
+  attempt output = remote.fetch(input)?
+    retry = 2
+    timeout_ms = 100
+  return output
+flow Timeout int -> Result<int>
+  in remote: Remote = RemoteSkill
+  attempt output = remote.fetch(input)?
+    retry = 1
+    timeout_ms = 5
+  return output
+"#;
+
+        #[derive(Clone)]
+        struct RetryRuntime {
+            attempts: Arc<std::sync::atomic::AtomicUsize>,
+        }
+
+        impl ProviderRuntime for RetryRuntime {
+            fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String> {
+                let attempt = self
+                    .attempts
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                if attempt < 2 {
+                    Err("transient".into())
+                } else {
+                    Ok(call.input)
+                }
+            }
+
+            fn fork(&self) -> Result<Box<dyn ProviderRuntime>, String> {
+                Ok(Box::new(self.clone()))
+            }
+        }
+
+        #[derive(Clone)]
+        struct SlowRuntime;
+
+        impl ProviderRuntime for SlowRuntime {
+            fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String> {
+                std::thread::sleep(std::time::Duration::from_millis(30));
+                Ok(call.input)
+            }
+
+            fn fork(&self) -> Result<Box<dyn ProviderRuntime>, String> {
+                Ok(Box::new(self.clone()))
+            }
+        }
+
+        let graph = compile_source(ATTEMPT_SOURCE).unwrap().graph;
+        let attempts = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut retry_runtime = RetryRuntime {
+            attempts: attempts.clone(),
+        };
+        let retried =
+            evaluate_flow_with_runtime(&graph, "Retry", json!(42), &mut retry_runtime).unwrap();
+        assert_eq!(retried, json!({"ok": 42}));
+        assert_eq!(attempts.load(std::sync::atomic::Ordering::SeqCst), 3);
+
+        let mut slow_runtime = SlowRuntime;
+        let timed_out =
+            evaluate_flow_with_runtime(&graph, "Timeout", json!(42), &mut slow_runtime).unwrap();
+        assert_eq!(timed_out, json!({"error": "timeout_after_5ms"}));
+    }
+
+    #[test]
+    fn race_returns_the_first_successful_worker() {
+        const RACE_SOURCE: &str = r#"axl 4
+app RaceDemo
+entity Batch
+  values: List<int> required
+capacity Remote
+  op fetch int -> Result<int> idempotent
+skill RemoteSkill provides Remote
+  native rust test::remote
+flow Fetch int -> Result<int>
+  in remote: Remote = RemoteSkill
+  call output = remote.fetch(input)?
+  return output
+flow Fastest Batch -> Result<int>
+  race output: int = input.values as item
+    run = Fetch(item)?
+  return output
+"#;
+
+        #[derive(Clone)]
+        struct VariableDelayRuntime;
+
+        impl ProviderRuntime for VariableDelayRuntime {
+            fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String> {
+                let delay = if call.input == json!(1) { 50 } else { 5 };
+                std::thread::sleep(std::time::Duration::from_millis(delay));
+                Ok(call.input)
+            }
+
+            fn fork(&self) -> Result<Box<dyn ProviderRuntime>, String> {
+                Ok(Box::new(self.clone()))
+            }
+        }
+
+        let graph = compile_source(RACE_SOURCE).unwrap().graph;
+        let mut runtime = VariableDelayRuntime;
+        let result =
+            evaluate_flow_with_runtime(&graph, "Fastest", json!({"values": [1, 2]}), &mut runtime)
+                .unwrap();
+        assert_eq!(result, json!({"ok": 2}));
+    }
+
+    #[test]
+    fn sqlite_config_persists_across_independent_runtimes() {
+        let database = std::env::temp_dir().join(format!(
+            "axl-durable-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = serde_json::to_string(database.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app DurableStore
+entity Record
+  id: uuid required
+  value: text required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+skill DurableRecords provides RecordStore
+  native rust axl::store::sqlite
+  config path: text = {path}
+  effect db.read
+  effect db.write
+flow Save Record -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call saved = store.save(input)?
+  return saved
+flow Find uuid -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call found = store.find(input)?
+  return found
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let record = json!({"id": "record-1", "value": "survives restart"});
+
+        {
+            let mut first_runtime = BuiltinRuntime::new().unwrap();
+            let saved =
+                evaluate_flow_with_runtime(&graph, "Save", record.clone(), &mut first_runtime)
+                    .unwrap();
+            assert_eq!(saved, json!({"ok": record}));
+        }
+
+        let mut second_runtime = BuiltinRuntime::new().unwrap();
+        let found =
+            evaluate_flow_with_runtime(&graph, "Find", json!("record-1"), &mut second_runtime)
+                .unwrap();
+        assert_eq!(found["ok"]["value"], "survives restart");
+        drop(second_runtime);
+        std::fs::remove_file(database).unwrap();
     }
 }

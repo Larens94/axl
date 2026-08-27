@@ -41,6 +41,10 @@ requests while the process is running. For example, post
 `"movement-001"` to `/movement-by-id`: the second response contains the saved
 movement.
 
+The cashflow demo also exposes `/movements/durable` and
+`/movement-by-id/durable`. Their provider declares a typed SQLite `path` in AXL,
+so data remains available after restarting the server.
+
 Status mapping:
 
 | Condition | Status |
@@ -52,8 +56,8 @@ Status mapping:
 
 ## Current boundary
 
-Paths are exact: parameters and query decoding are not implemented. The shared
-runtime is process-local; memory and the current in-memory SQLite connection are
-lost on restart. Durable paths and connection configuration belong to the data
-gate. Authentication, middleware, CORS, streaming, events, jobs, cache, rate
-limits and observability remain later backend gates.
+Paths are exact: parameters and query decoding are not implemented. Memory and
+unconfigured SQLite remain process-local; configured SQLite paths are durable.
+Transactions and migrations remain data gates. Authentication, middleware,
+CORS, streaming, events, jobs, cache, rate limits and observability remain later
+backend gates.
