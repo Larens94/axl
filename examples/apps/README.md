@@ -64,6 +64,7 @@ Expected results:
 - the ledger fold returns `80000`;
 - the filter/map pipeline returns `[125000]`;
 - the typed sort returns `movement-002` before `movement-001`;
+- grouping creates `consulting` and `software` buckets with typed movements;
 - both replaceable storage providers return movement `movement-001`.
 - the composed validation/storage flow returns the valid movement.
 
@@ -75,8 +76,8 @@ multiline `make name: Entity` record construction. Flow Runtime 2 adds typed `in
 `fold` provides immutable collection aggregation and `run` composes flows.
 
 The `CashflowApi` declaration exposes `/movements`, `/movement-by-id`,
-`/balance`, `/income-amounts` and `/movements/sorted` through the generic Axum
-runtime:
+`/balance`, `/income-amounts`, `/movements/sorted` and `/movements/grouped`
+through the generic Axum runtime:
 
 ```sh
 cargo run -p axl-compiler -- \
@@ -89,7 +90,7 @@ The state remains process-local and is lost when the server restarts.
 
 This is not yet the complete cashflow application. SQLite is currently an
 in-memory connection owned by one evaluation or server process; there is no
-durable database configuration, list aggregation, event emission, state
+durable database configuration, general store queries, event emission, state
 mutation or rendered UI.
 Those missing capabilities must be added to AXL rather than implemented inside
 this application with handwritten Rust or React.

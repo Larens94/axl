@@ -70,7 +70,7 @@
       ],
       "additionalProperties": false,
       "properties": {
-        "kind": { "enum": ["let", "require", "call", "make", "fold", "run", "match", "map", "filter", "sort", "return"] },
+        "kind": { "enum": ["let", "require", "call", "make", "fold", "run", "match", "map", "filter", "sort", "group", "return"] },
         "name": { "type": "string" },
         "expression": { "type": ["string", "null"] },
         "message": { "type": ["string", "null"] },

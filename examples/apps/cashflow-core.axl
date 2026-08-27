@@ -84,6 +84,11 @@ flow SortMovementsNewest MovementBatch -> List<Movement>
     direction = desc
   return ordered
 
+flow GroupMovementsByCategory MovementBatch -> Map<text,List<Movement>>
+  group grouped: Map<text,List<Movement>> = input.movements as movement
+    by = movement.category
+  return grouped
+
 flow StoreAndLoadMovement Movement -> Result<Movement>
   in store: MovementStore = MemoryMovements
   call saved = store.save(input)?
@@ -113,3 +118,4 @@ api CashflowApi
   post /balance MovementBatch -> money = CalculateLedgerBalance
   post /income-amounts MovementBatch -> List<money> = IncomeAmounts
   post /movements/sorted MovementBatch -> List<Movement> = SortMovementsNewest
+  post /movements/grouped MovementBatch -> Map<text,List<Movement>> = GroupMovementsByCategory

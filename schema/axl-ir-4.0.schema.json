@@ -99,6 +99,7 @@
             "map",
             "filter",
             "sort",
+            "group",
             "return",
             "api",
             "route",

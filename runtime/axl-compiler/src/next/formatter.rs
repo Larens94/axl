@@ -226,6 +226,19 @@ pub fn format(program: &Program) -> String {
                             output.push(format!("    by = {key}"));
                             output.push(format!("    direction = {direction}"));
                         }
+                        FlowStatement::Group {
+                            name,
+                            type_name,
+                            collection,
+                            item,
+                            key,
+                            ..
+                        } => {
+                            output.push(format!(
+                                "  group {name}: {type_name} = {collection} as {item}"
+                            ));
+                            output.push(format!("    by = {key}"));
+                        }
                         FlowStatement::Return { expression, .. } => {
                             output.push(format!("  return {expression}"));
                         }

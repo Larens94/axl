@@ -423,6 +423,41 @@ fn evaluate_flow_inner(
                 validate_value(graph, type_name, &sorted, "sort result")?;
                 values.insert(statement.name.clone(), sorted);
             }
+            "group" => {
+                let type_name = statement.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no group result type", statement.id))
+                })?;
+                let collection = evaluated_collection(statement, &values)?;
+                let item_name = metadata(statement, "item")?;
+                let key_expression = expression::parse(metadata(statement, "key")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let mut grouped = Map::new();
+                for item in collection {
+                    let mut scope = values.clone();
+                    scope.insert(item_name.into(), item.clone());
+                    let key = expression::evaluate(&key_expression, &scope)
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                    let key = key.as_str().ok_or_else(|| {
+                        RuntimeError(format!(
+                            "{} group key did not evaluate to a string-like value",
+                            statement.id
+                        ))
+                    })?;
+                    let group = grouped
+                        .entry(key.to_string())
+                        .or_insert_with(|| Value::Array(Vec::new()));
+                    let Value::Array(group) = group else {
+                        return Err(RuntimeError(format!(
+                            "{} produced an invalid group",
+                            statement.id
+                        )));
+                    };
+                    group.push(item);
+                }
+                let grouped = Value::Object(grouped);
+                validate_value(graph, type_name, &grouped, "group result")?;
+                values.insert(statement.name.clone(), grouped);
+            }
             "return" => {
                 let expression = statement_expression(statement)?;
                 let value = expression::evaluate(&expression, &values)
@@ -614,6 +649,21 @@ fn validate_value(
         }
         return Ok(());
     }
+    if let Some((key_type, value_type)) = generic_pair(type_name, "Map") {
+        let object = value
+            .as_object()
+            .ok_or_else(|| RuntimeError(format!("{path} must be a map")))?;
+        for (key, value) in object {
+            validate_value(
+                graph,
+                key_type,
+                &Value::String(key.clone()),
+                &format!("{path}.key"),
+            )?;
+            validate_value(graph, value_type, value, &format!("{path}.{key}"))?;
+        }
+        return Ok(());
+    }
     match type_name {
         "unit" if value.is_null() => return Ok(()),
         "bool" if value.is_boolean() => return Ok(()),
@@ -715,6 +765,7 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
                     | "map"
                     | "filter"
                     | "sort"
+                    | "group"
                     | "return"
             )
         })
@@ -758,6 +809,24 @@ fn generic<'a>(value: &'a str, name: &str) -> Option<&'a str> {
         .strip_prefix(name)?
         .strip_prefix('<')?
         .strip_suffix('>')
+}
+
+fn generic_pair<'a>(value: &'a str, name: &str) -> Option<(&'a str, &'a str)> {
+    let inner = generic(value, name)?;
+    let mut depth = 0usize;
+    for (index, character) in inner.char_indices() {
+        match character {
+            '<' => depth += 1,
+            '>' => depth = depth.checked_sub(1)?,
+            ',' if depth == 0 => {
+                let left = inner[..index].trim();
+                let right = inner[index + 1..].trim();
+                return (!left.is_empty() && !right.is_empty()).then_some((left, right));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 #[cfg(test)]

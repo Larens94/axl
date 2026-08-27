@@ -1,4 +1,4 @@
-// Expected diagnostics: AXL-N806 and AXL-X871 through AXL-X879.
+// Expected diagnostics: AXL-N806, AXL-X871 through AXL-X879 and AXL-X881 through AXL-X884.
 axl 4
 app InvalidFlowTransforms
 
@@ -59,4 +59,24 @@ flow InvalidDirection Input -> List<int>
   sort values: List<int> = input.items as item
     by = item
     direction = sideways
+  return values
+
+flow NonCollectionGroup Input -> Map<text,List<int>>
+  group values: Map<text,List<int>> = input.amount as item
+    by = "all"
+  return values
+
+flow WrongGroupResult Input -> Map<text,List<money>>
+  group values: Map<text,List<money>> = input.items as item
+    by = "all"
+  return values
+
+flow UnorderedGroupKey Input -> Map<bool,List<bool>>
+  group values: Map<bool,List<bool>> = input.flags as item
+    by = item
+  return values
+
+flow WrongGroupKeyType Input -> Map<uuid,List<int>>
+  group values: Map<uuid,List<int>> = input.items as item
+    by = "all"
   return values

@@ -111,6 +111,17 @@ Keys are ordered numeric, string-like or enum values. Equal keys preserve source
 order. The compiler rejects a changed item type, an unordered key or a direction
 other than `asc` and `desc`.
 
+`group` creates `Map<K,List<T>>` buckets without a target-language helper:
+
+```axl
+group by_category: Map<text,List<Movement>> = input.movements as movement
+  by = movement.category
+```
+
+The source can be `List<T>` or `Set<T>`. Keys are string-like scalars or enums,
+and each bucket retains the encounter order of its source items. Map keys,
+bucket item types and runtime values are all validated.
+
 ## Provider ABI
 
 `ProviderRuntime` is public and replaceable. The interpreter passes it the
@@ -143,7 +154,7 @@ Implemented values and operations:
 | Grouping | parentheses and standard precedence |
 
 Input and return JSON values are checked against entities, enum variants,
-scalar values, `Option<T>`, `List<T>` and `Set<T>` at runtime.
+scalar values, `Option<T>`, `List<T>`, `Set<T>` and `Map<K,V>` at runtime.
 
 ## CLI
 
@@ -158,6 +169,6 @@ source parser.
 ## Current boundary
 
 Flow Runtime 2 does not implement mutable variables, branch statement blocks,
-collection literals/grouping, async execution, durable persistence, events,
-state mutation, concurrency or UI bindings. The next vertical slice is grouping
-and async semantics, then durable storage and richer HTTP behavior.
+collection literals, async execution, durable persistence, events, state
+mutation, concurrency or UI bindings. The next vertical slice is async and
+concurrency semantics, then durable storage and richer HTTP behavior.

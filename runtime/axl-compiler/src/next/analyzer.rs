@@ -1617,6 +1617,104 @@ fn check_flow(
                 }
                 bind_transform_result(name, type_name, span, &mut variables, diagnostics);
             }
+            FlowStatement::Group {
+                name,
+                type_name,
+                collection,
+                item,
+                key,
+                span,
+            } => {
+                check_type(type_name, span, declarations, diagnostics);
+                check_transform_names(name, item, span, diagnostics);
+                let source_type = infer_source_expression(
+                    collection,
+                    span,
+                    &variables,
+                    declarations,
+                    diagnostics,
+                );
+                let source_item = source_type
+                    .as_deref()
+                    .and_then(collection_inner)
+                    .map(|(_, inner)| inner);
+                if source_type.is_some() && source_item.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X881",
+                            "execution",
+                            "group source must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected(
+                            "List<T>|Set<T>",
+                            source_type.as_deref().unwrap_or("unknown"),
+                        ),
+                    );
+                }
+                let output = generic_pair(type_name, "Map");
+                if let Some(source_item) = source_item {
+                    let output_shape_valid = output.is_some_and(|(_, values)| {
+                        generic_inner(values, "List") == Some(source_item)
+                    });
+                    if !output_shape_valid {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X882",
+                                "execution",
+                                "group result must be Map<K,List<T>> with the source item type",
+                                span.clone(),
+                            )
+                            .expected(format!("Map<K,List<{source_item}>>"), type_name),
+                        );
+                    }
+                    let mut group_variables = variables.clone();
+                    group_variables.insert(item.clone(), source_item.to_string());
+                    if let Some(found) = infer_source_expression(
+                        key,
+                        span,
+                        &group_variables,
+                        declarations,
+                        diagnostics,
+                    ) {
+                        if !ordered_type(&found, declarations) {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    "AXL-X883",
+                                    "execution",
+                                    "group key must be a string-like scalar or enum",
+                                    span.clone(),
+                                )
+                                .expected("string-like scalar|enum", &found),
+                            );
+                        }
+                        if let Some((declared_key, _)) = output
+                            && declared_key != found
+                        {
+                            diagnostics.push(
+                                Diagnostic::error(
+                                    "AXL-X884",
+                                    "execution",
+                                    "group key does not match the declared Map key type",
+                                    span.clone(),
+                                )
+                                .expected(declared_key, found),
+                            );
+                        }
+                    }
+                } else if output.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X882",
+                            "execution",
+                            "group result must be Map<K,List<T>>",
+                            span.clone(),
+                        )
+                        .expected("Map<K,List<T>>", type_name),
+                    );
+                }
+                bind_transform_result(name, type_name, span, &mut variables, diagnostics);
+            }
             FlowStatement::Return { expression, span } => {
                 return_count += 1;
                 if index + 1 != flow.statements.len() {
@@ -2073,6 +2171,24 @@ fn generic_inner<'a>(value: &'a str, name: &str) -> Option<&'a str> {
         .strip_prefix(name)?
         .strip_prefix('<')?
         .strip_suffix('>')
+}
+
+fn generic_pair<'a>(value: &'a str, name: &str) -> Option<(&'a str, &'a str)> {
+    let inner = generic_inner(value, name)?;
+    let mut depth = 0usize;
+    for (index, character) in inner.char_indices() {
+        match character {
+            '<' => depth += 1,
+            '>' => depth = depth.checked_sub(1)?,
+            ',' if depth == 0 => {
+                let left = inner[..index].trim();
+                let right = inner[index + 1..].trim();
+                return (!left.is_empty() && !right.is_empty()).then_some((left, right));
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn check_provider(
@@ -2532,6 +2648,7 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
             FlowStatement::Map { name, .. } => ("map", name.as_str()),
             FlowStatement::Filter { name, .. } => ("filter", name.as_str()),
             FlowStatement::Sort { name, .. } => ("sort", name.as_str()),
+            FlowStatement::Group { name, .. } => ("group", name.as_str()),
             FlowStatement::Return { .. } => ("return", "return"),
         };
         let id = format!("{flow_id}.{kind}.{index}");
@@ -2643,6 +2760,20 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                 value.metadata.insert("item".into(), item.clone());
                 value.metadata.insert("key".into(), key.clone());
                 value.metadata.insert("direction".into(), direction.clone());
+            }
+            FlowStatement::Group {
+                type_name,
+                collection,
+                item,
+                key,
+                ..
+            } => {
+                value.type_name = Some(type_name.clone());
+                value
+                    .metadata
+                    .insert("collection".into(), collection.clone());
+                value.metadata.insert("item".into(), item.clone());
+                value.metadata.insert("key".into(), key.clone());
             }
         }
         if let FlowStatement::Require { message, .. } = statement {

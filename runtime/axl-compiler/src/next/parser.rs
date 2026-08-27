@@ -977,6 +977,19 @@ fn parse_flow(
                     span: span(line),
                 });
             }
+        } else if let Some(value) = line.text.strip_prefix("group ") {
+            if let Some((name, type_name, collection, item, key)) =
+                parse_transform(value, "by", line, body, line_index, diagnostics)
+            {
+                statements.push(FlowStatement::Group {
+                    name,
+                    type_name,
+                    collection,
+                    item,
+                    key,
+                    span: span(line),
+                });
+            }
         } else if let Some(expression) = line.text.strip_prefix("return ") {
             statements.push(FlowStatement::Return {
                 expression: expression.trim().to_string(),

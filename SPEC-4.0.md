@@ -301,6 +301,17 @@ sort newest: List<Movement> = input.movements as movement
 The key must be a number, string-like scalar or enum. Direction is exactly
 `asc` or `desc`; equal keys keep their original order deterministically.
 
+`group` creates a typed map whose values preserve source order:
+
+```axl
+group by_category: Map<text,List<Movement>> = input.movements as movement
+  by = movement.category
+```
+
+Group keys are string-like scalars or enums because the runtime representation
+is a JSON object. The declared `Map<K,List<T>>` key and item types must match the
+key expression and source collection.
+
 ### HTTP API
 
 An API exposes checked flows without handwritten controllers:
@@ -454,7 +465,7 @@ generate a complete production application.
 
 - contract expression type checking;
 - branch statement blocks and mutable variables;
-- collection literals and grouping;
+- collection literals;
 - `parallel`, `race`, retry and timeout execution;
 - generated standalone Rust handlers and React components from Graph IR;
 - path parameters, query decoding, middleware and streaming HTTP bodies;

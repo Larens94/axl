@@ -342,6 +342,7 @@ fn reconstruct_id(
                     | "map"
                     | "filter"
                     | "sort"
+                    | "group"
                     | "return"
             ) =>
         {
@@ -429,6 +430,7 @@ fn node_kind_code(kind: &str) -> &str {
         "api" => "39",
         "route" => "40",
         "sort" => "41",
+        "group" => "42",
         other => other,
     }
 }
@@ -477,6 +479,7 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "39" => "api",
         "40" => "route",
         "41" => "sort",
+        "42" => "group",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

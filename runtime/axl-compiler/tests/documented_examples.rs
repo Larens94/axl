@@ -226,6 +226,22 @@ fn documented_invalid_examples_report_stable_codes() {
             include_str!("../../../examples/invalid/flow-transforms.axl"),
         ),
         (
+            "AXL-X881",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X882",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X883",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X884",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
             "AXL-H901",
             include_str!("../../../examples/invalid/http-routes.axl"),
         ),
@@ -318,6 +334,16 @@ fn documented_cashflow_core_executes() {
             .unwrap();
     assert_eq!(ordered[0]["id"], "movement-002");
     assert_eq!(ordered[1]["id"], "movement-001");
+
+    let movements = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-batch.json"
+    ))
+    .unwrap();
+    let grouped =
+        axl_compiler::next::runtime::evaluate_flow(&graph, "GroupMovementsByCategory", movements)
+            .unwrap();
+    assert_eq!(grouped["consulting"][0]["id"], "movement-001");
+    assert_eq!(grouped["software"][0]["id"], "movement-002");
 
     for flow in ["StoreAndLoadMovement", "StoreAndLoadMovementSqlite"] {
         let movement = serde_json::from_str(include_str!(
