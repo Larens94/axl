@@ -103,6 +103,11 @@ The server shares one provider runtime across requests. Memory state is
 process-local. The durable routes use the path declared on
 `DurableSqliteMovements` and survive a server restart.
 
+`POST /secure/balance` belongs to a separate guarded API. It requires
+`Authorization: Bearer axl-cashflow-demo`; missing and invalid credentials return
+401 and 403. The credential is intentionally visible test data until AXL gains
+secret references and production auth adapters.
+
 This is not yet the complete cashflow application. There are no transaction or
 migration primitives, general store queries, event emission, state mutation or
 rendered UI.

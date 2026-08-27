@@ -19,7 +19,7 @@ jq empty schema/axl-provider-1.schema.json
 ```
 
 The integration suite compiles nine valid documented programs, round-trips each
-through Packed Graph IR and verifies sixteen intentionally invalid programs.
+through Packed Graph IR and verifies eighteen intentionally invalid programs.
 
 The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
@@ -156,6 +156,19 @@ Both responses must contain movement `movement-001`. The analogous `/durable`
 routes use a configured SQLite file and remain readable after restarting the
 server.
 
+Verify the open bearer guard:
+
+```sh
+curl -X POST http://127.0.0.1:8080/secure/balance \
+  -H 'content-type: application/json' \
+  -H 'authorization: Bearer axl-cashflow-demo' \
+  --data-binary @examples/apps/inputs/movement-batch.json
+```
+
+The response is `80000`. Omitting the authorization header returns 401; using a
+different token returns 403. The token is deliberately a visible demo fixture,
+not a production secret.
+
 ## 7. Verify invalid programs
 
 These commands are expected to fail:
@@ -208,6 +221,12 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   check examples/invalid/provider-configs.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/http-auth-syntax.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/http-auth.axl --json
 ```
 
 The first diagnostic set must include `AXL-O401`; the second must include
@@ -225,6 +244,8 @@ The thirteenth must include every code from `AXL-X911` through `AXL-X916`.
 The fourteenth must include every code from `AXL-H901` through `AXL-H907`.
 The fifteenth must include `AXL-P313` and `AXL-P314`. The sixteenth must include
 `AXL-N303`, `AXL-N304` and `AXL-V305`.
+The seventeenth must include `AXL-P913` and `AXL-P914`. The eighteenth must
+include every code from `AXL-H908` through `AXL-H912`.
 
 ## 8. Verify canonical formatting and transport
 
@@ -264,6 +285,7 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - memory and SQLite providers execute through the same replaceable ABI;
 - typed provider config survives Graph/Packed IR and `axl-provider/1` generation;
 - configured SQLite data survives destruction and recreation of the runtime;
+- API auth is capacity-backed and proves missing, denied and accepted requests;
 - documentation examples remain coupled to compiler tests.
 
 It does not prove transaction/migration semantics or runtime UI rendering.
