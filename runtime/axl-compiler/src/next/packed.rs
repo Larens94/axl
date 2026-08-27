@@ -346,6 +346,7 @@ fn reconstruct_id(
                     | "group"
                     | "parallel"
                     | "race"
+                    | "request_binding"
                     | "return"
             ) =>
         {
@@ -441,6 +442,7 @@ fn node_kind_code(kind: &str) -> &str {
         "race" => "45",
         "config" => "46",
         "auth" => "47",
+        "request_binding" => "48",
         other => other,
     }
 }
@@ -495,6 +497,7 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "45" => "race",
         "46" => "config",
         "47" => "auth",
+        "48" => "request_binding",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

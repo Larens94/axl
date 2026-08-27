@@ -74,6 +74,7 @@
             "skill",
             "config",
             "auth",
+            "request_binding",
             "blueprint",
             "instance",
             "input",

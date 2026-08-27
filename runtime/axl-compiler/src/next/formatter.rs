@@ -331,10 +331,26 @@ pub fn format(program: &Program) -> String {
                     ));
                 }
                 for route in &api.routes {
+                    let binding = route
+                        .input_name
+                        .as_ref()
+                        .map(|name| format!(" from {}.{name}", route.input_source))
+                        .unwrap_or_default();
                     output.push(format!(
-                        "  {} {} {} -> {} = {}",
-                        route.method, route.path, route.input, route.output, route.flow
+                        "  {} {} {} -> {} = {}{}",
+                        route.method, route.path, route.input, route.output, route.flow, binding
                     ));
+                    if route.input_source == "composite" {
+                        for binding in &route.bindings {
+                            let target = binding.target.as_deref().unwrap_or_default();
+                            let source = binding
+                                .name
+                                .as_ref()
+                                .map(|name| format!("{}.{name}", binding.source))
+                                .unwrap_or_else(|| binding.source.clone());
+                            output.push(format!("    bind {target} = {source}"));
+                        }
+                    }
                 }
             }
             Declaration::Agent(agent) => {

@@ -30,6 +30,11 @@ entity MovementBatch
 entity MovementLookupBatch
   ids: List<uuid> required
 
+entity MovementPreviewRequest
+  account: uuid required
+  movement: Movement required
+  dry_run: bool required
+
 capacity MovementStore
   op save Movement -> Result<Movement>
   op find uuid -> Result<Movement> idempotent
@@ -164,6 +169,10 @@ flow FindFirstMovement MovementLookupBatch -> Result<Movement>
     run = FindMovement(candidate)?
   return found
 
+flow PreviewMovement MovementPreviewRequest -> Result<Movement>
+  run valid = ValidateMovement(input.movement)?
+  return valid
+
 api CashflowApi
   post /movements Movement -> Result<Movement> = ValidateAndStoreMovement
   post /movement-by-id uuid -> Result<Movement> = FindMovement
@@ -177,6 +186,12 @@ api CashflowApi
   post /movement-first MovementLookupBatch -> Result<Movement> = FindFirstMovement
   post /movements/durable Movement -> Result<Movement> = SaveDurableMovement
   post /movement-by-id/durable uuid -> Result<Movement> = FindDurableMovement
+  get /movements/{id} uuid -> Result<Movement> = FindDurableMovement from path.id
+  get /movements/find uuid -> Result<Movement> = FindDurableMovement from query.id
+  post /accounts/{account}/movement-preview MovementPreviewRequest -> Result<Movement> = PreviewMovement
+    bind account = path.account
+    bind movement = body
+    bind dry_run = query.dry_run
 
 api SecuredCashflowApi
   auth bearer: HttpAuth = CashflowDemoBearer

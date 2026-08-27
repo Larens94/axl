@@ -401,8 +401,34 @@ provider. The Axum adapter maps a missing bearer header to 401 and denial to 403
 The static token adapter is an executable test fixture; production secret
 references and JWT/OAuth adapters are not implemented.
 
+Route inputs use the JSON body by default. A scalar or enum input can instead
+come directly from a named path or query value:
+
+```axl
+get /movements/{id} uuid -> Result<Movement> = FindMovement from path.id
+get /movements/find uuid -> Result<Movement> = FindMovement from query.id
+```
+
+Path placeholders and binding names are checked. Runtime decoding converts
+`bool`, `int`, `float` and `money`, percent-decodes string-like values and lets
+the normal flow validator check the result. Exact paths win over templates.
+
+An entity input can be assembled from several request surfaces:
+
+```axl
+post /accounts/{account}/movement-preview MovementPreviewRequest -> Result<Movement> = PreviewMovement
+  bind account = path.account
+  bind movement = body
+  bind dry_run = query.dry_run
+```
+
+Each `bind` is a first-class `request_binding` Graph/Packed IR node. Targets must
+be unique declared fields; every required field must be bound. `body.field`
+selects one JSON member, while plain `body` assigns the complete JSON value to a
+nested entity field. Missing optional fields are omitted.
+
 Implemented methods are `get`, `post`, `put`, `patch` and `delete`. Paths are
-currently exact absolute paths. Input/output types must exactly match the bound
+absolute and may contain named whole-segment placeholders. Input/output types must exactly match the bound
 flow signature. Duplicate routes inside one API and conflicts across APIs are
 rejected.
 

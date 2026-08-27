@@ -2444,7 +2444,7 @@ fn check_api(
                 .expected("absolute path without query or fragment", &route.path),
             );
         }
-        if !routes.insert((route.method.as_str(), route.path.as_str())) {
+        if !routes.insert((route.method.clone(), normalized_http_path(&route.path))) {
             diagnostics.push(Diagnostic::error(
                 "AXL-H904",
                 "http",
@@ -2457,6 +2457,7 @@ fn check_api(
         }
         check_type(&route.input, &route.span, declarations, diagnostics);
         check_type(&route.output, &route.span, declarations, diagnostics);
+        check_request_bindings(route, declarations, diagnostics);
         match declarations.get(route.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
                 if flow.input != route.input || flow.output != route.output {
@@ -2499,6 +2500,149 @@ fn check_api(
     }
 }
 
+fn check_request_bindings(
+    route: &ApiRoute,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if route.input_source != "composite" {
+        if route.input_source == "body" {
+            return;
+        }
+        let binding = route.bindings.first();
+        let name = binding
+            .and_then(|value| value.name.as_deref())
+            .unwrap_or_default();
+        check_request_binding_name_and_path(route, binding, name, diagnostics);
+        if !http_binding_type(&route.input, declarations) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H915",
+                    "http",
+                    format!("request binding cannot construct type '{}'", route.input),
+                    route.span.clone(),
+                )
+                .expected("scalar or enum route input", &route.input),
+            );
+        }
+        return;
+    }
+
+    let Some(Declaration::Entity(entity)) = declarations.get(route.input.as_str()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-H915",
+                "http",
+                format!("composite request requires entity input '{}'", route.input),
+                route.span.clone(),
+            )
+            .expected("declared entity", &route.input),
+        );
+        return;
+    };
+    let mut targets = BTreeSet::new();
+    for binding in &route.bindings {
+        let target = binding.target.as_deref().unwrap_or_default();
+        if !valid_name(target, false) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-H913",
+                "http",
+                format!("invalid request target '{target}'"),
+                binding.span.clone(),
+            ));
+        }
+        let Some(field) = entity.fields.iter().find(|field| field.name == target) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H916",
+                    "http",
+                    format!("unknown composite request field '{}.{target}'", entity.name),
+                    binding.span.clone(),
+                )
+                .expected("declared entity field", target),
+            );
+            continue;
+        };
+        if !targets.insert(target) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-H916",
+                "http",
+                format!(
+                    "duplicate composite request field '{}.{target}'",
+                    entity.name
+                ),
+                binding.span.clone(),
+            ));
+        }
+        let name = binding.name.as_deref().unwrap_or_default();
+        check_request_binding_name_and_path(route, Some(binding), name, diagnostics);
+        if matches!(binding.source.as_str(), "path" | "query")
+            && !http_binding_type(&field.type_name, declarations)
+        {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H915",
+                    "http",
+                    format!(
+                        "request source cannot construct field '{}.{target}'",
+                        entity.name
+                    ),
+                    binding.span.clone(),
+                )
+                .expected("scalar or enum field", &field.type_name),
+            );
+        }
+    }
+    for field in &entity.fields {
+        let optional = field.qualifiers.iter().any(|value| value == "optional")
+            || generic_inner(&field.type_name, "Option").is_some();
+        if !optional && !targets.contains(field.name.as_str()) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-H917",
+                "http",
+                format!(
+                    "composite request is missing '{}.{}'",
+                    entity.name, field.name
+                ),
+                route.span.clone(),
+            ));
+        }
+    }
+}
+
+fn check_request_binding_name_and_path(
+    route: &ApiRoute,
+    binding: Option<&HttpRequestBinding>,
+    name: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let Some(binding) = binding else { return };
+    if binding.source != "body" && !valid_name(name, false) {
+        diagnostics.push(Diagnostic::error(
+            "AXL-H913",
+            "http",
+            format!("invalid request binding name '{name}'"),
+            binding.span.clone(),
+        ));
+    }
+    if binding.source == "path"
+        && !route
+            .path
+            .split('/')
+            .any(|segment| segment == format!("{{{name}}}"))
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-H914",
+                "http",
+                format!("path binding '{name}' has no matching placeholder"),
+                binding.span.clone(),
+            )
+            .expected(format!("{{{name}}}"), &route.path),
+        );
+    }
+}
+
 fn check_global_api_routes(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
     let mut routes = BTreeMap::new();
     for api in program
@@ -2510,7 +2654,7 @@ fn check_global_api_routes(program: &Program, diagnostics: &mut Vec<Diagnostic>)
         })
     {
         for route in &api.routes {
-            let key = (route.method.as_str(), route.path.as_str());
+            let key = (route.method.clone(), normalized_http_path(&route.path));
             if routes
                 .insert(key, api.name.as_str())
                 .is_some_and(|owner| owner != api.name)
@@ -2530,7 +2674,47 @@ fn check_global_api_routes(program: &Program, diagnostics: &mut Vec<Diagnostic>)
 }
 
 fn valid_http_path(path: &str) -> bool {
-    path.starts_with('/') && !path.contains(['?', '#', ' ']) && !path.contains("//")
+    path.starts_with('/')
+        && !path.contains(['?', '#', ' '])
+        && !path.contains("//")
+        && path.split('/').all(|segment| {
+            if !segment.contains(['{', '}']) {
+                return true;
+            }
+            segment
+                .strip_prefix('{')
+                .and_then(|value| value.strip_suffix('}'))
+                .is_some_and(|name| valid_name(name, false))
+        })
+}
+
+fn normalized_http_path(path: &str) -> String {
+    path.split('/')
+        .map(|segment| {
+            if segment.starts_with('{') && segment.ends_with('}') {
+                "{}"
+            } else {
+                segment
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn http_binding_type(type_name: &str, declarations: &BTreeMap<&str, &Declaration>) -> bool {
+    matches!(
+        type_name,
+        "bool"
+            | "int"
+            | "float"
+            | "money"
+            | "text"
+            | "string"
+            | "email"
+            | "uuid"
+            | "datetime"
+            | "duration"
+    ) || matches!(declarations.get(type_name), Some(Declaration::Enum(_)))
 }
 
 fn infer_source_expression(
@@ -3539,9 +3723,34 @@ fn lower_api(api: &Api, graph: &mut GraphIr) {
         value.metadata.insert("method".into(), route.method.clone());
         value.metadata.insert("path".into(), route.path.clone());
         value.metadata.insert("flow".into(), route.flow.clone());
+        value
+            .metadata
+            .insert("input_source".into(), route.input_source.clone());
+        if let Some(name) = &route.input_name {
+            value.metadata.insert("input_name".into(), name.clone());
+        }
         value.metadata.insert("order".into(), index.to_string());
         graph.nodes.push(value);
         graph.edges.push(edge(&api_id, &id, "owns", None));
+        for (binding_index, binding) in route.bindings.iter().enumerate() {
+            let binding_id = format!("{id}.request_binding.{binding_index}");
+            let mut value = node(
+                &binding_id,
+                "request_binding",
+                binding.target.as_deref().unwrap_or("$"),
+            );
+            value
+                .metadata
+                .insert("source".into(), binding.source.clone());
+            if let Some(name) = &binding.name {
+                value.metadata.insert("name".into(), name.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), binding_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &binding_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", route.flow),

@@ -426,12 +426,23 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
                     let (input, output) = route.type_name.as_deref()
                         .and_then(|value| value.split_once("->"))
                         .unwrap_or(("", ""));
+                    let mut bindings = children(graph, &route.id, "request_binding");
+                    bindings.sort_by_key(|binding| binding.metadata.get("order")
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .unwrap_or(usize::MAX));
                     json!({
                         "method": route.metadata.get("method"),
                         "path": route.metadata.get("path"),
                         "input": input,
                         "output": output,
                         "flow": route.metadata.get("flow"),
+                        "input_source": route.metadata.get("input_source"),
+                        "input_name": route.metadata.get("input_name"),
+                        "bindings": bindings.into_iter().map(|binding| json!({
+                            "target": (binding.name != "$").then_some(&binding.name),
+                            "source": binding.metadata.get("source"),
+                            "name": binding.metadata.get("name"),
+                        })).collect::<Vec<_>>(),
                     })
                 }).collect::<Vec<_>>(),
             })

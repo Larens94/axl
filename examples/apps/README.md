@@ -108,6 +108,16 @@ process-local. The durable routes use the path declared on
 401 and 403. The credential is intentionally visible test data until AXL gains
 secret references and production auth adapters.
 
+The durable lookup is also exposed as `GET /movements/{id}` and
+`GET /movements/find?id=...`. These routes bind a path or query string directly
+to the typed `uuid` flow input; exact `/movements/find` matching takes precedence
+over the `{id}` template.
+
+`POST /accounts/{account}/movement-preview?dry_run=true` assembles a
+`MovementPreviewRequest`: `account` comes from the path, `movement` is the full
+JSON body and `dry_run` comes from the query. No Rust request DTO or extractor is
+specific to this route.
+
 This is not yet the complete cashflow application. There are no transaction or
 migration primitives, general store queries, event emission, state mutation or
 rendered UI.

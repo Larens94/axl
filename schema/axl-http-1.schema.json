@@ -45,7 +45,7 @@
     },
     "route": {
       "type": "object",
-      "required": ["method", "path", "input", "output", "flow"],
+      "required": ["method", "path", "input", "output", "flow", "input_source", "input_name", "bindings"],
       "additionalProperties": false,
       "properties": {
         "method": { "enum": ["get", "post", "put", "patch", "delete"] },
@@ -53,6 +53,23 @@
         "input": { "type": "string", "minLength": 1 },
         "output": { "type": "string", "minLength": 1 },
         "flow": { "type": "string", "minLength": 1 }
+        ,
+        "input_source": { "enum": ["body", "path", "query", "composite"] },
+        "input_name": { "type": ["string", "null"] },
+        "bindings": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["target", "source", "name"],
+            "additionalProperties": false,
+            "properties": {
+              "target": { "type": ["string", "null"] },
+              "source": { "enum": ["body", "path", "query"] },
+              "name": { "type": ["string", "null"] }
+            }
+          }
+        }
       }
     }
   }

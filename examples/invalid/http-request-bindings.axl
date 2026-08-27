@@ -1,0 +1,20 @@
+axl 4
+app InvalidHttpRequestBindings
+entity Input
+  value: text required
+entity Composite
+  id: text required
+  payload: Input required
+  required_missing: text required
+flow Identity Input -> Input
+  return input
+flow IdentityComposite Composite -> Composite
+  return input
+api BrokenBindings
+  get /items/{other} Input -> Input = Identity from path.bad.name
+  get /items/{duplicate} Input -> Input = Identity
+  post /compose/{id} Composite -> Composite = IdentityComposite
+    bind unknown = path.id
+    bind id = path.id
+    bind id = query.id
+    bind payload = query.payload

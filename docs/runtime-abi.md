@@ -71,6 +71,11 @@ observe the same records. The generated `axl-provider/1` manifest exposes the
 configuration for external adapters. Transactions and migrations are not yet
 language primitives.
 
+The built-in `rust::axl::auth::bearer` adapter implements an idempotent
+`authorize text -> Result<bool>` capacity using a typed `token` config. It is a
+conformance fixture, not a production secret store; JWT/OAuth and secret
+reference providers must use the same open ABI.
+
 ## Conformance gate for future adapters
 
 Every backend, database, AI, IoT or agent-tool adapter must prove:

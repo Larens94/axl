@@ -1694,7 +1694,9 @@ fn parse_api(
     }
     let mut routes = Vec::new();
     let mut auth = None;
-    for line in body {
+    let mut cursor = 0;
+    while cursor < body.len() {
+        let line = &body[cursor];
         if let Some(value) = line.text.strip_prefix("auth ") {
             let parsed = value.split_once('=').and_then(|(surface, provider)| {
                 let (scheme, capacity) = surface.split_once(':')?;
@@ -1710,6 +1712,7 @@ fn parse_api(
                     )
                     .expected("auth bearer: HttpAuth = AuthProvider", &line.text),
                 );
+                cursor += 1;
                 continue;
             };
             if auth.is_some() {
@@ -1719,6 +1722,7 @@ fn parse_api(
                     "an API can declare auth only once",
                     span(line),
                 ));
+                cursor += 1;
                 continue;
             }
             auth = Some(ApiAuth {
@@ -1727,6 +1731,20 @@ fn parse_api(
                 provider: provider.into(),
                 span: span(line),
             });
+            cursor += 1;
+            continue;
+        }
+        if line.text.starts_with("bind ") {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P916",
+                    "parse",
+                    "a request binding must be nested under a route",
+                    span(line),
+                )
+                .expected("route\n  bind field = source", &line.text),
+            );
+            cursor += 1;
             continue;
         }
         let Some((method, remainder)) = line.text.split_once(' ') else {
@@ -1739,6 +1757,7 @@ fn parse_api(
                 )
                 .expected("post /path Input -> Output = Flow", &line.text),
             );
+            cursor += 1;
             continue;
         };
         let Some((signature, flow)) = remainder.rsplit_once('=') else {
@@ -1746,6 +1765,7 @@ fn parse_api(
                 Diagnostic::error("AXL-P910", "parse", "an API route binds a flow", span(line))
                     .expected("post /path Input -> Output = Flow", &line.text),
             );
+            cursor += 1;
             continue;
         };
         let Some((request, output)) = signature.split_once("->") else {
@@ -1758,6 +1778,7 @@ fn parse_api(
                 )
                 .expected("post /path Input -> Output = Flow", &line.text),
             );
+            cursor += 1;
             continue;
         };
         let mut request = request.split_whitespace();
@@ -1772,14 +1793,124 @@ fn parse_api(
                 )
                 .expected("post /path Input -> Output = Flow", &line.text),
             );
+            cursor += 1;
             continue;
+        };
+        let flow = flow.trim();
+        let (flow, input_source, input_name, mut bindings) =
+            if let Some((flow, binding)) = flow.split_once(" from ") {
+                let Some((source, name)) = parse_request_source(binding) else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-P915",
+                            "parse",
+                            "a request binding needs a source and name",
+                            span(line),
+                        )
+                        .expected("Flow from path.id|query.name", binding),
+                    );
+                    cursor += 1;
+                    continue;
+                };
+                (
+                    flow.trim(),
+                    source.clone(),
+                    name.clone(),
+                    vec![HttpRequestBinding {
+                        target: None,
+                        source,
+                        name,
+                        span: span(line),
+                    }],
+                )
+            } else {
+                (
+                    flow,
+                    "body".to_string(),
+                    None,
+                    vec![HttpRequestBinding {
+                        target: None,
+                        source: "body".into(),
+                        name: None,
+                        span: span(line),
+                    }],
+                )
+            };
+        cursor += 1;
+        let mut found_nested = false;
+        while cursor < body.len() && body[cursor].indent > line.indent {
+            let binding_line = &body[cursor];
+            let Some(value) = binding_line.text.strip_prefix("bind ") else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P916",
+                        "parse",
+                        "unknown nested API route declaration",
+                        span(binding_line),
+                    )
+                    .expected(
+                        "bind field = body|body.field|path.name|query.name",
+                        &binding_line.text,
+                    ),
+                );
+                cursor += 1;
+                continue;
+            };
+            let parsed = value.split_once('=').and_then(|(target, source)| {
+                let target = target.trim();
+                let (source, name) = parse_request_source(source.trim())?;
+                (!target.is_empty()).then(|| (target.to_string(), source, name))
+            });
+            let Some((target, source, name)) = parsed else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P916",
+                        "parse",
+                        "invalid composite request binding",
+                        span(binding_line),
+                    )
+                    .expected(
+                        "bind field = body|body.field|path.name|query.name",
+                        &binding_line.text,
+                    ),
+                );
+                cursor += 1;
+                continue;
+            };
+            if !found_nested {
+                if input_source != "body" || input_name.is_some() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-P917",
+                        "parse",
+                        "inline and nested request bindings cannot be combined",
+                        span(binding_line),
+                    ));
+                }
+                bindings.clear();
+                found_nested = true;
+            }
+            bindings.push(HttpRequestBinding {
+                target: Some(target),
+                source,
+                name,
+                span: span(binding_line),
+            });
+            cursor += 1;
+        }
+        let (input_source, input_name) = if found_nested {
+            ("composite".into(), None)
+        } else {
+            (input_source, input_name)
         };
         routes.push(ApiRoute {
             method: method.to_ascii_lowercase(),
             path: path.into(),
             input: input.into(),
             output: output.trim().into(),
-            flow: flow.trim().into(),
+            flow: flow.into(),
+            input_source,
+            input_name,
+            bindings,
             span: span(line),
         });
     }
@@ -1789,6 +1920,15 @@ fn parse_api(
         routes,
         span: span(header),
     }));
+}
+
+fn parse_request_source(value: &str) -> Option<(String, Option<String>)> {
+    if value == "body" {
+        return Some(("body".into(), None));
+    }
+    let (source, name) = value.split_once('.')?;
+    (matches!(source, "body" | "path" | "query") && !name.is_empty())
+        .then(|| (source.into(), Some(name.into())))
 }
 
 fn missing_name(line: &SourceLine, kind: &str) -> Diagnostic {

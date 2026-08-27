@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
@@ -53,12 +54,26 @@ pub fn dispatch_with_authorization(
     authorization: Option<&str>,
 ) -> HttpResult {
     let method = method.to_ascii_lowercase();
-    let route = graph.nodes.iter().find(|node| {
-        node.kind == "route"
-            && node.metadata.get("method") == Some(&method)
-            && node.metadata.get("path").is_some_and(|value| value == path)
-    });
-    let Some(route) = route else {
+    let (request_path, query) = path.split_once('?').unwrap_or((path, ""));
+    let mut candidates = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "route" && node.metadata.get("method") == Some(&method));
+    let matched = candidates
+        .clone()
+        .find(|node| {
+            node.metadata
+                .get("path")
+                .is_some_and(|value| value == request_path)
+        })
+        .map(|route| (route, BTreeMap::new()))
+        .or_else(|| {
+            candidates.find_map(|route| {
+                match_http_path(route.metadata.get("path")?, request_path)
+                    .map(|parameters| (route, parameters))
+            })
+        });
+    let Some((route, path_parameters)) = matched else {
         return HttpResult {
             status: 404,
             body: json!({ "error": "route_not_found" }),
@@ -67,6 +82,15 @@ pub fn dispatch_with_authorization(
     if let Some(result) = authorize_request(graph, runtime, route, authorization) {
         return result;
     }
+    let input = match bind_request_input(graph, route, input, &path_parameters, query) {
+        Ok(input) => input,
+        Err(message) => {
+            return HttpResult {
+                status: 400,
+                body: json!({ "error": message }),
+            };
+        }
+    };
     let Some(flow) = route.metadata.get("flow") else {
         return HttpResult {
             status: 500,
@@ -86,6 +110,207 @@ pub fn dispatch_with_authorization(
             status: 400,
             body: json!({ "error": error.to_string() }),
         },
+    }
+}
+
+fn match_http_path(pattern: &str, request: &str) -> Option<BTreeMap<String, String>> {
+    let pattern = pattern.split('/').collect::<Vec<_>>();
+    let request = request.split('/').collect::<Vec<_>>();
+    if pattern.len() != request.len() {
+        return None;
+    }
+    let mut parameters = BTreeMap::new();
+    for (pattern, value) in pattern.into_iter().zip(request) {
+        if let Some(name) = pattern
+            .strip_prefix('{')
+            .and_then(|value| value.strip_suffix('}'))
+        {
+            if value.is_empty() {
+                return None;
+            }
+            parameters.insert(name.into(), percent_decode(value)?);
+        } else if pattern != value {
+            return None;
+        }
+    }
+    Some(parameters)
+}
+
+fn bind_request_input(
+    graph: &GraphIr,
+    route: &super::ir::GraphNode,
+    body: Value,
+    path: &BTreeMap<String, String>,
+    query: &str,
+) -> Result<Value, String> {
+    let source = route
+        .metadata
+        .get("input_source")
+        .map(String::as_str)
+        .unwrap_or("body");
+    if source == "composite" {
+        return bind_composite_input(graph, route, body, path, query);
+    }
+    if source == "body" {
+        return Ok(body);
+    }
+    let name = route
+        .metadata
+        .get("input_name")
+        .ok_or_else(|| "request_binding_has_no_name".to_string())?;
+    let raw = match source {
+        "path" => path
+            .get(name)
+            .cloned()
+            .ok_or_else(|| format!("missing_path_parameter:{name}"))?,
+        "query" => {
+            query_value(query, name).ok_or_else(|| format!("missing_query_parameter:{name}"))?
+        }
+        _ => return Err(format!("unsupported_request_source:{source}")),
+    };
+    let input_type = route
+        .type_name
+        .as_deref()
+        .and_then(|value| value.split_once("->"))
+        .map(|value| value.0)
+        .ok_or_else(|| "route_has_no_input_type".to_string())?;
+    parse_bound_scalar(input_type, &raw)
+}
+
+fn bind_composite_input(
+    graph: &GraphIr,
+    route: &super::ir::GraphNode,
+    body: Value,
+    path: &BTreeMap<String, String>,
+    query: &str,
+) -> Result<Value, String> {
+    let input_type = route
+        .type_name
+        .as_deref()
+        .and_then(|value| value.split_once("->"))
+        .map(|value| value.0)
+        .ok_or_else(|| "route_has_no_input_type".to_string())?;
+    let entity = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "entity" && node.name == input_type)
+        .ok_or_else(|| format!("composite_input_is_not_entity:{input_type}"))?;
+    let mut bindings = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == route.id)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .filter(|node| node.kind == "request_binding")
+        .collect::<Vec<_>>();
+    bindings.sort_by_key(|binding| {
+        binding
+            .metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    let fields = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == entity.id)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .filter(|node| node.kind == "field")
+        .collect::<Vec<_>>();
+    let mut result = serde_json::Map::new();
+    for binding in bindings {
+        let target = binding.name.as_str();
+        let field = fields
+            .iter()
+            .find(|field| field.name == target)
+            .ok_or_else(|| format!("unknown_composite_field:{target}"))?;
+        let field_type = field.type_name.as_deref().unwrap_or("unit");
+        let optional = field
+            .metadata
+            .get("qualifiers")
+            .is_some_and(|values| values.split(',').any(|value| value == "optional"))
+            || field_type.starts_with("Option<");
+        let source = binding
+            .metadata
+            .get("source")
+            .map(String::as_str)
+            .unwrap_or("body");
+        let name = binding.metadata.get("name").map(String::as_str);
+        let value = match source {
+            "body" if name.is_none() => Some(body.clone()),
+            "body" => body
+                .as_object()
+                .and_then(|object| object.get(name.unwrap_or_default()))
+                .cloned(),
+            "path" => name
+                .and_then(|name| path.get(name))
+                .map(|value| parse_bound_scalar(field_type, value))
+                .transpose()?,
+            "query" => name
+                .and_then(|name| query_value(query, name))
+                .map(|value| parse_bound_scalar(field_type, &value))
+                .transpose()?,
+            _ => return Err(format!("unsupported_request_source:{source}")),
+        };
+        match value {
+            Some(value) => {
+                result.insert(target.into(), value);
+            }
+            None if optional => {}
+            None => return Err(format!("missing_{source}_value:{target}")),
+        }
+    }
+    Ok(Value::Object(result))
+}
+
+fn query_value(query: &str, name: &str) -> Option<String> {
+    query.split('&').find_map(|pair| {
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        (percent_decode(key).as_deref() == Some(name)).then(|| percent_decode(value))?
+    })
+}
+
+fn percent_decode(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut output = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'%' if index + 2 < bytes.len() => {
+                let hex = std::str::from_utf8(&bytes[index + 1..index + 3]).ok()?;
+                output.push(u8::from_str_radix(hex, 16).ok()?);
+                index += 3;
+            }
+            b'%' => return None,
+            b'+' => {
+                output.push(b' ');
+                index += 1;
+            }
+            value => {
+                output.push(value);
+                index += 1;
+            }
+        }
+    }
+    String::from_utf8(output).ok()
+}
+
+fn parse_bound_scalar(type_name: &str, value: &str) -> Result<Value, String> {
+    match type_name {
+        "bool" => value
+            .parse::<bool>()
+            .map(Value::Bool)
+            .map_err(|_| format!("invalid_bool:{value}")),
+        "int" => value
+            .parse::<i64>()
+            .map(|value| json!(value))
+            .map_err(|_| format!("invalid_int:{value}")),
+        "float" | "money" => value
+            .parse::<f64>()
+            .ok()
+            .and_then(serde_json::Number::from_f64)
+            .map(Value::Number)
+            .ok_or_else(|| format!("invalid_number:{value}")),
+        _ => Ok(Value::String(value.into())),
     }
 }
 
@@ -205,7 +430,9 @@ async fn handle(
             &state.graph,
             &mut *runtime,
             method.as_str(),
-            uri.path(),
+            uri.path_and_query()
+                .map(|value| value.as_str())
+                .unwrap_or_else(|| uri.path()),
             input,
             headers
                 .get(axum::http::header::AUTHORIZATION)
@@ -229,8 +456,17 @@ mod tests {
 app HttpDemo
 entity Input
   amount: money required
+entity CompositeInput
+  id: text required
+  term: text required
+  amount: money required
+  verbose: bool optional
 flow Validate Input -> Result<Input>
   require input.amount > 0 else "amount_invalid"
+  return input
+flow EchoText text -> text
+  return input
+flow EchoComposite CompositeInput -> CompositeInput
   return input
 capacity HttpAuth
   op authorize text -> Result<bool> idempotent
@@ -239,6 +475,13 @@ skill DemoBearer provides HttpAuth
   config token: text = "secret"
 api DemoApi
   post /validate Input -> Result<Input> = Validate
+  get /items/{id} text -> text = EchoText from path.id
+  get /search text -> text = EchoText from query.term
+  put /items/{id} CompositeInput -> CompositeInput = EchoComposite
+    bind id = path.id
+    bind term = query.term
+    bind amount = body.amount
+    bind verbose = query.verbose
 api SecureApi
   auth bearer: HttpAuth = DemoBearer
   post /secure Input -> Result<Input> = Validate
@@ -256,6 +499,26 @@ api SecureApi
         assert_eq!(rejected.body["error"], "amount_invalid");
 
         assert_eq!(dispatch(&graph, "get", "/missing", Value::Null).status, 404);
+        let from_path = dispatch(&graph, "get", "/items/hello%20world", Value::Null);
+        assert_eq!(from_path.status, 200);
+        assert_eq!(from_path.body, "hello world");
+        let from_query = dispatch(&graph, "get", "/search?term=AXL%204", Value::Null);
+        assert_eq!(from_query.status, 200);
+        assert_eq!(from_query.body, "AXL 4");
+        let missing_query = dispatch(&graph, "get", "/search", Value::Null);
+        assert_eq!(missing_query.status, 400);
+        assert_eq!(missing_query.body["error"], "missing_query_parameter:term");
+        let composite = dispatch(
+            &graph,
+            "put",
+            "/items/item-1?term=ledger&verbose=true",
+            json!({"amount": 25}),
+        );
+        assert_eq!(composite.status, 200);
+        assert_eq!(
+            composite.body,
+            json!({"id": "item-1", "term": "ledger", "amount": 25, "verbose": true})
+        );
 
         let mut runtime = BuiltinRuntime::new().unwrap();
         let missing = dispatch_with_authorization(

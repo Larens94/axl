@@ -74,6 +74,18 @@ fn documented_invalid_examples_report_stable_codes() {
             include_str!("../../../examples/invalid/http-auth-syntax.axl"),
         ),
         (
+            "AXL-P915",
+            include_str!("../../../examples/invalid/http-auth-syntax.axl"),
+        ),
+        (
+            "AXL-P916",
+            include_str!("../../../examples/invalid/http-auth-syntax.axl"),
+        ),
+        (
+            "AXL-P917",
+            include_str!("../../../examples/invalid/http-auth-syntax.axl"),
+        ),
+        (
             "AXL-H908",
             include_str!("../../../examples/invalid/http-auth.axl"),
         ),
@@ -92,6 +104,26 @@ fn documented_invalid_examples_report_stable_codes() {
         (
             "AXL-H912",
             include_str!("../../../examples/invalid/http-auth.axl"),
+        ),
+        (
+            "AXL-H913",
+            include_str!("../../../examples/invalid/http-request-bindings.axl"),
+        ),
+        (
+            "AXL-H914",
+            include_str!("../../../examples/invalid/http-request-bindings.axl"),
+        ),
+        (
+            "AXL-H915",
+            include_str!("../../../examples/invalid/http-request-bindings.axl"),
+        ),
+        (
+            "AXL-H916",
+            include_str!("../../../examples/invalid/http-request-bindings.axl"),
+        ),
+        (
+            "AXL-H917",
+            include_str!("../../../examples/invalid/http-request-bindings.axl"),
         ),
         (
             "AXL-P314",

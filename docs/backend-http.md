@@ -24,10 +24,35 @@ api SecuredCashflowApi
 
 The selected skill can be replaced by any provider satisfying `HttpAuth`.
 
+The body is the default flow input. Scalar and enum flows can bind a path or
+query value without a handwritten extractor:
+
+```axl
+get /movements/{id} uuid -> Result<Movement> = FindDurableMovement from path.id
+get /movements/find uuid -> Result<Movement> = FindDurableMovement from query.id
+```
+
+The compiler checks placeholder/name alignment and rejects record inputs for a
+single scalar binding. Runtime extraction includes percent decoding and numeric
+or boolean conversion. Exact paths are matched before template paths.
+
+Composite entity inputs join multiple surfaces explicitly:
+
+```axl
+post /accounts/{account}/movement-preview MovementPreviewRequest -> Result<Movement> = PreviewMovement
+  bind account = path.account
+  bind movement = body
+  bind dry_run = query.dry_run
+```
+
+Bindings are checked against entity fields, including duplicates and required
+fields, and survive Graph/Packed IR as discoverable nodes. `body.field` extracts
+one member; `body` assigns the complete JSON body to a nested field.
+
 The compiler verifies:
 
 - supported methods: `get`, `post`, `put`, `patch`, `delete`;
-- absolute exact paths;
+- absolute exact or whole-segment template paths;
 - unique routes locally and across APIs;
 - known input/output types;
 - a declared target flow with exactly the same signature.
@@ -71,7 +96,8 @@ Status mapping:
 
 ## Current boundary
 
-Paths are exact: parameters and query decoding are not implemented. Memory and
+Scalar bindings and composite entity assembly are implemented. Header/cookie
+fields and nested target paths are not yet request sources. Memory and
 unconfigured SQLite remain process-local; configured SQLite paths are durable.
 Transactions and migrations remain data gates. The built-in static bearer
 provider is a demo fixture and its config is visible in the manifest; secret
