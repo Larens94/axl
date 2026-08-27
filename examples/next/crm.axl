@@ -48,6 +48,9 @@ skill DefaultCustomerRow provides CustomerRow
 skill DefaultCustomerCard provides CustomerCard
   native react crm::DefaultCustomerCard
 
+skill CompactCustomerCard provides CustomerCard
+  native react crm::CompactCustomerCard
+
 skill ValidateCustomer provides CustomerPolicy
   native rust crm::validate_customer
 
@@ -80,6 +83,11 @@ blueprint CustomerCRM
   effect db.write
   effect net.listen
   capability crm.customer.manage
+
+instance CompactSalesCRM of CustomerCRM
+  set page_size = 10
+  set density = "compact"
+  use mobile.card = CompactCustomerCard
 
 agent SalesAssistant
   believe crm.pipeline

@@ -116,9 +116,11 @@ pub fn react_slots(graph: &GraphIr) -> String {
             "implementation": implementation,
         }));
     }
+    let instances = open_block_manifest(graph)["instances"].clone();
     format!(
-        "// Generated from AXL Semantic Graph IR. Do not edit.\n\nexport const axlSlots = {} as const;\n",
-        serde_json::to_string_pretty(&slots).expect("slot registry is JSON serializable")
+        "// Generated from AXL Semantic Graph IR. Do not edit.\n\nexport const axlSlots = {} as const;\n\nexport const axlInstances = {} as const;\n",
+        serde_json::to_string_pretty(&slots).expect("slot registry is JSON serializable"),
+        serde_json::to_string_pretty(&instances).expect("instance registry is JSON serializable")
     )
 }
 
@@ -169,11 +171,50 @@ pub fn open_block_manifest(graph: &GraphIr) -> serde_json::Value {
             })
         })
         .collect::<Vec<_>>();
+    let instances = nodes(graph, "instance")
+        .into_iter()
+        .map(|instance| {
+            let settings = children(graph, &instance.id, "setting")
+                .into_iter()
+                .map(|setting| {
+                    json!({
+                        "name": setting.name,
+                        "type": setting.type_name,
+                        "value": setting.metadata.get("value"),
+                    })
+                })
+                .collect::<Vec<_>>();
+            let overrides = children(graph, &instance.id, "override")
+                .into_iter()
+                .map(|surface| {
+                    let provider = provider_for(graph, &surface.id).and_then(|id| {
+                        graph
+                            .nodes
+                            .iter()
+                            .find(|node| node.id == id)
+                            .map(|node| node.name.clone())
+                    });
+                    json!({
+                        "name": surface.name,
+                        "type": surface.type_name,
+                        "provider": provider,
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "name": instance.name,
+                "blueprint": instance.type_name,
+                "settings": settings,
+                "overrides": overrides,
+            })
+        })
+        .collect::<Vec<_>>();
     json!({
         "schema": graph.schema,
         "app": graph.app,
-        "protocol": "axl-open-block/1",
+        "protocol": "axl-open-block/2",
         "blocks": blocks,
+        "instances": instances,
     })
 }
 
@@ -394,6 +435,8 @@ skill SqliteCustomers provides CustomerStore
   native rust crm::sqlite
 skill DefaultRow provides CustomerRow
   native react crm::DefaultRow
+skill CompactRow provides CustomerRow
+  native react crm::CompactRow
 blueprint CRM
   param page_size: int = 25
   state selected: Option<Customer>
@@ -402,6 +445,9 @@ blueprint CRM
   in store: CustomerStore
   slot table.row: CustomerRow = DefaultRow
   use store = SqliteCustomers
+instance CompactCRM of CRM
+  set page_size = 10
+  use table.row = CompactRow
 agent Sales
   goal qualify
   plan automatic
@@ -417,9 +463,11 @@ agent Sales
         assert!(rust.contains("pub trait CustomerStore"));
         assert!(rust.contains("Result<Customer, String>"));
         assert!(react.contains("crm::DefaultRow"));
+        assert!(react.contains("axlInstances"));
+        assert!(react.contains("CompactRow"));
         assert!(sql.contains("CREATE TABLE IF NOT EXISTS customers"));
         assert!(sql.contains("email TEXT NOT NULL UNIQUE"));
-        assert_eq!(blocks["protocol"], "axl-open-block/1");
+        assert_eq!(blocks["protocol"], "axl-open-block/2");
         assert_eq!(blocks["blocks"][0]["name"], "CRM");
         assert_eq!(blocks["blocks"][0]["open_surface_count"], 3);
         assert!(
@@ -428,6 +476,13 @@ agent Sales
                 .is_some_and(|surfaces| surfaces.iter().any(|surface| {
                     surface["kind"] == "parameter" && surface["default"] == "25"
                 }))
+        );
+        assert_eq!(blocks["instances"][0]["name"], "CompactCRM");
+        assert_eq!(blocks["instances"][0]["blueprint"], "CRM");
+        assert_eq!(blocks["instances"][0]["settings"][0]["value"], "10");
+        assert_eq!(
+            blocks["instances"][0]["overrides"][0]["provider"],
+            "CompactRow"
         );
     }
 }

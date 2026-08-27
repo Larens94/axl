@@ -1,6 +1,6 @@
 use axl_compiler::compile_source;
 
-const EXAMPLES: [(&str, &str); 7] = [
+const EXAMPLES: [(&str, &str); 8] = [
     (
         "store",
         include_str!("../../../examples/blocks/01-store.axl"),
@@ -17,6 +17,10 @@ const EXAMPLES: [(&str, &str); 7] = [
     (
         "open-dataview",
         include_str!("../../../examples/blocks/05-open-dataview.axl"),
+    ),
+    (
+        "instance-override",
+        include_str!("../../../examples/blocks/06-instance-override.axl"),
     ),
     (
         "software-foundation",
@@ -48,6 +52,18 @@ fn documented_invalid_examples_report_stable_codes() {
         (
             "AXL-V403",
             include_str!("../../../examples/invalid/wrong-parameter.axl"),
+        ),
+        (
+            "AXL-I605",
+            include_str!("../../../examples/invalid/instance-overrides.axl"),
+        ),
+        (
+            "AXL-I607",
+            include_str!("../../../examples/invalid/instance-overrides.axl"),
+        ),
+        (
+            "AXL-P405",
+            include_str!("../../../examples/invalid/instance-overrides.axl"),
         ),
     ];
 

@@ -71,6 +71,7 @@
             "operation",
             "skill",
             "blueprint",
+            "instance",
             "input",
             "output",
             "slot",
@@ -81,6 +82,8 @@
             "action",
             "error",
             "policy",
+            "setting",
+            "override",
             "agent",
             "belief",
             "goal",
@@ -116,7 +119,7 @@
           "type": "string"
         },
         "kind": {
-          "enum": ["owns", "provides", "bind", "default"]
+          "enum": ["owns", "provides", "bind", "default", "instantiates"]
         },
         "interface": {
           "type": "string"

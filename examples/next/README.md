@@ -1,8 +1,8 @@
 # AXL 4 experiment
 
-`crm.axl` is the first executable example of the semantic blueprint language.
+`crm.axl` is the primary compiler-exercised example of the semantic blueprint language.
 It validates entities, capacities, skills, open ports, UI slots, lifecycle hooks,
-contracts, effects, capabilities and an agent model.
+typed instances, contracts, effects, capabilities and an agent model.
 
 Run from the repository root:
 

@@ -139,6 +139,28 @@ Every blueprint must expose at least one customization surface among `in`,
 diagnostic `AXL-O401`. This rule is the first executable version of the AXL Open
 Block Protocol.
 
+### Blueprint instance
+
+An instance customizes an existing blueprint without modifying its definition
+or generated target code:
+
+```axl
+instance CompactCustomerList of CustomerList
+  set page_size = 10
+  set density = "compact"
+  use table.row = CompactCustomerRow
+```
+
+`set` accepts only a declared `param` and validates the value against that
+parameter's scalar type. `use` accepts only `in`, `slot`, `hook`, `action` or
+`policy`, and the provider must satisfy the same capacity as the base surface.
+Duplicate settings and overrides are rejected.
+
+Instances become `instance`, `setting` and `override` nodes. An `instantiates`
+edge links the instance to its blueprint, while provider overrides use normal
+typed `bind` edges. Packed IR round-trips these nodes and edges without losing
+the customization.
+
 ### Agent
 
 ```axl
@@ -258,7 +280,7 @@ targets/
 ```
 
 The current target adapters generate Rust data/capacity contracts, a React slot
-registry, SQL entity DDL, an agent manifest and an `axl-open-block/1` manifest
+registry, SQL entity DDL, an agent manifest and an `axl-open-block/2` manifest
 that lists every blueprint surface. They deliberately stop before claiming to
 generate a complete production application.
 
@@ -283,7 +305,7 @@ generate a complete production application.
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
 - blueprint package registry;
-- blueprint instantiation and overlay syntax;
+- package imports and cross-package blueprint overlays;
 - runtime behavior for state, events, actions, errors and policies;
 - effect budgets and capability policy enforcement;
 - source maps from generated target code;
@@ -300,6 +322,7 @@ open-port type model, agent diagnostics and deterministic IR pipeline.
 - `examples/blocks/03-hook.axl` — typed lifecycle hook and recorded contracts.
 - `examples/blocks/04-agent.axl` — belief/goal/plan graph model.
 - `examples/blocks/05-open-dataview.axl` — all implemented open-block surfaces.
+- `examples/blocks/06-instance-override.axl` — typed parameter and provider overrides.
 - `examples/catalog/software-foundation.axl` — fourteen primary open block contracts.
 - `examples/next/crm.axl` — composed CRM graph.
 - `docs/blocks.md` — construction guide and current limitations.

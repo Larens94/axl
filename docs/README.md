@@ -23,6 +23,7 @@ Every `.axl` file listed below is part of the Rust test suite:
 - [Lifecycle hook](../examples/blocks/03-hook.axl)
 - [Agent model](../examples/blocks/04-agent.axl)
 - [Complete open DataView](../examples/blocks/05-open-dataview.axl)
+- [Typed instance override](../examples/blocks/06-instance-override.axl)
 - [Software foundation catalog](../examples/catalog/software-foundation.axl)
 - [Composed CRM graph](../examples/next/crm.axl)
 

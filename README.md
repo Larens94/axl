@@ -41,7 +41,7 @@ target contracts.
 - `examples/next/crm.axl` — semantic CRM experiment.
 - `runtime/axl-compiler/src/next` — parser, analyzer, IR and target adapters.
 - `schema/axl-ir-4.0.schema.json` — Graph IR JSON schema.
-- `schema/axl-open-block-1.schema.json` — generated block manifest schema.
+- `schema/axl-open-block-2.schema.json` — block and instance manifest schema.
 
 ## Build an open block
 
@@ -62,6 +62,9 @@ This exact example is compiled from `examples/blocks/02-ui-slot.axl`. See the
 The complete protocol example is `examples/blocks/05-open-dataview.axl`. It
 uses typed parameters, state, events, actions, errors, policies, slots and hooks
 without modifying generated target files.
+
+`examples/blocks/06-instance-override.axl` derives a configured instance with
+`set` and `use`; the original blueprint and generated Rust/React remain untouched.
 
 The foundation catalog adds fourteen compiler-verified contracts covering data,
 commands, API, UI, events, jobs, observability, agent tools and scenarios.

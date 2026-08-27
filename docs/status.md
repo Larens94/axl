@@ -6,7 +6,7 @@ This table is the short source of truth for the current experiment.
 |---|---|---|
 | Source | canonical multiline AXL, comments, declarations | general functions and control flow |
 | Types | built-ins, entities, capacities, recursive generics | tuples and record operation parameters |
-| Blocks | enforced open protocol plus fourteen foundation blueprint contracts | instantiation, overlays and package registry |
+| Blocks | open protocol, typed instances/overrides and fourteen foundation contracts | package imports, cross-package overlays and registry |
 | Contracts | `requires`, `ensures`, `invariant` stored in IR | expression type checking and execution |
 | Safety | diagnostics, repair candidates, safety levels | automatic application of risky repairs |
 | Policies | effects and capabilities validated and stored | runtime budgets and enforcement |

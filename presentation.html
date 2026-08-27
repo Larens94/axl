@@ -192,9 +192,9 @@ blueprint CustomerData
 
     <section class="slide" data-title="UI">
       <div class="content">
-        <div class="eyebrow">Costruzione verificata · UI</div>
+        <div class="eyebrow">Costruzione verificata · istanza UI</div>
         <div class="split">
-          <div><h2>La UI è una porta, non un preset chiuso.</h2><p class="lead">Una skill compatibile può sostituire il renderer predefinito senza modificare il blueprint.</p></div>
+          <div><h2>Personalizzare senza toccare React.</h2><p class="lead">Un'istanza cambia parametri e seleziona una skill compatibile senza modificare il blueprint.</p></div>
           <pre><code>capacity CustomerRow
   op render Customer -> UI
 
@@ -202,7 +202,12 @@ skill DefaultCustomerRow provides CustomerRow
   native react crm::DefaultCustomerRow
 
 blueprint CustomerList
-  slot table.row: CustomerRow = DefaultCustomerRow</code></pre>
+  param page_size: int = 25
+  slot table.row: CustomerRow = DefaultCustomerRow
+
+instance CompactCustomerList of CustomerList
+  set page_size = 10
+  use table.row = CompactCustomerRow</code></pre>
         </div>
       </div>
     </section>
@@ -244,7 +249,7 @@ blueprint CustomerList
         <h2>È un linguaggio sperimentale funzionante. Non ancora un generatore full-stack.</h2>
         <div class="grid two">
           <article class="card"><h3 class="accent">Funziona oggi</h3><p>Protocollo aperto, parametri, stato, eventi, azioni, errori, policy, Graph IR, diagnostica e adapter.</p></article>
-          <article class="card"><h3 class="violet">Prossimo gate</h3><p>Istanze e overlay AXL, poi una vertical slice Rust, SQL e React eseguibile.</p></article>
+          <article class="card"><h3 class="violet">Prossimo gate</h3><p>Package AXL e poi una vertical slice Rust, SQL e React eseguibile.</p></article>
         </div>
         <div class="callout">`if`, `else`, cicli, esecuzione dei contratti e runtime degli agenti non sono ancora sintassi o comportamento AXL implementati.</div>
       </div>
@@ -256,8 +261,8 @@ blueprint CustomerList
         <h2>Gli esempi della presentazione sono test del compilatore.</h2>
         <div class="grid">
           <article class="card"><div class="metric">14</div><div class="metric-label">foundation block aperti</div></article>
-          <article class="card"><div class="metric">7</div><div class="metric-label">programmi validi nel round-trip</div></article>
-          <article class="card"><div class="metric">2</div><div class="metric-label">casi negativi con codice stabile</div></article>
+          <article class="card"><div class="metric">8</div><div class="metric-label">programmi validi nel round-trip</div></article>
+          <article class="card"><div class="metric">5</div><div class="metric-label">diagnostiche negative verificate</div></article>
         </div>
         <p class="lead">Apri <a href="docs/index.html">docs/index.html</a> oppure esegui <code>cargo test --workspace</code>.</p>
       </div>

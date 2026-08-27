@@ -1,0 +1,27 @@
+// Expected diagnostics: AXL-I605, AXL-I607 and AXL-P405.
+axl 4
+app InvalidInstance
+
+entity Customer
+  id: uuid key
+
+capacity CustomerRow
+  op render Customer -> UI
+
+capacity AccessPolicy
+  op authorize text -> Result<bool>
+
+skill DefaultCustomerRow provides CustomerRow
+  native react crm::DefaultCustomerRow
+
+skill RolePolicy provides AccessPolicy
+  native rust crm::role_policy
+
+blueprint CustomerList
+  param page_size: int = 25
+  slot table.row: CustomerRow = DefaultCustomerRow
+
+instance BrokenCustomerList of CustomerList
+  set missing = 10
+  use page_size = DefaultCustomerRow
+  use table.row = RolePolicy

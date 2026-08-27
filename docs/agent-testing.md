@@ -12,13 +12,13 @@ cargo fmt --all -- --check
 cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 jq empty schema/axl-ir-4.0.schema.json
-jq empty schema/axl-open-block-1.schema.json
+jq empty schema/axl-open-block-2.schema.json
 ```
 
-The integration suite compiles seven valid documented programs, round-trips each
-through Packed Graph IR and verifies two intentionally invalid programs.
+The integration suite compiles eight valid documented programs, round-trips each
+through Packed Graph IR and verifies three intentionally invalid programs.
 
-The seventh program is `examples/catalog/software-foundation.axl`: it contains
+The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
 `SoftwareFoundation`.
 
@@ -44,11 +44,26 @@ jq '.protocol, .blocks[0].open_surface_count, .blocks[0].surfaces' \
   /tmp/axl-open-block-test/targets/blocks/open-blocks.json
 ```
 
-Expected protocol: `axl-open-block/1`. The `CustomerDataView` block currently
+Expected protocol: `axl-open-block/2`. The `CustomerDataView` block currently
 contains twelve typed surfaces, nine of which are direct customization surfaces.
 The other three are observable `state`, `event` and `error` surfaces.
 
-## 4. Verify closed-block rejection
+## 4. Verify a typed instance override
+
+```sh
+cargo run -p axl-compiler -- \
+  check examples/blocks/06-instance-override.axl --json
+
+cargo run -p axl-compiler -- \
+  blocks examples/blocks/06-instance-override.axl \
+  | jq '.instances[0]'
+```
+
+The resolved manifest entry must name blueprint `CustomerList`, contain two
+settings (`page_size`, `density`) and bind `table.row` to
+`CompactCustomerRow`.
+
+## 5. Verify invalid programs
 
 These commands are expected to fail:
 
@@ -58,12 +73,15 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   check examples/invalid/wrong-parameter.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/instance-overrides.axl --json
 ```
 
 The first diagnostic set must include `AXL-O401`; the second must include
-`AXL-V403`.
+`AXL-V403`; the third must include `AXL-I605`, `AXL-I607` and `AXL-P405`.
 
-## 5. Verify canonical formatting and transport
+## 6. Verify canonical formatting and transport
 
 ```sh
 cargo run -p axl-compiler -- \
@@ -82,6 +100,7 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - compatible providers are checked for input, action, policy, slot and hook;
 - closed blueprints and invalid scalar defaults are rejected;
 - the open surface is machine-discoverable through a generated manifest;
+- instance settings and provider overrides survive the Packed IR round-trip;
 - documentation examples remain coupled to compiler tests.
 
 It does not prove runtime UI rendering or Rust execution. Generated target files

@@ -31,7 +31,7 @@ cargo run -p axl-compiler -- unpack build/axl4/app.packed.axl
 
 `check` parses and semantically validates a program. `fmt` prints canonical
 multiline source. `ir` and `pack` expose the two machine representations.
-`blocks` prints the `axl-open-block/1` manifest without writing files. `unpack`
+`blocks` prints the `axl-open-block/2` manifest without writing files. `unpack`
 reconstructs JSON Graph IR. `experiment` writes all representations and target
 contracts.
 
@@ -51,11 +51,12 @@ build/axl4/
     agents/agents.json
 ```
 
-`blocks/open-blocks.json` uses protocol identifier `axl-open-block/1` and exposes
-the typed surface of every blueprint to agents and tools. These target files are
-contracts and registries. They are not a deployable CRM.
+`blocks/open-blocks.json` uses protocol identifier `axl-open-block/2` and exposes
+the typed surface of every blueprint plus the settings and provider overrides
+of every instance. These target files are contracts and registries. They are not
+a deployable CRM.
 
-Its JSON shape is documented by `schema/axl-open-block-1.schema.json`.
+Its JSON shape is documented by `schema/axl-open-block-2.schema.json`.
 
 ## Verification
 

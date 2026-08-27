@@ -307,7 +307,7 @@ fn reconstruct_id(
     match parent {
         None if matches!(
             kind,
-            "app" | "entity" | "capacity" | "skill" | "blueprint" | "agent"
+            "app" | "entity" | "capacity" | "skill" | "blueprint" | "instance" | "agent"
         ) =>
         {
             Ok(format!("{kind}.{name}"))
@@ -333,6 +333,8 @@ fn reconstruct_id(
                     | "action"
                     | "error"
                     | "policy"
+                    | "setting"
+                    | "override"
             ) =>
         {
             Ok(format!("{parent}.{kind}.{name}"))
@@ -367,6 +369,9 @@ fn node_kind_code(kind: &str) -> &str {
         "action" => "18",
         "error" => "19",
         "policy" => "20",
+        "instance" => "21",
+        "setting" => "22",
+        "override" => "23",
         other => other,
     }
 }
@@ -394,6 +399,9 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "18" => "action",
         "19" => "error",
         "20" => "policy",
+        "21" => "instance",
+        "22" => "setting",
+        "23" => "override",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())
@@ -405,6 +413,7 @@ fn edge_kind_code(kind: &str) -> &str {
         "provides" => "1",
         "bind" => "2",
         "default" => "3",
+        "instantiates" => "4",
         other => other,
     }
 }
@@ -415,6 +424,7 @@ fn edge_kind_from_code(code: &str) -> Result<String, PackedError> {
         "1" => "provides",
         "2" => "bind",
         "3" => "default",
+        "4" => "instantiates",
         _ => return Err(PackedError(format!("unknown edge kind code '{code}'"))),
     }
     .into())

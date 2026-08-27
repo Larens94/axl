@@ -73,10 +73,7 @@ pub fn format(program: &Program) -> String {
                     instance.name, instance.blueprint
                 ));
                 for setting in &instance.settings {
-                    output.push(format!(
-                        "  set {} = {}",
-                        setting.parameter, setting.value
-                    ));
+                    output.push(format!("  set {} = {}", setting.parameter, setting.value));
                 }
                 for binding in &instance.bindings {
                     output.push(format!("  use {} = {}", binding.port, binding.provider));

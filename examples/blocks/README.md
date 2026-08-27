@@ -8,6 +8,7 @@ They demonstrate only syntax and semantics implemented by the AXL 4 experiment.
 - `03-hook.axl` — a replaceable lifecycle hook with recorded contracts.
 - `04-agent.axl` — the current belief/goal/plan agent model.
 - `05-open-dataview.axl` — the complete open-block surface protocol.
+- `06-instance-override.axl` — parameter and provider overrides in pure AXL.
 - `../next/crm.axl` — all the building blocks composed into one CRM graph.
 - `../catalog/software-foundation.axl` — fourteen primary open blueprint contracts.
 

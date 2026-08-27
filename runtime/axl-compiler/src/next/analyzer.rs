@@ -43,6 +43,9 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
             Declaration::Blueprint(blueprint) => {
                 check_blueprint(blueprint, &declarations, &mut diagnostics)
             }
+            Declaration::Instance(instance) => {
+                check_instance(instance, &declarations, &mut diagnostics)
+            }
             Declaration::Agent(agent) => check_agent(agent, &mut diagnostics),
         }
     }
@@ -413,6 +416,189 @@ fn check_parameter_default(port: &Port, value: &str, diagnostics: &mut Vec<Diagn
     }
 }
 
+fn check_instance(
+    instance: &Instance,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let blueprint = match declarations.get(instance.blueprint.as_str()) {
+        Some(Declaration::Blueprint(blueprint)) => blueprint,
+        Some(other) => {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-I601",
+                    "instances",
+                    format!("instance '{}' requires a blueprint base", instance.name),
+                    instance.span.clone(),
+                )
+                .expected("blueprint", declaration_kind(other)),
+            );
+            return;
+        }
+        None => {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-I602",
+                    "instances",
+                    format!(
+                        "instance '{}' references unknown blueprint '{}'",
+                        instance.name, instance.blueprint
+                    ),
+                    instance.span.clone(),
+                )
+                .expected("declared blueprint", &instance.blueprint)
+                .repair(
+                    FixSafety::Risky,
+                    Repair {
+                        kind: "rename".into(),
+                        target: instance.blueprint.clone(),
+                        replacement: None,
+                        candidates: declarations
+                            .iter()
+                            .filter_map(|(name, declaration)| {
+                                matches!(declaration, Declaration::Blueprint(_))
+                                    .then_some((*name).to_string())
+                            })
+                            .collect(),
+                    },
+                ),
+            );
+            return;
+        }
+    };
+
+    let surfaces = blueprint
+        .ports
+        .iter()
+        .map(|port| (port.name.as_str(), port))
+        .collect::<BTreeMap<_, _>>();
+    let parameter_names = blueprint
+        .ports
+        .iter()
+        .filter(|port| matches!(port.kind, PortKind::Parameter))
+        .map(|port| port.name.clone())
+        .collect::<Vec<_>>();
+    let provider_names = blueprint
+        .ports
+        .iter()
+        .filter(|port| port.kind.accepts_provider())
+        .map(|port| port.name.clone())
+        .collect::<Vec<_>>();
+
+    let mut settings = BTreeSet::new();
+    for setting in &instance.settings {
+        if !settings.insert(setting.parameter.as_str()) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-I603",
+                "instances",
+                format!(
+                    "instance '{}.{}' is set more than once",
+                    instance.name, setting.parameter
+                ),
+                setting.span.clone(),
+            ));
+        }
+        match surfaces.get(setting.parameter.as_str()) {
+            Some(port) if matches!(port.kind, PortKind::Parameter) => {
+                check_parameter_default(port, &setting.value, diagnostics);
+            }
+            Some(port) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-I604",
+                    "instances",
+                    format!(
+                        "{} surface '{}.{}' cannot be set as a parameter",
+                        port.kind.keyword(),
+                        instance.name,
+                        setting.parameter
+                    ),
+                    setting.span.clone(),
+                )
+                .expected("parameter surface", port.kind.keyword()),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-I605",
+                    "instances",
+                    format!(
+                        "instance '{}' has no parameter '{}'",
+                        instance.name, setting.parameter
+                    ),
+                    setting.span.clone(),
+                )
+                .repair(
+                    FixSafety::Risky,
+                    Repair {
+                        kind: "rename".into(),
+                        target: setting.parameter.clone(),
+                        replacement: None,
+                        candidates: parameter_names.clone(),
+                    },
+                ),
+            ),
+        }
+    }
+
+    let mut bindings = BTreeSet::new();
+    for binding in &instance.bindings {
+        if !bindings.insert(binding.port.as_str()) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-I606",
+                "instances",
+                format!(
+                    "instance override '{}.{}' is connected more than once",
+                    instance.name, binding.port
+                ),
+                binding.span.clone(),
+            ));
+        }
+        match surfaces.get(binding.port.as_str()) {
+            Some(port) if port.kind.accepts_provider() => check_provider(
+                blueprint,
+                port,
+                &binding.provider,
+                &binding.span,
+                declarations,
+                diagnostics,
+            ),
+            Some(port) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-I607",
+                    "instances",
+                    format!(
+                        "{} surface '{}.{}' cannot accept a provider override",
+                        port.kind.keyword(),
+                        instance.name,
+                        binding.port
+                    ),
+                    binding.span.clone(),
+                )
+                .expected("provider surface", port.kind.keyword()),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-I608",
+                    "instances",
+                    format!(
+                        "instance '{}' has no provider surface '{}'",
+                        instance.name, binding.port
+                    ),
+                    binding.span.clone(),
+                )
+                .repair(
+                    FixSafety::Risky,
+                    Repair {
+                        kind: "rename".into(),
+                        target: binding.port.clone(),
+                        replacement: None,
+                        candidates: provider_names.clone(),
+                    },
+                ),
+            ),
+        }
+    }
+}
+
 fn parameter_value_hint(type_name: &str) -> &'static str {
     match type_name {
         "bool" => "true or false",
@@ -647,6 +833,7 @@ fn declaration_kind(declaration: &Declaration) -> &'static str {
         Declaration::Capacity(_) => "capacity",
         Declaration::Skill(_) => "skill",
         Declaration::Blueprint(_) => "blueprint",
+        Declaration::Instance(_) => "instance",
         Declaration::Agent(_) => "agent",
     }
 }
@@ -675,6 +862,7 @@ fn lower(program: &Program) -> GraphIr {
             Declaration::Capacity(capacity) => lower_capacity(capacity, &mut graph),
             Declaration::Skill(skill) => lower_skill(skill, &mut graph),
             Declaration::Blueprint(blueprint) => lower_blueprint(blueprint, &mut graph),
+            Declaration::Instance(instance) => lower_instance(instance, program, &mut graph),
             Declaration::Agent(agent) => lower_agent(agent, &mut graph),
         }
     }
@@ -810,6 +998,72 @@ fn lower_agent(agent: &Agent, graph: &mut GraphIr) {
     }
     append_grants(&agent_id, &agent.effects, &mut graph.effects);
     append_grants(&agent_id, &agent.capabilities, &mut graph.capabilities);
+}
+
+fn lower_instance(instance: &Instance, program: &Program, graph: &mut GraphIr) {
+    let instance_id = format!("instance.{}", instance.name);
+    let mut instance_node = node(&instance_id, "instance", &instance.name);
+    instance_node.type_name = Some(instance.blueprint.clone());
+    graph.nodes.push(instance_node);
+    graph.edges.push(edge(
+        &instance_id,
+        &format!("blueprint.{}", instance.blueprint),
+        "instantiates",
+        Some(&instance.blueprint),
+    ));
+
+    let blueprint = program
+        .declarations
+        .iter()
+        .find_map(|declaration| match declaration {
+            Declaration::Blueprint(blueprint) if blueprint.name == instance.blueprint => {
+                Some(blueprint)
+            }
+            _ => None,
+        });
+    let Some(blueprint) = blueprint else {
+        return;
+    };
+
+    for setting in &instance.settings {
+        let Some(port) = blueprint
+            .ports
+            .iter()
+            .find(|port| port.name == setting.parameter)
+        else {
+            continue;
+        };
+        let id = format!("{instance_id}.setting.{}", setting.parameter);
+        let mut value = node(&id, "setting", &setting.parameter);
+        value.type_name = Some(port.type_name.clone());
+        value.metadata.insert("value".into(), setting.value.clone());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&instance_id, &id, "owns", None));
+    }
+
+    for binding in &instance.bindings {
+        let Some(port) = blueprint
+            .ports
+            .iter()
+            .find(|port| port.name == binding.port)
+        else {
+            continue;
+        };
+        let id = format!("{instance_id}.override.{}", binding.port);
+        let mut value = node(&id, "override", &binding.port);
+        value.type_name = Some(port.type_name.clone());
+        value
+            .metadata
+            .insert("provider".into(), binding.provider.clone());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&instance_id, &id, "owns", None));
+        graph.edges.push(edge(
+            &id,
+            &provider_id(&binding.provider),
+            "bind",
+            Some(&port.type_name),
+        ));
+    }
 }
 
 fn node(id: &str, kind: &str, name: &str) -> GraphNode {
