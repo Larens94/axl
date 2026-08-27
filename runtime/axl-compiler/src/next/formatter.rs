@@ -108,7 +108,18 @@ pub fn format(program: &Program) -> String {
                     match statement {
                         FlowStatement::Let {
                             name, expression, ..
-                        } => output.push(format!("  let {name} = {expression}")),
+                        } => {
+                            if let Some(items) = list_literal_items(expression) {
+                                output.push(format!("  let {name} = ["));
+                                for (index, item) in items.iter().enumerate() {
+                                    let comma = if index + 1 == items.len() { "" } else { "," };
+                                    output.push(format!("    {item}{comma}"));
+                                }
+                                output.push("  ]".into());
+                            } else {
+                                output.push(format!("  let {name} = {expression}"));
+                            }
+                        }
                         FlowStatement::Require {
                             expression,
                             message,
@@ -239,6 +250,24 @@ pub fn format(program: &Program) -> String {
                             ));
                             output.push(format!("    by = {key}"));
                         }
+                        FlowStatement::Parallel {
+                            name,
+                            type_name,
+                            collection,
+                            item,
+                            flow,
+                            argument,
+                            propagate,
+                            ..
+                        } => {
+                            output.push(format!(
+                                "  parallel {name}: {type_name} = {collection} as {item}"
+                            ));
+                            output.push(format!(
+                                "    run = {flow}({argument}){}",
+                                if *propagate { "?" } else { "" }
+                            ));
+                        }
                         FlowStatement::Return { expression, .. } => {
                             output.push(format!("  return {expression}"));
                         }
@@ -266,6 +295,51 @@ pub fn format(program: &Program) -> String {
     }
     output.push(String::new());
     output.join("\n")
+}
+
+fn list_literal_items(source: &str) -> Option<Vec<&str>> {
+    let source = source.trim();
+    let inner = source.strip_prefix('[')?.strip_suffix(']')?.trim();
+    if inner.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut items = Vec::new();
+    let mut start = 0usize;
+    let mut depth = 0usize;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, character) in inner.char_indices() {
+        if quoted {
+            if escaped {
+                escaped = false;
+            } else if character == '\\' {
+                escaped = true;
+            } else if character == '"' {
+                quoted = false;
+            }
+            continue;
+        }
+        match character {
+            '"' => quoted = true,
+            '[' | '(' => depth += 1,
+            ']' | ')' => depth = depth.checked_sub(1)?,
+            ',' if depth == 0 => {
+                let item = inner[start..index].trim();
+                if item.is_empty() {
+                    return None;
+                }
+                items.push(item);
+                start = index + 1;
+            }
+            _ => {}
+        }
+    }
+    let item = inner[start..].trim();
+    if quoted || depth != 0 || item.is_empty() {
+        return None;
+    }
+    items.push(item);
+    Some(items)
 }
 
 fn append_values(output: &mut Vec<String>, keyword: &str, values: &[String]) {

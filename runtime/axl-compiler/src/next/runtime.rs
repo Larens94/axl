@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::sync::{Arc, Mutex};
 
 use rusqlite::{Connection, params};
 use serde_json::{Map, Value, json};
@@ -27,13 +28,18 @@ pub struct ProviderCall<'a> {
     pub input: Value,
 }
 
-pub trait ProviderRuntime {
+pub trait ProviderRuntime: Send {
     fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String>;
+
+    fn fork(&self) -> Result<Box<dyn ProviderRuntime>, String> {
+        Err("provider runtime does not support concurrent forks".into())
+    }
 }
 
+#[derive(Clone)]
 pub struct BuiltinRuntime {
-    memory: BTreeMap<String, BTreeMap<String, Value>>,
-    sqlite: Connection,
+    memory: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
+    sqlite: Arc<Mutex<Connection>>,
 }
 
 impl BuiltinRuntime {
@@ -50,8 +56,8 @@ impl BuiltinRuntime {
             )
             .map_err(|error| RuntimeError(format!("cannot initialize SQLite schema: {error}")))?;
         Ok(Self {
-            memory: BTreeMap::new(),
-            sqlite,
+            memory: Arc::new(Mutex::new(BTreeMap::new())),
+            sqlite: Arc::new(Mutex::new(sqlite)),
         })
     }
 }
@@ -59,12 +65,28 @@ impl BuiltinRuntime {
 impl ProviderRuntime for BuiltinRuntime {
     fn invoke(&mut self, call: ProviderCall<'_>) -> Result<Value, String> {
         match call.implementation {
-            "rust::axl::store::memory" => memory_store_call(&mut self.memory, call),
-            "rust::axl::store::sqlite" => sqlite_store_call(&self.sqlite, call),
+            "rust::axl::store::memory" => {
+                let mut memory = self
+                    .memory
+                    .lock()
+                    .map_err(|_| "memory provider state is unavailable".to_string())?;
+                memory_store_call(&mut memory, call)
+            }
+            "rust::axl::store::sqlite" => {
+                let sqlite = self
+                    .sqlite
+                    .lock()
+                    .map_err(|_| "SQLite provider state is unavailable".to_string())?;
+                sqlite_store_call(&sqlite, call)
+            }
             implementation => Err(format!(
                 "unsupported provider implementation '{implementation}'"
             )),
         }
+    }
+
+    fn fork(&self) -> Result<Box<dyn ProviderRuntime>, String> {
+        Ok(Box::new(self.clone()))
     }
 }
 
@@ -458,6 +480,96 @@ fn evaluate_flow_inner(
                 validate_value(graph, type_name, &grouped, "group result")?;
                 values.insert(statement.name.clone(), grouped);
             }
+            "parallel" => {
+                let type_name = statement.type_name.as_deref().ok_or_else(|| {
+                    RuntimeError(format!("{} has no parallel result type", statement.id))
+                })?;
+                let collection = evaluated_collection(statement, &values)?;
+                let item_name = metadata(statement, "item")?;
+                let target_name = metadata(statement, "flow")?;
+                let argument_expression = expression::parse(metadata(statement, "argument")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let target = graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.kind == "flow" && node.name == target_name)
+                    .ok_or_else(|| RuntimeError(format!("unknown flow '{target_name}'")))?;
+                let target_output = target
+                    .type_name
+                    .as_deref()
+                    .and_then(|value| value.split_once("->"))
+                    .map(|(_, output)| output)
+                    .ok_or_else(|| {
+                        RuntimeError(format!("flow '{target_name}' has no signature"))
+                    })?;
+                let mut tasks = Vec::with_capacity(collection.len());
+                for item in collection {
+                    let mut scope = values.clone();
+                    scope.insert(item_name.into(), item);
+                    let argument = expression::evaluate(&argument_expression, &scope)
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                    let worker = runtime
+                        .fork()
+                        .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                    tasks.push((argument, worker));
+                }
+                let results = std::thread::scope(|thread_scope| {
+                    let handles = tasks
+                        .into_iter()
+                        .map(|(argument, mut worker)| {
+                            thread_scope.spawn(move || {
+                                evaluate_flow_inner(
+                                    graph,
+                                    target_name,
+                                    argument,
+                                    &mut *worker,
+                                    depth + 1,
+                                )
+                            })
+                        })
+                        .collect::<Vec<_>>();
+                    handles
+                        .into_iter()
+                        .map(|handle| {
+                            handle.join().map_err(|_| {
+                                RuntimeError(format!("{} parallel worker panicked", statement.id))
+                            })?
+                        })
+                        .collect::<Result<Vec<_>, _>>()
+                })?;
+                let propagate = metadata(statement, "propagate")? == "true";
+                let mut output = Vec::with_capacity(results.len());
+                for result in results {
+                    match (generic(target_output, "Result"), propagate) {
+                        (Some(_), true) => {
+                            let object = result.as_object().ok_or_else(|| {
+                                RuntimeError(format!(
+                                    "parallel flow '{target_name}' returned invalid Result"
+                                ))
+                            })?;
+                            if let Some(value) = object.get("ok") {
+                                output.push(value.clone());
+                            } else if let Some(message) = object.get("error") {
+                                return Ok(json!({ "error": message }));
+                            } else {
+                                return Err(RuntimeError(format!(
+                                    "parallel flow '{target_name}' returned invalid Result"
+                                )));
+                            }
+                        }
+                        (None, false) => output.push(result),
+                        _ => {
+                            return Err(RuntimeError(format!(
+                                "{} has inconsistent parallel propagation metadata",
+                                statement.id
+                            )));
+                        }
+                    }
+                }
+                let output = Value::Array(output);
+                validate_value(graph, type_name, &output, "parallel result")?;
+                values.insert(statement.name.clone(), output);
+            }
             "return" => {
                 let expression = statement_expression(statement)?;
                 let value = expression::evaluate(&expression, &values)
@@ -766,6 +878,7 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
                     | "filter"
                     | "sort"
                     | "group"
+                    | "parallel"
                     | "return"
             )
         })

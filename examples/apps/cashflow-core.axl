@@ -89,6 +89,18 @@ flow GroupMovementsByCategory MovementBatch -> Map<text,List<Movement>>
     by = movement.category
   return grouped
 
+flow DefaultCategories unit -> List<text>
+  let categories = [
+    "consulting",
+    "software"
+  ]
+  return categories
+
+flow BuildMovementViewsParallel MovementBatch -> List<MovementView>
+  parallel views: List<MovementView> = input.movements as movement
+    run = BuildMovementView(movement)
+  return views
+
 flow StoreAndLoadMovement Movement -> Result<Movement>
   in store: MovementStore = MemoryMovements
   call saved = store.save(input)?
@@ -119,3 +131,5 @@ api CashflowApi
   post /income-amounts MovementBatch -> List<money> = IncomeAmounts
   post /movements/sorted MovementBatch -> List<Movement> = SortMovementsNewest
   post /movements/grouped MovementBatch -> Map<text,List<Movement>> = GroupMovementsByCategory
+  get /categories unit -> List<text> = DefaultCategories
+  post /movement-views MovementBatch -> List<MovementView> = BuildMovementViewsParallel

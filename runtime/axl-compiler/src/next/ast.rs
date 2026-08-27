@@ -319,6 +319,16 @@ pub enum FlowStatement {
         key: String,
         span: SourceSpan,
     },
+    Parallel {
+        name: String,
+        type_name: String,
+        collection: String,
+        item: String,
+        flow: String,
+        argument: String,
+        propagate: bool,
+        span: SourceSpan,
+    },
     Return {
         expression: String,
         span: SourceSpan,
@@ -339,6 +349,7 @@ impl FlowStatement {
             | Self::Filter { span, .. }
             | Self::Sort { span, .. }
             | Self::Group { span, .. }
+            | Self::Parallel { span, .. }
             | Self::Return { span, .. } => span,
         }
     }

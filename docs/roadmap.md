@@ -26,7 +26,8 @@ adapters prove two implementations behind the same `MovementStore` capacity.
 
 Gate 1 is active. Typed multiline records, lazy conditionals, functional `fold`
 loops, flow-to-flow `run` calls, enum `match`, `map`, `filter`, stable typed
-`sort` and typed `group` are implemented. Collection literals and async provider semantics remain. Durable SQLite is
+`sort`, typed `group` and inferred multiline list literals are implemented.
+Async provider and concurrency semantics remain. Durable SQLite is
 intentionally deferred to the data gate because the current adapter proves
 invocation and replacement, not process-level persistence.
 

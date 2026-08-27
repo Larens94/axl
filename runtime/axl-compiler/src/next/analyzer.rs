@@ -1715,6 +1715,152 @@ fn check_flow(
                 }
                 bind_transform_result(name, type_name, span, &mut variables, diagnostics);
             }
+            FlowStatement::Parallel {
+                name,
+                type_name,
+                collection,
+                item,
+                flow: target_name,
+                argument,
+                propagate,
+                span,
+            } => {
+                check_type(type_name, span, declarations, diagnostics);
+                check_transform_names(name, item, span, diagnostics);
+                let source_type = infer_source_expression(
+                    collection,
+                    span,
+                    &variables,
+                    declarations,
+                    diagnostics,
+                );
+                let source_item = source_type
+                    .as_deref()
+                    .and_then(collection_inner)
+                    .map(|(_, inner)| inner);
+                if source_type.is_some() && source_item.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X891",
+                            "execution",
+                            "parallel source must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected(
+                            "List<T>|Set<T>",
+                            source_type.as_deref().unwrap_or("unknown"),
+                        ),
+                    );
+                }
+                let target = declarations.get(target_name.as_str()).and_then(|value| {
+                    if let Declaration::Flow(target) = value {
+                        Some(target)
+                    } else {
+                        None
+                    }
+                });
+                let Some(target) = target else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X892",
+                            "execution",
+                            format!("parallel references unknown flow '{target_name}'"),
+                            span.clone(),
+                        )
+                        .expected("declared flow", target_name),
+                    );
+                    continue;
+                };
+                if target.name == flow.name {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-X892",
+                        "execution",
+                        format!("flow '{}' cannot run itself in parallel", flow.name),
+                        span.clone(),
+                    ));
+                    continue;
+                }
+                if let Some(source_item) = source_item {
+                    let mut parallel_variables = variables.clone();
+                    parallel_variables.insert(item.clone(), source_item.to_string());
+                    if let Some(found) = infer_source_expression(
+                        argument,
+                        span,
+                        &parallel_variables,
+                        declarations,
+                        diagnostics,
+                    ) && found != target.input
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X893",
+                                "execution",
+                                format!(
+                                    "parallel flow '{}' receives the wrong argument type",
+                                    target.name
+                                ),
+                                span.clone(),
+                            )
+                            .expected(&target.input, found),
+                        );
+                    }
+                }
+                let effective_output = match generic_inner(&target.output, "Result") {
+                    Some(inner) if *propagate && result_type.is_some() => Some(inner),
+                    Some(_) if !*propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X894",
+                                "execution",
+                                "parallel Result flow requires '?' propagation",
+                                span.clone(),
+                            )
+                            .expected("run = Flow(argument)?", "missing ?"),
+                        );
+                        None
+                    }
+                    Some(_) => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X894",
+                                "execution",
+                                "parallel '?' requires a Result<T> containing flow",
+                                span.clone(),
+                            )
+                            .expected("Result<T> flow output", &flow.output),
+                        );
+                        None
+                    }
+                    None if *propagate => {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X894",
+                                "execution",
+                                "parallel '?' requires a Result<T> target flow",
+                                span.clone(),
+                            )
+                            .expected("Result<T> target output", &target.output),
+                        );
+                        None
+                    }
+                    None => Some(target.output.as_str()),
+                };
+                if let Some(effective_output) = effective_output {
+                    let expected = format!("List<{effective_output}>");
+                    if type_name != &expected {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X895",
+                                "execution",
+                                "parallel result must list the target flow output",
+                                span.clone(),
+                            )
+                            .expected(expected, type_name),
+                        );
+                    }
+                }
+                bind_transform_result(name, type_name, span, &mut variables, diagnostics);
+            }
             FlowStatement::Return { expression, span } => {
                 return_count += 1;
                 if index + 1 != flow.statements.len() {
@@ -1965,6 +2111,26 @@ fn infer_expression(
         Expr::Int(_) => Ok("int".into()),
         Expr::Float(_) => Ok("float".into()),
         Expr::String(_) => Ok("text".into()),
+        Expr::List(items) => {
+            let Some(first) = items.first() else {
+                return Err("an empty list literal has no inferable item type".into());
+            };
+            let mut item_type = infer_expression(first, variables, declarations)?;
+            for item in &items[1..] {
+                let found = infer_expression(item, variables, declarations)?;
+                if same_type(&item_type, &found) {
+                    continue;
+                }
+                if numeric_type(&item_type) && numeric_type(&found) {
+                    item_type = numeric_result(&item_type, &found).into();
+                    continue;
+                }
+                return Err(format!(
+                    "list literal items are incompatible: '{item_type}' and '{found}'"
+                ));
+            }
+            Ok(format!("List<{item_type}>"))
+        }
         Expr::Unary(operator, value) => {
             let found = infer_expression(value, variables, declarations)?;
             match operator {
@@ -2649,6 +2815,7 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
             FlowStatement::Filter { name, .. } => ("filter", name.as_str()),
             FlowStatement::Sort { name, .. } => ("sort", name.as_str()),
             FlowStatement::Group { name, .. } => ("group", name.as_str()),
+            FlowStatement::Parallel { name, .. } => ("parallel", name.as_str()),
             FlowStatement::Return { .. } => ("return", "return"),
         };
         let id = format!("{flow_id}.{kind}.{index}");
@@ -2774,6 +2941,26 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                     .insert("collection".into(), collection.clone());
                 value.metadata.insert("item".into(), item.clone());
                 value.metadata.insert("key".into(), key.clone());
+            }
+            FlowStatement::Parallel {
+                type_name,
+                collection,
+                item,
+                flow,
+                argument,
+                propagate,
+                ..
+            } => {
+                value.type_name = Some(type_name.clone());
+                value
+                    .metadata
+                    .insert("collection".into(), collection.clone());
+                value.metadata.insert("item".into(), item.clone());
+                value.metadata.insert("flow".into(), flow.clone());
+                value.metadata.insert("argument".into(), argument.clone());
+                value
+                    .metadata
+                    .insert("propagate".into(), propagate.to_string());
             }
         }
         if let FlowStatement::Require { message, .. } = statement {

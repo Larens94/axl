@@ -122,6 +122,18 @@ The source can be `List<T>` or `Set<T>`. Keys are string-like scalars or enums,
 and each bucket retains the encounter order of its source items. Map keys,
 bucket item types and runtime values are all validated.
 
+List literals are inferred, executable and canonically multiline:
+
+```axl
+let categories = [
+  "consulting",
+  "software"
+]
+```
+
+Items may be expressions and must have one compatible type. Empty lists are
+rejected until AXL gains an explicit contextual type annotation for them.
+
 ## Provider ABI
 
 `ProviderRuntime` is public and replaceable. The interpreter passes it the
@@ -169,6 +181,6 @@ source parser.
 ## Current boundary
 
 Flow Runtime 2 does not implement mutable variables, branch statement blocks,
-collection literals, async execution, durable persistence, events, state
-mutation, concurrency or UI bindings. The next vertical slice is async and
-concurrency semantics, then durable storage and richer HTTP behavior.
+async execution, durable persistence, events, state mutation, concurrency or UI
+bindings. The next vertical slice is async and concurrency semantics, then
+durable storage and richer HTTP behavior.

@@ -261,6 +261,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                 .chain(children(graph, &flow.id, "filter"))
                 .chain(children(graph, &flow.id, "sort"))
                 .chain(children(graph, &flow.id, "group"))
+                .chain(children(graph, &flow.id, "parallel"))
                 .chain(children(graph, &flow.id, "return"))
                 .collect::<Vec<_>>();
             statements.sort_by_key(|statement| {

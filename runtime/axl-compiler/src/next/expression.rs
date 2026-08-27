@@ -9,6 +9,7 @@ pub enum Expr {
     Int(i64),
     Float(f64),
     String(String),
+    List(Vec<Expr>),
     Unary(UnaryOp, Box<Expr>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Conditional {
@@ -65,6 +66,9 @@ enum Token {
     Bang,
     LeftParen,
     RightParen,
+    LeftBracket,
+    RightBracket,
+    Comma,
     End,
 }
 
@@ -98,6 +102,11 @@ pub fn evaluate(expression: &Expr, values: &BTreeMap<String, Value>) -> Result<V
             .map(Value::Number)
             .ok_or_else(|| "floating-point result is not finite".into()),
         Expr::String(value) => Ok(Value::String(value.clone())),
+        Expr::List(items) => items
+            .iter()
+            .map(|item| evaluate(item, values))
+            .collect::<Result<Vec<_>, _>>()
+            .map(Value::Array),
         Expr::Unary(operator, value) => {
             let value = evaluate(value, values)?;
             match operator {
@@ -312,6 +321,9 @@ fn tokenize(source: &str) -> Result<Vec<Token>, String> {
             ('!', _) => (Token::Bang, 1),
             ('(', _) => (Token::LeftParen, 1),
             (')', _) => (Token::RightParen, 1),
+            ('[', _) => (Token::LeftBracket, 1),
+            (']', _) => (Token::RightBracket, 1),
+            (',', _) => (Token::Comma, 1),
             _ => return Err(format!("unexpected character '{character}' in expression")),
         };
         tokens.push(token);
@@ -444,6 +456,22 @@ impl Parser {
             Token::Float(value) => Ok(Expr::Float(value)),
             Token::String(value) => Ok(Expr::String(value)),
             Token::Bool(value) => Ok(Expr::Bool(value)),
+            Token::LeftBracket => {
+                let mut items = Vec::new();
+                if self.peek() == &Token::RightBracket {
+                    self.take();
+                    return Ok(Expr::List(items));
+                }
+                loop {
+                    items.push(self.parse_conditional()?);
+                    match self.take() {
+                        Token::Comma => {}
+                        Token::RightBracket => break,
+                        _ => return Err("list literal requires ',' or ']'".into()),
+                    }
+                }
+                Ok(Expr::List(items))
+            }
             Token::LeftParen => {
                 let expression = self.parse_conditional()?;
                 if self.take() != Token::RightParen {
@@ -496,5 +524,14 @@ mod tests {
             serde_json::json!({"income": 120, "expense": 45}),
         )]);
         assert_eq!(evaluate(&expression, &values).unwrap(), 120);
+    }
+
+    #[test]
+    fn evaluates_nested_list_literals() {
+        let expression = parse("[\"sales\", if true then \"support\" else \"other\"]").unwrap();
+        assert_eq!(
+            evaluate(&expression, &BTreeMap::new()).unwrap(),
+            serde_json::json!(["sales", "support"])
+        );
     }
 }

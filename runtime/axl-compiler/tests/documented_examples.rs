@@ -186,6 +186,10 @@ fn documented_invalid_examples_report_stable_codes() {
             include_str!("../../../examples/invalid/flow-matches.axl"),
         ),
         (
+            "AXL-X802",
+            include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
             "AXL-N806",
             include_str!("../../../examples/invalid/flow-transforms.axl"),
         ),
@@ -240,6 +244,26 @@ fn documented_invalid_examples_report_stable_codes() {
         (
             "AXL-X884",
             include_str!("../../../examples/invalid/flow-transforms.axl"),
+        ),
+        (
+            "AXL-X891",
+            include_str!("../../../examples/invalid/flow-parallel.axl"),
+        ),
+        (
+            "AXL-X892",
+            include_str!("../../../examples/invalid/flow-parallel.axl"),
+        ),
+        (
+            "AXL-X893",
+            include_str!("../../../examples/invalid/flow-parallel.axl"),
+        ),
+        (
+            "AXL-X894",
+            include_str!("../../../examples/invalid/flow-parallel.axl"),
+        ),
+        (
+            "AXL-X895",
+            include_str!("../../../examples/invalid/flow-parallel.axl"),
         ),
         (
             "AXL-H901",
@@ -344,6 +368,32 @@ fn documented_cashflow_core_executes() {
             .unwrap();
     assert_eq!(grouped["consulting"][0]["id"], "movement-001");
     assert_eq!(grouped["software"][0]["id"], "movement-002");
+
+    let categories = axl_compiler::next::runtime::evaluate_flow(
+        &graph,
+        "DefaultCategories",
+        serde_json::Value::Null,
+    )
+    .unwrap();
+    assert_eq!(categories, serde_json::json!(["consulting", "software"]));
+
+    let response =
+        axl_compiler::next::http::dispatch(&graph, "get", "/categories", serde_json::Value::Null);
+    assert_eq!(response.status, 200);
+    assert_eq!(response.body, serde_json::json!(["consulting", "software"]));
+
+    let movements = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-batch.json"
+    ))
+    .unwrap();
+    let views = axl_compiler::next::runtime::evaluate_flow(
+        &graph,
+        "BuildMovementViewsParallel",
+        movements,
+    )
+    .unwrap();
+    assert_eq!(views[0]["id"], "movement-001");
+    assert_eq!(views[1]["id"], "movement-002");
 
     for flow in ["StoreAndLoadMovement", "StoreAndLoadMovementSqlite"] {
         let movement = serde_json::from_str(include_str!(

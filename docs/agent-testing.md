@@ -190,7 +190,7 @@ from `AXL-X816` through `AXL-X821`; the sixth must include every code from
 `AXL-X831` through `AXL-X835`; the seventh must include `AXL-N805` and
 `AXL-X841` through `AXL-X843`; the eighth must include `AXL-X851` through
 `AXL-X856`; the ninth must include `AXL-X861` through `AXL-X865`.
-The tenth must include `AXL-N806`, `AXL-X871` through `AXL-X879` and
+The tenth must include `AXL-X802`, `AXL-N806`, `AXL-X871` through `AXL-X879` and
 `AXL-X881` through `AXL-X884`.
 The eleventh must include every code from `AXL-H901` through `AXL-H907`.
 
@@ -223,6 +223,7 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - map/filter transforms are scoped, typed and executable;
 - stable ascending/descending sort is typed and executable;
 - grouping produces a checked `Map<K,List<T>>` without handwritten Rust;
+- non-empty list literals infer a common type and retain multiline formatting;
 - HTTP routes dispatch through the generic Axum runtime;
 - consecutive HTTP requests share one process-local provider runtime;
 - memory and SQLite providers execute through the same replaceable ABI;

@@ -312,6 +312,18 @@ Group keys are string-like scalars or enums because the runtime representation
 is a JSON object. The declared `Map<K,List<T>>` key and item types must match the
 key expression and source collection.
 
+Non-empty list literals infer one compatible item type and format vertically:
+
+```axl
+let categories = [
+  "consulting",
+  "software"
+]
+```
+
+Nested expressions are allowed. Numeric items use the normal numeric promotion
+rules; mixed incompatible items and untyped empty lists are compiler errors.
+
 ### HTTP API
 
 An API exposes checked flows without handwritten controllers:
@@ -465,7 +477,6 @@ generate a complete production application.
 
 - contract expression type checking;
 - branch statement blocks and mutable variables;
-- collection literals;
 - `parallel`, `race`, retry and timeout execution;
 - generated standalone Rust handlers and React components from Graph IR;
 - path parameters, query decoding, middleware and streaming HTTP bodies;

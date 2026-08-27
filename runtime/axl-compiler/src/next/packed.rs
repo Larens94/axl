@@ -343,6 +343,7 @@ fn reconstruct_id(
                     | "filter"
                     | "sort"
                     | "group"
+                    | "parallel"
                     | "return"
             ) =>
         {
@@ -431,6 +432,7 @@ fn node_kind_code(kind: &str) -> &str {
         "route" => "40",
         "sort" => "41",
         "group" => "42",
+        "parallel" => "43",
         other => other,
     }
 }
@@ -480,6 +482,7 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "40" => "route",
         "41" => "sort",
         "42" => "group",
+        "43" => "parallel",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

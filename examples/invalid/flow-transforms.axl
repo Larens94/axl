@@ -1,4 +1,4 @@
-// Expected diagnostics: AXL-N806, AXL-X871 through AXL-X879 and AXL-X881 through AXL-X884.
+// Expected diagnostics: AXL-X802, AXL-N806, AXL-X871 through AXL-X879 and AXL-X881 through AXL-X884.
 axl 4
 app InvalidFlowTransforms
 
@@ -79,4 +79,12 @@ flow UnorderedGroupKey Input -> Map<bool,List<bool>>
 flow WrongGroupKeyType Input -> Map<uuid,List<int>>
   group values: Map<uuid,List<int>> = input.items as item
     by = "all"
+  return values
+
+flow EmptyListLiteral Input -> List<int>
+  let values = []
+  return values
+
+flow MixedListLiteral Input -> List<int>
+  let values = [1, "two"]
   return values

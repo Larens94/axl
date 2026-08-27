@@ -1,0 +1,39 @@
+// Expected diagnostics: AXL-X891 through AXL-X895.
+axl 4
+app InvalidParallel
+
+entity Batch
+  amount: int required
+  items: List<int> required
+
+flow Echo int -> int
+  return input
+
+flow Fallible int -> Result<int>
+  require input > 0 else "not_positive"
+  return input
+
+flow NonCollection Batch -> List<int>
+  parallel values: List<int> = input.amount as item
+    run = Echo(item)
+  return values
+
+flow UnknownTarget Batch -> List<int>
+  parallel values: List<int> = input.items as item
+    run = Missing(item)
+  return values
+
+flow WrongArgument Batch -> List<int>
+  parallel values: List<int> = input.items as item
+    run = Echo("wrong")
+  return values
+
+flow MissingPropagation Batch -> Result<List<int>>
+  parallel values: List<int> = input.items as item
+    run = Fallible(item)
+  return values
+
+flow WrongOutput Batch -> List<text>
+  parallel values: List<text> = input.items as item
+    run = Echo(item)
+  return values

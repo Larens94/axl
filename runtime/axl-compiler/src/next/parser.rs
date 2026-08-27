@@ -672,6 +672,9 @@ fn parse_flow(
         if line.indent > statement_indent {
             continue;
         }
+        if line.text == "]" {
+            continue;
+        }
         if let Some(value) = line.text.strip_prefix("in ") {
             let Some((name, capacity_and_default)) = value.split_once(':') else {
                 diagnostics.push(
@@ -729,9 +732,28 @@ fn parse_flow(
                 );
                 continue;
             };
+            let mut expression = expression.trim().to_string();
+            if expression.starts_with('[') && !expression.ends_with(']') {
+                for continuation in body.iter().skip(line_index + 1) {
+                    expression.push(' ');
+                    expression.push_str(continuation.text.trim());
+                    if continuation.text == "]" {
+                        break;
+                    }
+                }
+            } else {
+                for continuation in body
+                    .iter()
+                    .skip(line_index + 1)
+                    .take_while(|candidate| candidate.indent > line.indent)
+                {
+                    expression.push(' ');
+                    expression.push_str(continuation.text.trim());
+                }
+            }
             statements.push(FlowStatement::Let {
                 name: name.trim().to_string(),
-                expression: expression.trim().to_string(),
+                expression,
                 span: span(line),
             });
         } else if let Some(value) = line.text.strip_prefix("require ") {
@@ -987,6 +1009,21 @@ fn parse_flow(
                     collection,
                     item,
                     key,
+                    span: span(line),
+                });
+            }
+        } else if let Some(value) = line.text.strip_prefix("parallel ") {
+            if let Some((name, type_name, collection, item, flow, argument, propagate)) =
+                parse_parallel(value, line, body, line_index, diagnostics)
+            {
+                statements.push(FlowStatement::Parallel {
+                    name,
+                    type_name,
+                    collection,
+                    item,
+                    flow,
+                    argument,
+                    propagate,
                     span: span(line),
                 });
             }
@@ -1310,6 +1347,79 @@ fn parse_sort(
         item.into(),
         key,
         direction,
+    ))
+}
+
+#[allow(clippy::type_complexity)]
+fn parse_parallel(
+    value: &str,
+    line: &SourceLine,
+    body: &[SourceLine],
+    line_index: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(String, String, String, String, String, String, bool)> {
+    let header = value.split_once('=').and_then(|(name_and_type, source)| {
+        let (name, type_name) = name_and_type.split_once(':')?;
+        let (collection, item) = source.rsplit_once(" as ")?;
+        Some((
+            name.trim(),
+            type_name.trim(),
+            collection.trim(),
+            item.trim(),
+        ))
+    });
+    let Some((name, type_name, collection, item)) = header else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P834",
+                "parse",
+                "parallel requires a result type, collection and item",
+                span(line),
+            )
+            .expected("parallel name: List<T> = collection as item", &line.text),
+        );
+        return None;
+    };
+    let run_line = body
+        .iter()
+        .skip(line_index + 1)
+        .take_while(|candidate| candidate.indent > line.indent)
+        .next();
+    let invocation = run_line.and_then(|run_line| {
+        let (keyword, invocation) = run_line.text.split_once('=')?;
+        (keyword.trim() == "run").then_some(invocation.trim())
+    });
+    let parsed = invocation.and_then(|invocation| {
+        let (invocation, propagate) = invocation
+            .strip_suffix('?')
+            .map_or((invocation, false), |value| (value.trim(), true));
+        let (flow, argument) = invocation.split_once('(')?;
+        let argument = argument.strip_suffix(')')?;
+        Some((flow.trim(), argument.trim(), propagate))
+    });
+    let Some((flow, argument, propagate)) = parsed else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P835",
+                "parse",
+                "parallel requires a flow invocation",
+                span(line),
+            )
+            .expected(
+                "run = Flow(item)?",
+                run_line.map_or("missing", |line| &line.text),
+            ),
+        );
+        return None;
+    };
+    Some((
+        name.into(),
+        type_name.into(),
+        collection.into(),
+        item.into(),
+        flow.into(),
+        argument.into(),
+        propagate,
     ))
 }
 

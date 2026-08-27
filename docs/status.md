@@ -4,7 +4,7 @@ This table is the short source of truth for the current experiment.
 
 | Area | Implemented now | Not implemented yet |
 |---|---|---|
-| Source | multiline AXL, enum match, map/filter/sort/group/fold and flows with `make`, `run`, `call`, `return` | branch blocks, collection literals and async |
+| Source | multiline AXL, typed list literals, enum match, map/filter/sort/group/fold and flows with `make`, `run`, `call`, `return` | branch blocks and async |
 | Types | built-ins, entities, enums, capacities, recursive generics | tuples and record operation parameters |
 | Blocks | open protocol, typed instances/overrides and fourteen foundation contracts | package imports, cross-package overlays and registry |
 | Contracts | `requires`, `ensures`, `invariant` stored in IR | expression type checking and execution |
@@ -30,5 +30,5 @@ The project remains an experiment. AXL flows call replaceable capacities; the
 same cashflow graph executes against memory and SQLite. HTTP requests share one
 provider runtime for the server process and the test saves in one request and
 reads in the next. Durable database configuration, auth and middleware are the
-next backend milestones; collection literals and async providers remain
-language and runtime gates.
+next backend milestones; async providers and concurrency remain language and
+runtime gates.
