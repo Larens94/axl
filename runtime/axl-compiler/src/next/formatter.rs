@@ -319,6 +319,9 @@ pub fn format(program: &Program) -> String {
                         FlowStatement::Emit {
                             event, argument, ..
                         } => output.push(format!("  emit {event}({argument})")),
+                        FlowStatement::Enqueue { job, argument, .. } => {
+                            output.push(format!("  enqueue {job}({argument})"))
+                        }
                         FlowStatement::Return { expression, .. } => {
                             output.push(format!("  return {expression}"));
                         }
@@ -332,6 +335,21 @@ pub fn format(program: &Program) -> String {
                 output.push(format!(
                     "on {} {} = {}",
                     subscription.event, subscription.payload, subscription.flow
+                ));
+            }
+            Declaration::Job(job) => {
+                output.push(format!("job {}", job.name));
+                if let Some(schedule) = &job.schedule {
+                    output.push(format!("  schedule \"{schedule}\""));
+                }
+                output.push(format!("  run {}", job.flow));
+                output.push(format!("  retry {}", job.retry));
+                if job.idempotent {
+                    output.push("  idempotent".into());
+                }
+                output.push(format!(
+                    "  in store: {} = {}",
+                    job.store_capacity, job.store_provider
                 ));
             }
             Declaration::Api(api) => {

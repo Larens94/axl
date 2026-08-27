@@ -1,0 +1,32 @@
+---
+description: AXL autoloop protocol — open primitives only, evidence-driven gates
+alwaysApply: true
+---
+
+# AXL autoloop
+
+Read before changing language or runtime:
+
+- `SPEC-4.0.md`
+- `docs/status.md`
+- `docs/roadmap.md`
+- `docs/agent-testing.md`
+- `docs/agent-work-packages.md`
+
+## Protocol (every package)
+
+1. Start from a failing AXL example.
+2. Implement only a general open primitive (capacity/skill/slot/hook/param/policy).
+3. Never move application logic into Rust, React, or another target.
+4. If AXL lacks a primitive, stop and report missing syntax, type rule, IR node, manifest field, and runtime behavior.
+5. Add negative diagnostics with stable codes.
+6. Prove AXL → AST → Graph IR → Packed IR round-trip.
+7. Update schemas, tests, SPEC, status, testing handoff, presentation, `film.html` / `mondo.html` as needed.
+8. Run `cargo fmt --all`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`.
+
+## Coordination
+
+- Work packages: WP-01 … WP-09 in `docs/agent-work-packages.md`.
+- `ast.rs`, `parser.rs`, `analyzer.rs`, `packed.rs` and shared schemas are serial (WP-01 steward).
+- Prefer a dedicated branch/worktree per package.
+- Do not claim a gate complete without executable evidence.

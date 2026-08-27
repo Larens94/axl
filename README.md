@@ -62,6 +62,8 @@ Serve routes declared in AXL through the generic Axum runtime:
 - `film.html` — autoplaying cinematic explanation of the complete plan.
 - `film/axl-plan-film.mp4` — narrated 1080p Italian export.
 - `docs/agent-work-packages.md` — nine executable work packages for specialized agents.
+- `docs/agent-autoloop.md` — research autoloop roster and iteration checklist.
+- `AGENTS.md` — how to launch a specialized WP agent.
 - `examples/blocks` — small examples compiled by the test suite.
 - `examples/catalog/software-foundation.axl` — fourteen open foundation blocks.
 - `examples/apps/cashflow-core.axl` — executable validation and balance flows.

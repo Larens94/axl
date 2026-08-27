@@ -62,6 +62,30 @@ flow SaveAndAnnounce Movement -> Result<Movement>
 `EventLog` capacity (`native rust axl::event::log`) lets listeners record side
 effects without cashflow-specific Rust.
 
+Durable and scheduled jobs are declarative and capacity-backed:
+
+```axl
+capacity JobStore
+  op enqueue text -> Result<text> idempotent
+  op claim unit -> Result<List<text>> idempotent
+  op finish text -> Result<text>
+
+job DurablePersistMovementJob
+  run SaveDurableMovement
+  retry 3
+  idempotent
+  in store: JobStore = DurableJobs
+
+flow ScheduleDurableMovementPersist Movement -> Result<Movement>
+  enqueue DurablePersistMovementJob(input)
+  return input
+```
+
+`enqueue` persists an envelope through the bound JobStore. `axl-compiler tick`
+claims due work, runs the bound flow with retry, and requeues schedules.
+Memory (`axl::job::memory`) and SQLite (`axl::job::sqlite`) adapters keep the
+provider replaceable; a configured SQLite path survives process restart.
+
 The body is the default flow input. Scalar and enum flows can bind a path or
 query value without a handwritten extractor:
 
@@ -136,11 +160,12 @@ Status mapping:
 ## Current boundary
 
 Scalar bindings and composite entity assembly are implemented. Ordered request
-middleware with typed envelopes is executable. Header/cookie fields and nested
-target paths are not yet request sources. Response-phase middleware and response
-header mutation are not implemented. Memory and unconfigured SQLite remain
-process-local; configured SQLite paths are durable. Transactions and migrations
-remain data gates. The built-in static bearer and header-gate providers are demo
-fixtures and their config is visible in the manifest; secret references,
-JWT/OAuth validation, CORS, streaming, events, jobs, cache, rate limits and
-observability remain later backend gates.
+middleware with typed envelopes is executable. Typed events and durable/scheduled
+jobs with replaceable JobStore providers are executable. Header/cookie fields and
+nested target paths are not yet request sources. Response-phase middleware and
+response header mutation are not implemented. Memory and unconfigured SQLite
+remain process-local; configured SQLite paths are durable for records and jobs.
+Transactions and migrations remain data gates. The built-in static bearer and
+header-gate providers are demo fixtures and their config is visible in the
+manifest; secret references, JWT/OAuth validation, CORS, streaming, cache, rate
+limits and observability remain later backend gates.

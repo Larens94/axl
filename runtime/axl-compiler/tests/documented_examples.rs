@@ -178,6 +178,42 @@ fn documented_invalid_examples_report_stable_codes() {
             include_str!("../../../examples/invalid/flow-events.axl"),
         ),
         (
+            "AXL-P921",
+            include_str!("../../../examples/invalid/flow-jobs-syntax.axl"),
+        ),
+        (
+            "AXL-J901",
+            include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
+            "AXL-J902",
+            include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
+            "AXL-J903",
+            include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
+            "AXL-J904",
+            include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
+            "AXL-J905",
+            include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
+            "AXL-J906",
+            include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
+            "AXL-J907",
+            include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
+            "AXL-J908",
+            include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
             "AXL-P314",
             include_str!("../../../examples/invalid/provider-config-syntax.axl"),
         ),
@@ -593,6 +629,52 @@ fn documented_cashflow_core_executes() {
         axl_compiler::next::runtime::evaluate_flow(&graph, "ValidateAndStoreMovement", movement)
             .unwrap();
     assert_eq!(composed["ok"]["id"], "movement-001");
+
+    let movement = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-valid.json"
+    ))
+    .unwrap();
+    let mut event_runtime = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+    let announced = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+        &graph,
+        "SaveAndAnnounce",
+        movement,
+        &mut event_runtime,
+    )
+    .unwrap();
+    assert_eq!(announced["ok"]["id"], "movement-001");
+    let tags = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+        &graph,
+        "ListMovementTags",
+        serde_json::Value::Null,
+        &mut event_runtime,
+    )
+    .unwrap();
+    assert_eq!(tags["ok"], serde_json::json!(["persisted", "announced"]));
+
+    let movement = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-valid.json"
+    ))
+    .unwrap();
+    let mut job_runtime = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+    let scheduled = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+        &graph,
+        "ScheduleMovementPersist",
+        movement,
+        &mut job_runtime,
+    )
+    .unwrap();
+    assert_eq!(scheduled["ok"]["id"], "movement-001");
+    let executed = axl_compiler::next::runtime::run_due_jobs(&graph, &mut job_runtime).unwrap();
+    assert!(executed >= 1);
+    let found = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+        &graph,
+        "FindMovement",
+        serde_json::json!("movement-001"),
+        &mut job_runtime,
+    )
+    .unwrap();
+    assert_eq!(found["ok"]["id"], "movement-001");
 
     let invalid = serde_json::from_str(include_str!(
         "../../../examples/apps/inputs/movement-invalid.json"

@@ -40,6 +40,7 @@ requests. A typed `auth bearer: Capacity = Provider` surface now protects whole
 APIs and the built-in fixture proves 401/403/200 behavior. Secret references,
 JWT/OAuth and response middleware remain. Scalar and composite body/path/query
 assembly is executable; ordered request middleware is capacity-backed. Typed
-events and multi-subscriber `emit` are executable. Header/cookie binding, jobs,
-cache and observability remain. Gate 3 continues with transactions, migrations
-and additional database families.
+events and multi-subscriber `emit` are executable. Durable/scheduled jobs with
+retry, idempotency and replaceable JobStore providers are executable across
+runtime recreate. Header/cookie binding, cache and observability remain. Gate 3
+continues with transactions, migrations and additional database families.

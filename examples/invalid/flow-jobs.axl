@@ -1,0 +1,78 @@
+axl 4
+app InvalidFlowJobs
+entity Movement
+  id: text required
+entity Other
+  id: text required
+capacity JobStore
+  op enqueue text -> Result<text> idempotent
+  op claim unit -> Result<List<text>> idempotent
+  op finish text -> Result<text>
+capacity BrokenStore
+  op put text -> Result<text>
+skill MemoryJobs provides JobStore
+  native rust axl::job::memory
+skill BrokenJobs provides BrokenStore
+  native rust axl::job::memory
+flow Persist Movement -> Movement
+  return input
+flow Tick unit -> unit
+  return input
+flow WrongInput Other -> Other
+  return input
+job UnknownFlowJob
+  run MissingFlow
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
+job ScheduledWrongInput
+  schedule "every 60s"
+  run Persist
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
+job BadSchedule
+  schedule "weekly"
+  run Tick
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
+job TooManyRetries
+  run Persist
+  retry 99
+  idempotent
+  in store: JobStore = MemoryJobs
+job RetryWithoutIdempotent
+  run Persist
+  retry 2
+  in store: JobStore = MemoryJobs
+job BadStoreContract
+  run Persist
+  retry 1
+  idempotent
+  in store: BrokenStore = BrokenJobs
+job UnknownProviderJob
+  run Persist
+  retry 1
+  idempotent
+  in store: JobStore = MissingJobs
+flow EnqueueUnknown Movement -> Movement
+  enqueue MissingJob(input)
+  return input
+flow EnqueueWrongType Other -> Other
+  enqueue PersistJob(input)
+  return input
+job PersistJob
+  run Persist
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
+flow EnqueueMismatch Movement -> Movement
+  enqueue ScheduledTick("nope")
+  return input
+job ScheduledTick
+  schedule "every 1s"
+  run Tick
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs

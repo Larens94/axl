@@ -54,6 +54,7 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
             Declaration::Flow(flow) => check_flow(flow, &declarations, &mut diagnostics),
             Declaration::Event(event) => check_event(event, &declarations, &mut diagnostics),
             Declaration::Subscription(_) => {}
+            Declaration::Job(job) => check_job(job, &declarations, &mut diagnostics),
             Declaration::Api(api) => check_api(api, &declarations, &mut diagnostics),
             Declaration::Agent(agent) => check_agent(agent, &mut diagnostics),
         }
@@ -2245,6 +2246,42 @@ fn check_flow(
                     );
                 }
             }
+            FlowStatement::Enqueue {
+                job,
+                argument,
+                span,
+            } => {
+                let Some(Declaration::Job(job_decl)) = declarations.get(job.as_str()) else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-J907",
+                            "jobs",
+                            format!("unknown job '{job}'"),
+                            span.clone(),
+                        )
+                        .expected("declared job", job),
+                    );
+                    continue;
+                };
+                let Some(Declaration::Flow(target)) = declarations.get(job_decl.flow.as_str())
+                else {
+                    continue;
+                };
+                if let Some(found) =
+                    infer_source_expression(argument, span, &variables, declarations, diagnostics)
+                    && !same_type(&found, &target.input)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-J908",
+                            "jobs",
+                            format!("enqueue payload type must match job '{job}'"),
+                            span.clone(),
+                        )
+                        .expected(&target.input, found),
+                    );
+                }
+            }
             FlowStatement::Return { expression, span } => {
                 return_count += 1;
                 if index + 1 != flow.statements.len() {
@@ -2326,7 +2363,7 @@ fn flow_is_idempotent(
                 _ => None,
             })
             .is_some_and(|flow| flow_is_idempotent(flow, declarations, visiting)),
-        FlowStatement::Emit { .. } => false,
+        FlowStatement::Emit { .. } | FlowStatement::Enqueue { .. } => false,
         _ => true,
     });
     visiting.remove(&flow.name);
@@ -2723,8 +2760,10 @@ fn check_request_bindings(
         }
         let name = binding.name.as_deref().unwrap_or_default();
         check_request_binding_name_and_path(route, Some(binding), name, diagnostics);
-        if matches!(binding.source.as_str(), "path" | "query")
-            && !http_binding_type(&field.type_name, declarations)
+        if matches!(
+            binding.source.as_str(),
+            "path" | "query" | "header" | "cookie"
+        ) && !http_binding_type(&field.type_name, declarations)
         {
             diagnostics.push(
                 Diagnostic::error(
@@ -3288,6 +3327,180 @@ fn check_subscriptions(
     }
 }
 
+fn check_job(
+    job: &JobDecl,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if job.name.contains('.') || !valid_name(&job.name, false) {
+        diagnostics.push(Diagnostic::error(
+            "AXL-N001",
+            "names",
+            format!("invalid job name '{}'", job.name),
+            job.span.clone(),
+        ));
+    }
+    if job.retry > 10 {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-J904",
+                "jobs",
+                "job retry count exceeds the safety limit",
+                job.span.clone(),
+            )
+            .expected("0..10", job.retry.to_string()),
+        );
+    }
+    if job.retry > 0 && !job.idempotent {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-J904",
+                "jobs",
+                "job retry requires the idempotent qualifier",
+                job.span.clone(),
+            )
+            .expected("idempotent", "missing idempotent"),
+        );
+    }
+    if let Some(schedule) = &job.schedule
+        && parse_schedule_millis(schedule).is_none()
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-J903",
+                "jobs",
+                format!("unsupported job schedule '{schedule}'"),
+                job.span.clone(),
+            )
+            .expected("every <n>ms|s|m", schedule),
+        );
+    }
+    let Some(Declaration::Flow(flow)) = declarations.get(job.flow.as_str()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-J901",
+                "jobs",
+                format!("unknown job flow '{}'", job.flow),
+                job.span.clone(),
+            )
+            .expected("declared flow", &job.flow),
+        );
+        check_job_store(job, declarations, diagnostics);
+        return;
+    };
+    if job.schedule.is_some() && flow.input != "unit" {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-J902",
+                "jobs",
+                format!("scheduled job '{}' requires a unit flow input", job.name),
+                job.span.clone(),
+            )
+            .expected("unit", &flow.input),
+        );
+    }
+    check_job_store(job, declarations, diagnostics);
+}
+
+fn check_job_store(
+    job: &JobDecl,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    match declarations.get(job.store_capacity.as_str()) {
+        Some(Declaration::Capacity(capacity)) => {
+            if !job_store_contract(capacity) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-J906",
+                        "jobs",
+                        format!(
+                            "job store capacity '{}' has an invalid contract",
+                            job.store_capacity
+                        ),
+                        job.span.clone(),
+                    )
+                    .expected(
+                        "op enqueue/claim/finish text|unit contracts",
+                        "missing or incompatible operation",
+                    ),
+                );
+            }
+        }
+        Some(found) => diagnostics.push(
+            Diagnostic::error(
+                "AXL-J905",
+                "jobs",
+                format!("job store type '{}' is not a capacity", job.store_capacity),
+                job.span.clone(),
+            )
+            .expected("capacity", declaration_kind(found)),
+        ),
+        None => diagnostics.push(
+            Diagnostic::error(
+                "AXL-J905",
+                "jobs",
+                format!("unknown job store capacity '{}'", job.store_capacity),
+                job.span.clone(),
+            )
+            .expected("declared capacity", &job.store_capacity),
+        ),
+    }
+    match provider_type(&job.store_provider, declarations) {
+        Some(provided) if provided == job.store_capacity => {}
+        Some(provided) => diagnostics.push(
+            Diagnostic::error(
+                "AXL-J905",
+                "jobs",
+                format!(
+                    "job store provider '{}' is incompatible",
+                    job.store_provider
+                ),
+                job.span.clone(),
+            )
+            .expected(&job.store_capacity, provided),
+        ),
+        None => diagnostics.push(
+            Diagnostic::error(
+                "AXL-J905",
+                "jobs",
+                format!("unknown job store provider '{}'", job.store_provider),
+                job.span.clone(),
+            )
+            .expected(
+                format!("provider of {}", job.store_capacity),
+                &job.store_provider,
+            ),
+        ),
+    }
+}
+
+fn job_store_contract(capacity: &Capacity) -> bool {
+    let enqueue = capacity.operations.iter().find(|op| op.name == "enqueue");
+    let claim = capacity.operations.iter().find(|op| op.name == "claim");
+    let finish = capacity.operations.iter().find(|op| op.name == "finish");
+    enqueue.is_some_and(|op| {
+        op.idempotent && op.input == "text" && generic_inner(&op.output, "Result") == Some("text")
+    }) && claim.is_some_and(|op| {
+        op.idempotent
+            && op.input == "unit"
+            && generic_inner(&op.output, "Result") == Some("List<text>")
+    }) && finish
+        .is_some_and(|op| op.input == "text" && generic_inner(&op.output, "Result") == Some("text"))
+}
+
+pub(crate) fn parse_schedule_millis(schedule: &str) -> Option<u64> {
+    let rest = schedule.strip_prefix("every ")?.trim();
+    let (number, unit) = rest.split_at(rest.find(|c: char| !c.is_ascii_digit())?);
+    let amount = number.parse::<u64>().ok()?;
+    match unit {
+        "ms" => Some(amount),
+        "s" => amount.checked_mul(1_000),
+        "m" => amount.checked_mul(60_000),
+        _ => None,
+    }
+}
+
 fn check_agent(agent: &Agent, diagnostics: &mut Vec<Diagnostic>) {
     if agent.goals.is_empty() {
         diagnostics.push(Diagnostic::error(
@@ -3462,6 +3675,7 @@ fn declaration_kind(declaration: &Declaration) -> &'static str {
         Declaration::Flow(_) => "flow",
         Declaration::Event(_) => "event",
         Declaration::Subscription(_) => "subscription",
+        Declaration::Job(_) => "job",
         Declaration::Api(_) => "api",
         Declaration::Agent(_) => "agent",
     }
@@ -3496,6 +3710,7 @@ fn lower(program: &Program) -> GraphIr {
             Declaration::Flow(flow) => lower_flow(flow, &mut graph),
             Declaration::Event(event) => lower_event(event, &mut graph),
             Declaration::Subscription(_) => {}
+            Declaration::Job(job) => lower_job(job, &mut graph),
             Declaration::Api(api) => lower_api(api, &mut graph),
             Declaration::Agent(agent) => lower_agent(agent, &mut graph),
         }
@@ -3515,6 +3730,33 @@ fn lower_event(event: &EventDecl, graph: &mut GraphIr) {
     let mut value = node(&id, "event", &event.name);
     value.type_name = Some(event.payload.clone());
     graph.nodes.push(value);
+}
+
+fn lower_job(job: &JobDecl, graph: &mut GraphIr) {
+    let id = format!("job.{}", job.name);
+    let mut value = node(&id, "job", &job.name);
+    value.type_name = Some(job.store_capacity.clone());
+    value.metadata.insert("flow".into(), job.flow.clone());
+    value.metadata.insert("retry".into(), job.retry.to_string());
+    value
+        .metadata
+        .insert("idempotent".into(), job.idempotent.to_string());
+    if let Some(schedule) = &job.schedule {
+        value.metadata.insert("schedule".into(), schedule.clone());
+    }
+    value
+        .metadata
+        .insert("provider".into(), job.store_provider.clone());
+    graph.nodes.push(value);
+    graph
+        .edges
+        .push(edge(&id, &format!("flow.{}", job.flow), "dispatch", None));
+    graph.edges.push(edge(
+        &id,
+        &provider_id(&job.store_provider),
+        "default",
+        Some(&job.store_capacity),
+    ));
 }
 
 fn lower_subscription(subscription: &Subscription, order: usize, graph: &mut GraphIr) {
@@ -3747,6 +3989,7 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
             FlowStatement::Parallel { name, .. } => ("parallel", name.as_str()),
             FlowStatement::Race { name, .. } => ("race", name.as_str()),
             FlowStatement::Emit { event, .. } => ("emit", event.as_str()),
+            FlowStatement::Enqueue { job, .. } => ("enqueue", job.as_str()),
             FlowStatement::Return { .. } => ("return", "return"),
         };
         let id = format!("{flow_id}.{kind}.{index}");
@@ -3764,6 +4007,10 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                 event, argument, ..
             } => {
                 value.metadata.insert("event".into(), event.clone());
+                value.metadata.insert("argument".into(), argument.clone());
+            }
+            FlowStatement::Enqueue { job, argument, .. } => {
+                value.metadata.insert("job".into(), job.clone());
                 value.metadata.insert("argument".into(), argument.clone());
             }
             FlowStatement::Call {

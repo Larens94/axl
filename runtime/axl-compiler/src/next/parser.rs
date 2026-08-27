@@ -84,6 +84,8 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             parse_event(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("on ") {
             parse_subscription(line, body, &mut declarations, &mut diagnostics);
+        } else if line.text.starts_with("job ") {
+            parse_job(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("api ") {
             parse_api(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("agent ") {
@@ -841,6 +843,268 @@ fn parse_emit(
     });
 }
 
+fn parse_enqueue(
+    value: &str,
+    line: &SourceLine,
+    statements: &mut Vec<FlowStatement>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let value = value.trim();
+    let Some((job, argument)) = value.split_once('(') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "enqueue requires a job and parenthesized payload expression",
+                span(line),
+            )
+            .expected("enqueue Job(expression)", &line.text),
+        );
+        return;
+    };
+    let Some(argument) = argument.strip_suffix(')') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "enqueue requires a closing ')'",
+                span(line),
+            )
+            .expected("enqueue Job(expression)", &line.text),
+        );
+        return;
+    };
+    let job = job.trim();
+    let argument = argument.trim();
+    if job.is_empty() || job.contains('.') || argument.is_empty() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "enqueue requires a job and parenthesized payload expression",
+                span(line),
+            )
+            .expected("enqueue Job(expression)", &line.text),
+        );
+        return;
+    }
+    statements.push(FlowStatement::Enqueue {
+        job: job.into(),
+        argument: argument.into(),
+        span: span(line),
+    });
+}
+
+fn parse_job(
+    header: &SourceLine,
+    body: &[SourceLine],
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let name = header.text["job ".len()..].trim();
+    if name.is_empty() || name.contains('.') || name.split_whitespace().nth(1).is_some() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "a job requires a simple name",
+                span(header),
+            )
+            .expected("job Name", &header.text),
+        );
+        return;
+    }
+
+    let mut flow = None;
+    let mut schedule = None;
+    let mut retry = None;
+    let mut idempotent = false;
+    let mut store_capacity = None;
+    let mut store_provider = None;
+
+    for line in body {
+        if let Some(value) = line.text.strip_prefix("run ") {
+            let value = value.trim();
+            if value.is_empty() || value.contains('.') || value.split_whitespace().nth(1).is_some()
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P921",
+                        "parse",
+                        "a job run clause requires one flow name",
+                        span(line),
+                    )
+                    .expected("run FlowName", &line.text),
+                );
+                continue;
+            }
+            if flow.replace(value.to_string()).is_some() {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-P921",
+                    "parse",
+                    "a job accepts only one run clause",
+                    span(line),
+                ));
+            }
+        } else if let Some(value) = line.text.strip_prefix("schedule ") {
+            let value = value.trim();
+            let Some(text) = value
+                .strip_prefix('"')
+                .and_then(|value| value.strip_suffix('"'))
+            else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P921",
+                        "parse",
+                        "a job schedule requires a quoted interval",
+                        span(line),
+                    )
+                    .expected("schedule \"every 60s\"", &line.text),
+                );
+                continue;
+            };
+            if schedule.replace(text.to_string()).is_some() {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-P921",
+                    "parse",
+                    "a job accepts only one schedule clause",
+                    span(line),
+                ));
+            }
+        } else if let Some(value) = line.text.strip_prefix("retry ") {
+            let value = value.trim();
+            let Some(count) = value
+                .parse::<u32>()
+                .ok()
+                .filter(|_| value.split_whitespace().nth(1).is_none())
+            else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P921",
+                        "parse",
+                        "a job retry clause requires a non-negative integer",
+                        span(line),
+                    )
+                    .expected("retry 3", &line.text),
+                );
+                continue;
+            };
+            if retry.replace(count).is_some() {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-P921",
+                    "parse",
+                    "a job accepts only one retry clause",
+                    span(line),
+                ));
+            }
+        } else if line.text == "idempotent" {
+            if idempotent {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-P921",
+                    "parse",
+                    "a job accepts only one idempotent qualifier",
+                    span(line),
+                ));
+            }
+            idempotent = true;
+        } else if let Some(value) = line.text.strip_prefix("in ") {
+            let Some((port, provider)) = value.split_once('=') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P921",
+                        "parse",
+                        "a job store binding requires capacity and provider",
+                        span(line),
+                    )
+                    .expected("in store: JobStore = Provider", &line.text),
+                );
+                continue;
+            };
+            let port = port.trim();
+            let provider = provider.trim();
+            let Some((port_name, capacity)) = port.split_once(':') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P921",
+                        "parse",
+                        "a job store binding requires capacity and provider",
+                        span(line),
+                    )
+                    .expected("in store: JobStore = Provider", &line.text),
+                );
+                continue;
+            };
+            let port_name = port_name.trim();
+            let capacity = capacity.trim();
+            if port_name != "store"
+                || capacity.is_empty()
+                || provider.is_empty()
+                || provider.split_whitespace().nth(1).is_some()
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P921",
+                        "parse",
+                        "a job store binding requires capacity and provider",
+                        span(line),
+                    )
+                    .expected("in store: JobStore = Provider", &line.text),
+                );
+                continue;
+            }
+            if store_capacity.replace(capacity.to_string()).is_some()
+                || store_provider.replace(provider.to_string()).is_some()
+            {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-P921",
+                    "parse",
+                    "a job accepts only one store binding",
+                    span(line),
+                ));
+            }
+        } else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P921",
+                    "parse",
+                    format!("unknown job clause '{}'", line.text),
+                    span(line),
+                )
+                .expected("run|schedule|retry|idempotent|in store", &line.text),
+            );
+        }
+    }
+
+    let (Some(flow), Some(retry), Some(store_capacity), Some(store_provider)) =
+        (flow, retry, store_capacity, store_provider)
+    else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "a job requires run, retry and store clauses",
+                span(header),
+            )
+            .expected(
+                "run Flow\n  retry N\n  in store: JobStore = Provider",
+                &header.text,
+            ),
+        );
+        return;
+    };
+
+    declarations.push(Declaration::Job(JobDecl {
+        name: name.into(),
+        flow,
+        schedule,
+        retry,
+        idempotent,
+        store_capacity,
+        store_provider,
+        span: span(header),
+    }));
+}
+
 fn parse_flow(
     header: &SourceLine,
     body: &[SourceLine],
@@ -1255,6 +1519,8 @@ fn parse_flow(
             }
         } else if let Some(value) = line.text.strip_prefix("emit ") {
             parse_emit(value, line, &mut statements, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("enqueue ") {
+            parse_enqueue(value, line, &mut statements, diagnostics);
         } else if let Some(expression) = line.text.strip_prefix("return ") {
             statements.push(FlowStatement::Return {
                 expression: expression.trim().to_string(),
@@ -2016,7 +2282,10 @@ fn parse_api(
                             "a request binding needs a source and name",
                             span(line),
                         )
-                        .expected("Flow from path.id|query.name", binding),
+                        .expected(
+                            "Flow from path.id|query.name|header.name|cookie.name",
+                            binding,
+                        ),
                     );
                     cursor += 1;
                     continue;
@@ -2058,7 +2327,7 @@ fn parse_api(
                         span(binding_line),
                     )
                     .expected(
-                        "bind field = body|body.field|path.name|query.name",
+                        "bind field = body|body.field|path.name|query.name|header.name|cookie.name",
                         &binding_line.text,
                     ),
                 );
@@ -2079,7 +2348,7 @@ fn parse_api(
                         span(binding_line),
                     )
                     .expected(
-                        "bind field = body|body.field|path.name|query.name",
+                        "bind field = body|body.field|path.name|query.name|header.name|cookie.name",
                         &binding_line.text,
                     ),
                 );
@@ -2137,7 +2406,7 @@ fn parse_request_source(value: &str) -> Option<(String, Option<String>)> {
         return Some(("body".into(), None));
     }
     let (source, name) = value.split_once('.')?;
-    (matches!(source, "body" | "path" | "query") && !name.is_empty())
+    (matches!(source, "body" | "path" | "query" | "header" | "cookie") && !name.is_empty())
         .then(|| (source.into(), Some(name.into())))
 }
 

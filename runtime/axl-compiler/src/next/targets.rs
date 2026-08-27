@@ -313,6 +313,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                 .chain(children(graph, &flow.id, "parallel"))
                 .chain(children(graph, &flow.id, "race"))
                 .chain(children(graph, &flow.id, "emit"))
+                .chain(children(graph, &flow.id, "enqueue"))
                 .chain(children(graph, &flow.id, "return"))
                 .collect::<Vec<_>>();
             statements.sort_by_key(|statement| {
@@ -386,6 +387,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                         "timeout_ms": statement.metadata.get("timeout_ms")
                             .and_then(|value| value.parse::<u64>().ok()),
                         "event": statement.metadata.get("event"),
+                        "job": statement.metadata.get("job"),
                     })
                 }).collect::<Vec<_>>(),
             })

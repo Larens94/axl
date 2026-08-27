@@ -1,0 +1,15 @@
+---
+description: AXL WP-02 backend — HTTP, middleware, events, jobs
+globs: runtime/axl-compiler/src/next/http.rs,runtime/axl-compiler/src/next/runtime.rs,examples/apps/**,docs/backend-http.md,schema/axl-http-1.schema.json
+alwaysApply: false
+---
+
+# WP-02 Backend runtime
+
+Complete Gate 2 without handwritten controllers.
+
+Already executable: Axum routes, body/path/query binding, bearer auth, request middleware, typed events, durable SQLite.
+
+Next: response middleware, header/cookie bindings, cache, observability, CORS/rate-limit behind capacities.
+
+Use the prompt template in `docs/agent-work-packages.md`. Stop at the AXL boundary when a primitive is missing.

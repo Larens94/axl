@@ -21,6 +21,7 @@ pub enum Declaration {
     Flow(Flow),
     Event(EventDecl),
     Subscription(Subscription),
+    Job(JobDecl),
     Api(Api),
     Agent(Agent),
 }
@@ -37,6 +38,7 @@ impl Declaration {
             Self::Flow(value) => &value.name,
             Self::Event(value) => &value.name,
             Self::Subscription(value) => &value.flow,
+            Self::Job(value) => &value.name,
             Self::Api(value) => &value.name,
             Self::Agent(value) => &value.name,
         }
@@ -53,6 +55,7 @@ impl Declaration {
             Self::Flow(value) => &value.span,
             Self::Event(value) => &value.span,
             Self::Subscription(value) => &value.span,
+            Self::Job(value) => &value.span,
             Self::Api(value) => &value.span,
             Self::Agent(value) => &value.span,
         }
@@ -71,6 +74,18 @@ pub struct Subscription {
     pub event: String,
     pub payload: String,
     pub flow: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct JobDecl {
+    pub name: String,
+    pub flow: String,
+    pub schedule: Option<String>,
+    pub retry: u32,
+    pub idempotent: bool,
+    pub store_capacity: String,
+    pub store_provider: String,
     pub span: SourceSpan,
 }
 
@@ -385,6 +400,11 @@ pub enum FlowStatement {
         argument: String,
         span: SourceSpan,
     },
+    Enqueue {
+        job: String,
+        argument: String,
+        span: SourceSpan,
+    },
     Return {
         expression: String,
         span: SourceSpan,
@@ -409,6 +429,7 @@ impl FlowStatement {
             | Self::Parallel { span, .. }
             | Self::Race { span, .. }
             | Self::Emit { span, .. }
+            | Self::Enqueue { span, .. }
             | Self::Return { span, .. } => span,
         }
     }

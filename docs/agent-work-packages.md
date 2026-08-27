@@ -64,15 +64,13 @@ source text after compilation.
 Goal: complete Gate 2 without handwritten controllers.
 
 Starting evidence: Axum routes, body/path/query composite binding, capacity-based
-bearer auth, ordered request middleware, retry/timeout/race and durable SQLite
-are executable.
+bearer auth, ordered request middleware, typed events/subscriptions,
+durable/scheduled jobs with retry, and durable SQLite are executable.
 
 Next deliverables:
 
 - response-phase middleware and response header mutation;
 - header and cookie request bindings;
-- typed events and subscriptions;
-- durable/scheduled jobs with retry and idempotency;
 - cache and invalidation capacities;
 - tracing, metrics and structured logs;
 - CORS, rate-limit and production auth adapters behind capacities.

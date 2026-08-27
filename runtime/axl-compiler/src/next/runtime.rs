@@ -41,6 +41,7 @@ pub trait ProviderRuntime: Send {
 pub struct BuiltinRuntime {
     memory: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     event_logs: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
+    job_stores: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     sqlite: Arc<Mutex<BTreeMap<String, Arc<Mutex<Connection>>>>>,
 }
 
@@ -49,6 +50,7 @@ impl BuiltinRuntime {
         Ok(Self {
             memory: Arc::new(Mutex::new(BTreeMap::new())),
             event_logs: Arc::new(Mutex::new(BTreeMap::new())),
+            job_stores: Arc::new(Mutex::new(BTreeMap::new())),
             sqlite: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
@@ -110,6 +112,20 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "event log provider state is unavailable".to_string())?;
                 event_log_call(&mut logs, call)
+            }
+            "rust::axl::job::memory" => {
+                let mut stores = self
+                    .job_stores
+                    .lock()
+                    .map_err(|_| "job store provider state is unavailable".to_string())?;
+                memory_job_store_call(&mut stores, call)
+            }
+            "rust::axl::job::sqlite" => {
+                let connection = self.sqlite_connection(&call)?;
+                let sqlite = connection
+                    .lock()
+                    .map_err(|_| "SQLite provider state is unavailable".to_string())?;
+                sqlite_job_store_call(&sqlite, call)
             }
             implementation => Err(format!(
                 "unsupported provider implementation '{implementation}'"
@@ -845,6 +861,14 @@ fn evaluate_flow_inner(
                     }
                 }
             }
+            "enqueue" => {
+                let job_name = metadata(statement, "job")?;
+                let argument = expression::parse(metadata(statement, "argument")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let argument = expression::evaluate(&argument, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                enqueue_job(graph, runtime, job_name, argument, None, 0, now_millis())?;
+            }
             "return" => {
                 let expression = statement_expression(statement)?;
                 let value = expression::evaluate(&expression, &values)
@@ -1072,6 +1096,359 @@ fn event_log_call(
     }
 }
 
+fn memory_job_store_call(
+    stores: &mut BTreeMap<String, BTreeMap<String, Value>>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let store = stores.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "enqueue" => {
+            let envelope = job_envelope_from_text(&call.input)?;
+            let id = envelope_id(&envelope)?;
+            if store.contains_key(&id) {
+                return Ok(Value::String(id));
+            }
+            store.insert(id.clone(), envelope);
+            Ok(Value::String(id))
+        }
+        "claim" => {
+            if !call.input.is_null() {
+                return Err("job store claim requires unit".into());
+            }
+            let now = now_millis();
+            let mut due = Vec::new();
+            let mut remaining = BTreeMap::new();
+            for (id, envelope) in std::mem::take(store) {
+                let run_at = envelope
+                    .get("run_at")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(u64::MAX);
+                if run_at <= now {
+                    let text =
+                        serde_json::to_string(&envelope).map_err(|error| error.to_string())?;
+                    due.push(Value::String(text));
+                } else {
+                    remaining.insert(id, envelope);
+                }
+            }
+            *store = remaining;
+            Ok(Value::Array(due))
+        }
+        "finish" => {
+            let id = string_input(&call.input, "finish")?;
+            store.remove(id);
+            Ok(Value::String(id.to_string()))
+        }
+        operation => Err(format!(
+            "job store does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn sqlite_job_store_call(connection: &Connection, call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "enqueue" => {
+            let envelope = job_envelope_from_text(&call.input)?;
+            let id = envelope_id(&envelope)?;
+            let run_at = envelope
+                .get("run_at")
+                .and_then(Value::as_u64)
+                .ok_or_else(|| "job envelope requires run_at".to_string())?;
+            let payload = serde_json::to_string(&envelope).map_err(|error| error.to_string())?;
+            let existing = connection.query_row(
+                "SELECT job_id FROM axl_jobs WHERE provider = ?1 AND job_id = ?2",
+                params![call.provider, id],
+                |row| row.get::<_, String>(0),
+            );
+            match existing {
+                Ok(existing_id) => Ok(Value::String(existing_id)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    connection
+                        .execute(
+                            "INSERT INTO axl_jobs (provider, job_id, envelope, run_at) \
+                             VALUES (?1, ?2, ?3, ?4)",
+                            params![call.provider, id, payload, run_at as i64],
+                        )
+                        .map_err(|error| error.to_string())?;
+                    Ok(Value::String(id))
+                }
+                Err(error) => Err(error.to_string()),
+            }
+        }
+        "claim" => {
+            if !call.input.is_null() {
+                return Err("job store claim requires unit".into());
+            }
+            let now = now_millis() as i64;
+            let mut statement = connection
+                .prepare(
+                    "SELECT job_id, envelope FROM axl_jobs \
+                     WHERE provider = ?1 AND run_at <= ?2 ORDER BY run_at, job_id",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![call.provider, now], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
+                .map_err(|error| error.to_string())?;
+            let mut due = Vec::new();
+            let mut ids = Vec::new();
+            for row in rows {
+                let (id, envelope) = row.map_err(|error| error.to_string())?;
+                ids.push(id);
+                due.push(Value::String(envelope));
+            }
+            for id in ids {
+                connection
+                    .execute(
+                        "DELETE FROM axl_jobs WHERE provider = ?1 AND job_id = ?2",
+                        params![call.provider, id],
+                    )
+                    .map_err(|error| error.to_string())?;
+            }
+            Ok(Value::Array(due))
+        }
+        "finish" => {
+            let id = string_input(&call.input, "finish")?;
+            connection
+                .execute(
+                    "DELETE FROM axl_jobs WHERE provider = ?1 AND job_id = ?2",
+                    params![call.provider, id],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(Value::String(id.to_string()))
+        }
+        operation => Err(format!(
+            "job store does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn job_envelope_from_text(value: &Value) -> Result<Value, String> {
+    let text = value
+        .as_str()
+        .ok_or_else(|| "job store enqueue requires text".to_string())?;
+    serde_json::from_str(text).map_err(|error| error.to_string())
+}
+
+fn envelope_id(envelope: &Value) -> Result<String, String> {
+    envelope
+        .get("id")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .ok_or_else(|| "job envelope requires id".into())
+}
+
+fn now_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|value| value.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+fn new_job_id(prefix: &str) -> String {
+    format!(
+        "{prefix}-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|value| value.as_nanos())
+            .unwrap_or(0)
+    )
+}
+
+fn job_node<'a>(graph: &'a GraphIr, job_name: &str) -> Result<&'a GraphNode, RuntimeError> {
+    graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "job" && node.name == job_name)
+        .ok_or_else(|| RuntimeError(format!("unknown job '{job_name}'")))
+}
+
+fn invoke_job_store(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    job: &GraphNode,
+    operation: &str,
+    input: Value,
+) -> Result<Value, RuntimeError> {
+    let capacity_name = job
+        .type_name
+        .as_deref()
+        .ok_or_else(|| RuntimeError(format!("job '{}' has no store capacity", job.name)))?;
+    let provider_name = metadata(job, "provider")?;
+    let provider_id = format!("skill.{provider_name}");
+    let provider = graph
+        .nodes
+        .iter()
+        .find(|node| node.id == provider_id)
+        .ok_or_else(|| RuntimeError(format!("missing job store provider '{provider_name}'")))?;
+    let implementation = provider.implementation.as_deref().ok_or_else(|| {
+        RuntimeError(format!(
+            "provider '{}' has no native binding",
+            provider.name
+        ))
+    })?;
+    runtime
+        .invoke(ProviderCall {
+            provider: &provider.name,
+            capacity: capacity_name,
+            implementation,
+            operation,
+            config: provider_config(graph, &provider.id)?,
+            input,
+        })
+        .map_err(RuntimeError)
+}
+
+fn enqueue_job(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    job_name: &str,
+    payload: Value,
+    id: Option<String>,
+    attempt: u32,
+    run_at: u64,
+) -> Result<String, RuntimeError> {
+    let job = job_node(graph, job_name)?;
+    let id = id.unwrap_or_else(|| new_job_id(job_name));
+    let envelope = json!({
+        "id": id,
+        "job": job_name,
+        "payload": payload,
+        "attempt": attempt,
+        "run_at": run_at,
+    });
+    let text = serde_json::to_string(&envelope)
+        .map_err(|error| RuntimeError(format!("cannot encode job envelope: {error}")))?;
+    let result = invoke_job_store(graph, runtime, job, "enqueue", Value::String(text))?;
+    result
+        .as_str()
+        .map(str::to_string)
+        .ok_or_else(|| RuntimeError("job enqueue must return text id".into()))
+}
+
+fn ensure_scheduled_jobs(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+) -> Result<usize, RuntimeError> {
+    let mut ensured = 0usize;
+    for job in graph.nodes.iter().filter(|node| node.kind == "job") {
+        let Some(schedule) = job.metadata.get("schedule") else {
+            continue;
+        };
+        let Some(_interval) = super::analyzer::parse_schedule_millis(schedule) else {
+            return Err(RuntimeError(format!(
+                "job '{}' has invalid schedule '{schedule}'",
+                job.name
+            )));
+        };
+        let id = format!("schedule:{}", job.name);
+        enqueue_job(
+            graph,
+            runtime,
+            &job.name,
+            Value::Null,
+            Some(id),
+            0,
+            now_millis(),
+        )?;
+        ensured += 1;
+    }
+    Ok(ensured)
+}
+
+/// Register due scheduled jobs, claim pending work and execute bound flows with retry.
+pub fn run_due_jobs(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+) -> Result<usize, RuntimeError> {
+    ensure_scheduled_jobs(graph, runtime)?;
+    let mut providers = BTreeMap::new();
+    for job in graph.nodes.iter().filter(|node| node.kind == "job") {
+        let provider = metadata(job, "provider")?;
+        providers
+            .entry(provider.to_string())
+            .or_insert_with(|| job.clone());
+    }
+    let mut executed = 0usize;
+    for job in providers.values() {
+        let claimed = invoke_job_store(graph, runtime, job, "claim", Value::Null)?;
+        let envelopes = claimed
+            .as_array()
+            .ok_or_else(|| RuntimeError("job claim must return a list".into()))?
+            .clone();
+        for envelope_text in envelopes {
+            let text = envelope_text
+                .as_str()
+                .ok_or_else(|| RuntimeError("job claim entries must be text".into()))?;
+            let envelope: Value = serde_json::from_str(text)
+                .map_err(|error| RuntimeError(format!("invalid job envelope: {error}")))?;
+            let job_name = envelope
+                .get("job")
+                .and_then(Value::as_str)
+                .ok_or_else(|| RuntimeError("job envelope missing job".into()))?
+                .to_string();
+            let target = job_node(graph, &job_name)?;
+            let id = envelope
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or_else(|| RuntimeError("job envelope missing id".into()))?
+                .to_string();
+            let attempt = envelope.get("attempt").and_then(Value::as_u64).unwrap_or(0) as u32;
+            let payload = envelope.get("payload").cloned().unwrap_or(Value::Null);
+            let flow = metadata(target, "flow")?;
+            let retry = metadata(target, "retry")?
+                .parse::<u32>()
+                .map_err(|_| RuntimeError(format!("job '{job_name}' has invalid retry")))?;
+            let result = evaluate_flow_inner(graph, flow, payload.clone(), runtime, 0);
+            let failed = match &result {
+                Ok(value) => value
+                    .as_object()
+                    .is_some_and(|object| object.contains_key("error")),
+                Err(_) => true,
+            };
+            let _ = invoke_job_store(graph, runtime, target, "finish", Value::String(id.clone()));
+            if failed {
+                if attempt < retry {
+                    let delay = 10u64.saturating_mul(1u64 << attempt.min(10));
+                    enqueue_job(
+                        graph,
+                        runtime,
+                        &job_name,
+                        payload,
+                        Some(new_job_id(&job_name)),
+                        attempt + 1,
+                        now_millis().saturating_add(delay),
+                    )?;
+                }
+            } else {
+                executed += 1;
+                if let Some(schedule) = target.metadata.get("schedule") {
+                    let interval =
+                        super::analyzer::parse_schedule_millis(schedule).ok_or_else(|| {
+                            RuntimeError(format!(
+                                "job '{job_name}' has invalid schedule '{schedule}'"
+                            ))
+                        })?;
+                    enqueue_job(
+                        graph,
+                        runtime,
+                        &job_name,
+                        Value::Null,
+                        Some(format!("schedule:{job_name}")),
+                        0,
+                        now_millis().saturating_add(interval),
+                    )?;
+                }
+            }
+        }
+    }
+    Ok(executed)
+}
+
 fn initialize_sqlite(connection: &Connection) -> Result<(), String> {
     connection
         .execute_batch(
@@ -1079,7 +1456,13 @@ fn initialize_sqlite(connection: &Connection) -> Result<(), String> {
              provider TEXT NOT NULL, \
              record_id TEXT NOT NULL, \
              payload TEXT NOT NULL, \
-             PRIMARY KEY (provider, record_id));",
+             PRIMARY KEY (provider, record_id));\
+             CREATE TABLE IF NOT EXISTS axl_jobs (\
+             provider TEXT NOT NULL, \
+             job_id TEXT NOT NULL, \
+             envelope TEXT NOT NULL, \
+             run_at INTEGER NOT NULL, \
+             PRIMARY KEY (provider, job_id));",
         )
         .map_err(|error| format!("cannot initialize SQLite schema: {error}"))
 }
@@ -1250,6 +1633,7 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
                     | "parallel"
                     | "race"
                     | "emit"
+                    | "enqueue"
                     | "return"
             )
         })
@@ -1742,8 +2126,128 @@ flow ReadTags unit -> Result<List<text>>
         )
         .unwrap();
         assert_eq!(saved, json!({"ok": {"id": "item-1"}}));
-        let tags = evaluate_flow_with_runtime(&graph, "ReadTags", Value::Null, &mut runtime)
-            .unwrap();
+        let tags =
+            evaluate_flow_with_runtime(&graph, "ReadTags", Value::Null, &mut runtime).unwrap();
         assert_eq!(tags, json!({"ok": ["persisted", "announced"]}));
+    }
+
+    #[test]
+    fn durable_jobs_survive_independent_runtimes_with_retry() {
+        let jobs_db = std::env::temp_dir().join(format!(
+            "axl-jobs-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let records_db = std::env::temp_dir().join(format!(
+            "axl-job-records-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let jobs_path = serde_json::to_string(jobs_db.to_str().unwrap()).unwrap();
+        let records_path = serde_json::to_string(records_db.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app DurableJobs
+entity Record
+  id: uuid required
+  value: text required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+capacity JobStore
+  op enqueue text -> Result<text> idempotent
+  op claim unit -> Result<List<text>> idempotent
+  op finish text -> Result<text>
+skill DurableRecords provides RecordStore
+  native rust axl::store::sqlite
+  config path: text = {records_path}
+  effect db.read
+  effect db.write
+skill DurableJobStore provides JobStore
+  native rust axl::job::sqlite
+  config path: text = {jobs_path}
+flow Save Record -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call saved = store.save(input)?
+  return saved
+flow Find uuid -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call found = store.find(input)?
+  return found
+job PersistRecord
+  run Save
+  retry 3
+  idempotent
+  in store: JobStore = DurableJobStore
+flow Schedule Record -> Result<Record>
+  enqueue PersistRecord(input)
+  return input
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let record = json!({"id": "record-1", "value": "from-job"});
+
+        {
+            let mut first = BuiltinRuntime::new().unwrap();
+            let scheduled =
+                evaluate_flow_with_runtime(&graph, "Schedule", record.clone(), &mut first).unwrap();
+            assert_eq!(scheduled, json!({"ok": record}));
+        }
+
+        let mut second = BuiltinRuntime::new().unwrap();
+        let executed = run_due_jobs(&graph, &mut second).unwrap();
+        assert_eq!(executed, 1);
+        let found =
+            evaluate_flow_with_runtime(&graph, "Find", json!("record-1"), &mut second).unwrap();
+        assert_eq!(found["ok"]["value"], "from-job");
+        drop(second);
+        let _ = std::fs::remove_file(jobs_db);
+        let _ = std::fs::remove_file(records_db);
+    }
+
+    #[test]
+    fn scheduled_jobs_run_and_requeue() {
+        const SOURCE: &str = r#"axl 4
+app ScheduledJobs
+capacity EventLog
+  op append text -> Result<text>
+  op list unit -> Result<List<text>>
+capacity JobStore
+  op enqueue text -> Result<text> idempotent
+  op claim unit -> Result<List<text>> idempotent
+  op finish text -> Result<text>
+skill MemoryEventLog provides EventLog
+  native rust axl::event::log
+skill MemoryJobs provides JobStore
+  native rust axl::job::memory
+flow Tick unit -> Result<text>
+  in log: EventLog = MemoryEventLog
+  call tagged = log.append("tick")?
+  return tagged
+flow Read unit -> Result<List<text>>
+  in log: EventLog = MemoryEventLog
+  call tags = log.list(input)?
+  return tags
+job TickJob
+  schedule "every 60s"
+  run Tick
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let first = run_due_jobs(&graph, &mut runtime).unwrap();
+        assert_eq!(first, 1);
+        let tags = evaluate_flow_with_runtime(&graph, "Read", Value::Null, &mut runtime).unwrap();
+        assert_eq!(tags, json!({"ok": ["tick"]}));
+        let second = run_due_jobs(&graph, &mut runtime).unwrap();
+        assert_eq!(second, 0);
     }
 }

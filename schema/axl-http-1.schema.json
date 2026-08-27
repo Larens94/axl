@@ -66,7 +66,7 @@
         "input": { "type": "string", "minLength": 1 },
         "output": { "type": "string", "minLength": 1 },
         "flow": { "type": "string", "minLength": 1 },
-        "input_source": { "enum": ["body", "path", "query", "composite"] },
+        "input_source": { "enum": ["body", "path", "query", "header", "cookie", "composite"] },
         "input_name": { "type": ["string", "null"] },
         "bindings": {
           "type": "array",
@@ -77,7 +77,7 @@
             "additionalProperties": false,
             "properties": {
               "target": { "type": ["string", "null"] },
-              "source": { "enum": ["body", "path", "query"] },
+              "source": { "enum": ["body", "path", "query", "header", "cookie"] },
               "name": { "type": ["string", "null"] }
             }
           }

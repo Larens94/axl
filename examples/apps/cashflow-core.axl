@@ -85,10 +85,41 @@ skill CashflowClientGate provides HttpMiddleware
 skill MemoryEventLog provides EventLog
   native rust axl::event::log
 
+capacity JobStore
+  op enqueue text -> Result<text> idempotent
+  op claim unit -> Result<List<text>> idempotent
+  op finish text -> Result<text>
+
+skill MemoryJobs provides JobStore
+  native rust axl::job::memory
+
+skill DurableJobs provides JobStore
+  native rust axl::job::sqlite
+  config path: text = "./build/cashflow-jobs.db"
+
 event MovementSaved: Movement
 
 on MovementSaved Movement = TagMovementPersisted
 on MovementSaved Movement = TagMovementAnnounced
+
+job PersistMovementJob
+  run ValidateAndStoreMovement
+  retry 3
+  idempotent
+  in store: JobStore = MemoryJobs
+
+job DurablePersistMovementJob
+  run SaveDurableMovement
+  retry 3
+  idempotent
+  in store: JobStore = DurableJobs
+
+job MovementTickJob
+  schedule "every 60s"
+  run RecordJobTick
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
 
 flow ValidateMovement Movement -> Result<Movement>
   let known_kind = input.kind == MovementKind.income || input.kind == MovementKind.expense
@@ -198,6 +229,19 @@ flow ListMovementTags unit -> Result<List<text>>
   in log: EventLog = MemoryEventLog
   call tags = log.list(input)?
   return tags
+
+flow RecordJobTick unit -> Result<text>
+  in log: EventLog = MemoryEventLog
+  call tagged = log.append("job-tick")?
+  return tagged
+
+flow ScheduleMovementPersist Movement -> Result<Movement>
+  enqueue PersistMovementJob(input)
+  return input
+
+flow ScheduleDurableMovementPersist Movement -> Result<Movement>
+  enqueue DurablePersistMovementJob(input)
+  return input
 
 flow FindMovement uuid -> Result<Movement>
   in store: MovementStore = MemoryMovements

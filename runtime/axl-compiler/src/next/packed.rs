@@ -316,6 +316,7 @@ fn reconstruct_id(
                 | "instance"
                 | "flow"
                 | "event"
+                | "job"
                 | "api"
                 | "agent"
         ) =>
@@ -324,7 +325,9 @@ fn reconstruct_id(
         }
         None if kind == "subscription" => {
             let order = metadata.get("order").ok_or_else(|| {
-                PackedError(format!("subscription node '{name}' is missing order metadata"))
+                PackedError(format!(
+                    "subscription node '{name}' is missing order metadata"
+                ))
             })?;
             Ok(format!("subscription.{order}"))
         }
@@ -354,6 +357,7 @@ fn reconstruct_id(
                     | "parallel"
                     | "race"
                     | "emit"
+                    | "enqueue"
                     | "request_binding"
                     | "middleware"
                     | "return"
@@ -455,6 +459,8 @@ fn node_kind_code(kind: &str) -> &str {
         "middleware" => "49",
         "subscription" => "50",
         "emit" => "51",
+        "job" => "52",
+        "enqueue" => "53",
         other => other,
     }
 }
@@ -513,6 +519,8 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "49" => "middleware",
         "50" => "subscription",
         "51" => "emit",
+        "52" => "job",
+        "53" => "enqueue",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

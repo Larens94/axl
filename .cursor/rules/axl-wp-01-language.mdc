@@ -1,0 +1,14 @@
+---
+description: AXL WP-01 language steward — AST, parser, analyzer, Packed IR
+globs: runtime/axl-compiler/src/next/{ast,parser,analyzer,formatter,packed}.rs,schema/axl-ir-4.0.schema.json,SPEC-4.0.md
+alwaysApply: false
+---
+
+# WP-01 Language and Graph IR steward
+
+Preserve one coherent language while vertical packages add primitives.
+
+- Assign stable node kinds/opcodes and diagnostics.
+- Keep canonical formatting and lossless Packed IR decoding.
+- Reject target-specific concepts that do not belong in the semantic graph.
+- Integrate ABI changes serially; do not race parallel agents on these files.

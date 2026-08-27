@@ -1,0 +1,24 @@
+axl 4
+app InvalidFlowJobsSyntax
+entity Movement
+  id: text required
+capacity JobStore
+  op enqueue text -> Result<text> idempotent
+  op claim unit -> Result<List<text>> idempotent
+  op finish text -> Result<text>
+skill MemoryJobs provides JobStore
+  native rust axl::job::memory
+flow Persist Movement -> Movement
+  return input
+job Bad.Name
+  run Persist
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
+job MissingRun
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
+flow Broken Movement -> Movement
+  enqueue Persist
+  return input

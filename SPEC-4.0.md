@@ -453,6 +453,56 @@ outputs are discarded; a `{ "error": ... }` Result or runtime failure becomes an
 error for the emitting flow. Graph IR stores app-owned `event` nodes,
 `subscription` nodes (opcode 50) and `emit` statements (opcode 51).
 
+### Jobs
+
+Jobs are open, capacity-backed work units bound to flows:
+
+```axl
+capacity JobStore
+  op enqueue text -> Result<text> idempotent
+  op claim unit -> Result<List<text>> idempotent
+  op finish text -> Result<text>
+
+skill MemoryJobs provides JobStore
+  native rust axl::job::memory
+
+skill DurableJobs provides JobStore
+  native rust axl::job::sqlite
+  config path: text = "./build/cashflow-jobs.db"
+
+job PersistMovementJob
+  run ValidateAndStoreMovement
+  retry 3
+  idempotent
+  in store: JobStore = MemoryJobs
+
+job DurablePersistMovementJob
+  run SaveDurableMovement
+  retry 3
+  idempotent
+  in store: JobStore = DurableJobs
+
+job MovementTickJob
+  schedule "every 60s"
+  run RecordJobTick
+  retry 1
+  idempotent
+  in store: JobStore = MemoryJobs
+
+flow ScheduleMovementPersist Movement -> Result<Movement>
+  enqueue PersistMovementJob(input)
+  return input
+```
+
+A job requires `run`, `retry` (0..10), `idempotent` when retry > 0, and
+`in store: JobStore = Provider`. Optional `schedule "every <n>ms|s|m"` marks a
+unit-input tick job. `enqueue Job(expr)` stores a JSON envelope through the
+bound store; `axl-compiler tick` (and `run_due_jobs`) ensures scheduled
+registrations, claims due work, executes the bound flow with retry/backoff, and
+requeues the next schedule after success. Memory and SQLite adapters share the
+same `JobStore` contract; a configured SQLite path survives runtime restart.
+Graph IR uses `job` (opcode 52) and `enqueue` (opcode 53).
+
 Route inputs use the JSON body by default. A scalar or enum input can instead
 come directly from a named path or query value:
 
@@ -632,7 +682,6 @@ generate a complete production application. `providers/providers.json` uses
 - blueprint package registry;
 - package imports and cross-package blueprint overlays;
 - runtime behavior for state, actions, errors and policies;
-- durable/scheduled jobs with retry and idempotency;
 - effect budgets and capability policy enforcement;
 - source maps from generated target code;
 - AI and agent runtime execution;
@@ -641,8 +690,8 @@ generate a complete production application. `providers/providers.json` uses
 These are later gates. The current experiment validates the source language,
 open-port type model, agent diagnostics and deterministic IR pipeline. Flow
 Runtime 2 executes expressions and capacity calls through a replaceable runtime
-ABI. HTTP Runtime 1 dispatches exact JSON routes through Axum. Durable
-persistence and runtime UI behavior are not implemented yet.
+ABI. HTTP Runtime 1 dispatches exact JSON routes through Axum. Durable persistence for configured SQLite stores and jobs is proven for records
+and job envelopes; runtime UI behavior is not implemented yet.
 
 ## 10. Verified examples and guides
 

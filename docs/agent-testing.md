@@ -19,7 +19,7 @@ jq empty schema/axl-provider-1.schema.json
 ```
 
 The integration suite compiles nine valid documented programs, round-trips each
-through Packed Graph IR and verifies twenty-one intentionally invalid programs.
+through Packed Graph IR and verifies twenty-five intentionally invalid programs.
 
 The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
@@ -106,6 +106,21 @@ cargo run -p axl-compiler -- \
   examples/apps/inputs/movement-valid.json
 
 cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl SaveAndAnnounce \
+  examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl ScheduleDurableMovementPersist \
+  examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
+  tick examples/apps/cashflow-core.axl
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl FindDurableMovement \
+  examples/apps/inputs/movement-id.json
+
+cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl SaveDurableMovement \
   examples/apps/inputs/movement-valid.json
 
@@ -117,10 +132,19 @@ cargo run -p axl-compiler -- \
 The first results must respectively contain an `ok` movement, the error
 `amount_must_be_positive`, the integer `80000`, a view with direction `Entrata`
 and a folded ledger balance of `80000`. The storage evaluations must return
-movement `movement-001`; the composed flow must validate before saving. No
-application-specific Rust function contains these rules. The final two commands
-run in independent processes and must still find `movement-001`, proving that
-the configured SQLite path survives a runtime restart.
+movement `movement-001`; the composed flow must validate before saving.
+`SaveAndAnnounce` saves then emits `MovementSaved` to two AXL listeners.
+`ScheduleDurableMovementPersist` enqueues a durable job; `tick` in a fresh
+process runs it through `SaveDurableMovement`, and the following
+`FindDurableMovement` must still find `movement-001`. No application-specific
+Rust function contains these rules. The final two commands run in independent
+processes and must still find `movement-001`, proving that the configured SQLite
+path survives a runtime restart.
+
+Verify jobs (in-process memory enqueue is covered by `cargo test`; durable
+cross-process proof is the `ScheduleDurableMovementPersist` / `tick` /
+`FindDurableMovement` sequence above). Scheduled unit jobs use
+`schedule "every <n>ms|s|m"`.
 
 ## 6. Verify the HTTP backend
 
@@ -270,6 +294,18 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   check examples/invalid/http-middleware.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-events-syntax.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-events.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-jobs-syntax.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-jobs.axl --json
 ```
 
 The first diagnostic set must include `AXL-O401`; the second must include
@@ -291,7 +327,10 @@ The seventeenth must include every code from `AXL-P913` through `AXL-P917`. The 
 include every code from `AXL-H908` through `AXL-H912`.
 The nineteenth must include every code from `AXL-H913` through `AXL-H917`.
 The twentieth must include `AXL-P918`. The twenty-first must include every code
-from `AXL-H918` through `AXL-H922`.
+from `AXL-H918` through `AXL-H922`. The twenty-second must include `AXL-P920`.
+The twenty-third must include every code from `AXL-E901` through `AXL-E906`.
+The twenty-fourth must include `AXL-P921`. The twenty-fifth must include every
+code from `AXL-J901` through `AXL-J908`.
 
 ## 8. Verify canonical formatting and transport
 
@@ -333,10 +372,13 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - configured SQLite data survives destruction and recreation of the runtime;
 - API auth is capacity-backed and proves missing, denied and accepted requests;
 - ordered request middleware is capacity-backed over typed envelopes;
+- typed events reach multiple subscribers through `emit`;
+- capacity-backed jobs enqueue, tick, retry and survive SQLite runtime recreate;
 - scalar path/query bindings are checked, decoded and exact-route-safe;
 - composite request entities are assembled from checked body/path/query nodes;
 - documentation examples remain coupled to compiler tests.
 
 It does not prove transaction/migration semantics or runtime UI rendering.
-HTTP execution, process-local memory and restart-durable configured SQLite are
-proven. Generated target files are not yet a deployable app.
+HTTP execution, process-local memory, restart-durable configured SQLite,
+typed multi-subscriber events and durable jobs are proven. Generated target
+files are not yet a deployable app.
