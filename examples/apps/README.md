@@ -112,6 +112,10 @@ secret references and production auth adapters.
 `x-axl-client: cashflow-demo` and returns 403 when the header is missing or
 wrong. The header-gate skill is a replaceable capacity, not route-specific Rust.
 
+`POST /annotated/balance` uses ordered response middleware. It returns the same
+balance body and sets `x-axl-middleware: ok` through the replaceable
+`axl::middleware::response_headers` skill.
+
 The durable lookup is also exposed as `GET /movements/{id}` and
 `GET /movements/find?id=...`. These routes bind a path or query string directly
 to the typed `uuid` flow input; exact `/movements/find` matching takes precedence

@@ -40,6 +40,7 @@ pub trait ProviderRuntime: Send {
 #[derive(Clone)]
 pub struct BuiltinRuntime {
     memory: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
+    caches: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     event_logs: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
     job_stores: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     sqlite: Arc<Mutex<BTreeMap<String, Arc<Mutex<Connection>>>>>,
@@ -49,6 +50,7 @@ impl BuiltinRuntime {
     pub fn new() -> Result<Self, RuntimeError> {
         Ok(Self {
             memory: Arc::new(Mutex::new(BTreeMap::new())),
+            caches: Arc::new(Mutex::new(BTreeMap::new())),
             event_logs: Arc::new(Mutex::new(BTreeMap::new())),
             job_stores: Arc::new(Mutex::new(BTreeMap::new())),
             sqlite: Arc::new(Mutex::new(BTreeMap::new())),
@@ -127,6 +129,20 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "SQLite provider state is unavailable".to_string())?;
                 sqlite_job_store_call(&sqlite, call)
+            }
+            "rust::axl::cache::memory" => {
+                let mut caches = self
+                    .caches
+                    .lock()
+                    .map_err(|_| "cache provider state is unavailable".to_string())?;
+                memory_cache_call(&mut caches, call)
+            }
+            "rust::axl::cache::sqlite" => {
+                let connection = self.sqlite_connection(&call)?;
+                let sqlite = connection
+                    .lock()
+                    .map_err(|_| "SQLite provider state is unavailable".to_string())?;
+                sqlite_cache_call(&sqlite, call)
             }
             implementation => Err(format!(
                 "unsupported provider implementation '{implementation}'"
@@ -1139,6 +1155,95 @@ fn event_log_call(
     }
 }
 
+fn memory_cache_call(
+    caches: &mut BTreeMap<String, BTreeMap<String, Value>>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let cache = caches.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "get" => {
+            let key = string_input(&call.input, "get")?;
+            cache
+                .get(key)
+                .cloned()
+                .ok_or_else(|| "cache_miss".into())
+        }
+        "put" => {
+            let (key, value) = cache_entry(&call.input)?;
+            cache.insert(key, Value::String(value));
+            Ok(Value::Null)
+        }
+        "invalidate" => {
+            let key = string_input(&call.input, "invalidate")?;
+            Ok(Value::Bool(cache.remove(key).is_some()))
+        }
+        operation => Err(format!(
+            "memory cache does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn sqlite_cache_call(connection: &Connection, call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "get" => {
+            let key = string_input(&call.input, "get")?;
+            let result = connection.query_row(
+                "SELECT value FROM axl_cache WHERE provider = ?1 AND cache_key = ?2",
+                params![call.provider, key],
+                |row| row.get::<_, String>(0),
+            );
+            match result {
+                Ok(value) => Ok(Value::String(value)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Err("cache_miss".into()),
+                Err(error) => Err(error.to_string()),
+            }
+        }
+        "put" => {
+            let (key, value) = cache_entry(&call.input)?;
+            connection
+                .execute(
+                    "INSERT INTO axl_cache (provider, cache_key, value) VALUES (?1, ?2, ?3) \
+                     ON CONFLICT(provider, cache_key) DO UPDATE SET value = excluded.value",
+                    params![call.provider, key, value],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(Value::Null)
+        }
+        "invalidate" => {
+            let key = string_input(&call.input, "invalidate")?;
+            let removed = connection
+                .execute(
+                    "DELETE FROM axl_cache WHERE provider = ?1 AND cache_key = ?2",
+                    params![call.provider, key],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(Value::Bool(removed > 0))
+        }
+        operation => Err(format!(
+            "SQLite cache does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn cache_entry(value: &Value) -> Result<(String, String), String> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| "cache put requires a CacheEntry object".to_string())?;
+    let key = object
+        .get("key")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "cache put requires text field 'key'".to_string())?
+        .to_string();
+    let entry_value = object
+        .get("value")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "cache put requires text field 'value'".to_string())?
+        .to_string();
+    Ok((key, entry_value))
+}
+
 fn memory_job_store_call(
     stores: &mut BTreeMap<String, BTreeMap<String, Value>>,
     call: ProviderCall<'_>,
@@ -1505,7 +1610,12 @@ fn initialize_sqlite(connection: &Connection) -> Result<(), String> {
              job_id TEXT NOT NULL, \
              envelope TEXT NOT NULL, \
              run_at INTEGER NOT NULL, \
-             PRIMARY KEY (provider, job_id));",
+             PRIMARY KEY (provider, job_id));\
+             CREATE TABLE IF NOT EXISTS axl_cache (\
+             provider TEXT NOT NULL, \
+             cache_key TEXT NOT NULL, \
+             value TEXT NOT NULL, \
+             PRIMARY KEY (provider, cache_key));",
         )
         .map_err(|error| format!("cannot initialize SQLite schema: {error}"))
 }

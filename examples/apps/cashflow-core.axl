@@ -116,6 +116,22 @@ skill DurableJobs provides JobStore
   native rust axl::job::sqlite
   config path: text = "./build/cashflow-jobs.db"
 
+entity CacheEntry
+  key: text required
+  value: text required
+
+capacity Cache
+  op get text -> Result<text> idempotent
+  op put CacheEntry -> Result<unit>
+  op invalidate text -> Result<bool>
+
+skill MemoryCache provides Cache
+  native rust axl::cache::memory
+
+skill DurableCache provides Cache
+  native rust axl::cache::sqlite
+  config path: text = "./build/cashflow-cache.db"
+
 event MovementSaved: Movement
 
 on MovementSaved Movement = TagMovementPersisted
@@ -262,6 +278,33 @@ flow ScheduleDurableMovementPersist Movement -> Result<Movement>
   enqueue DurablePersistMovementJob(input)
   return input
 
+flow CacheBalanceSnapshot CacheEntry -> Result<text>
+  in cache: Cache = MemoryCache
+  call stored = cache.put(input)?
+  call loaded = cache.get(input.key)?
+  return loaded
+
+flow LoadCachedBalance text -> Result<text>
+  in cache: Cache = MemoryCache
+  call loaded = cache.get(input)?
+  return loaded
+
+flow InvalidateCachedBalance text -> Result<bool>
+  in cache: Cache = MemoryCache
+  call removed = cache.invalidate(input)?
+  return removed
+
+flow CacheBalanceSnapshotDurable CacheEntry -> Result<text>
+  in cache: Cache = DurableCache
+  call stored = cache.put(input)?
+  call loaded = cache.get(input.key)?
+  return loaded
+
+flow InvalidateCachedBalanceDurable text -> Result<bool>
+  in cache: Cache = DurableCache
+  call removed = cache.invalidate(input)?
+  return removed
+
 flow FindMovement uuid -> Result<Movement>
   in store: MovementStore = MemoryMovements
   call found = store.find(input)?
@@ -303,6 +346,9 @@ api CashflowApi
   post /movement-first MovementLookupBatch -> Result<Movement> = FindFirstMovement
   post /movements/durable Movement -> Result<Movement> = SaveDurableMovement
   post /movement-by-id/durable uuid -> Result<Movement> = FindDurableMovement
+  post /cache/balance CacheEntry -> Result<text> = CacheBalanceSnapshot
+  post /cache/balance/get text -> Result<text> = LoadCachedBalance
+  post /cache/balance/invalidate text -> Result<bool> = InvalidateCachedBalance
   get /movements/{id} uuid -> Result<Movement> = FindDurableMovement from path.id
   get /movements/find uuid -> Result<Movement> = FindDurableMovement from query.id
   get /me text -> text = EchoText from header.x-user

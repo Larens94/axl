@@ -710,7 +710,8 @@ generate a complete production application. `providers/providers.json` uses
 - contract expression type checking;
 - branch statement blocks and mutable variables;
 - generated standalone Rust handlers and React components from Graph IR;
-- response middleware and streaming HTTP bodies;
+- streaming HTTP bodies;
+- cache, CORS, rate-limit and observability capacities;
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
 - transactions, migrations, queries and multi-database adapters;

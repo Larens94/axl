@@ -693,11 +693,11 @@ fn documented_cashflow_core_executes() {
     assert_eq!(response.status, 200);
     assert_eq!(response.body["ok"]["id"], "movement-001");
 
-    let batch = serde_json::from_str(include_str!(
+    let batch: serde_json::Value = serde_json::from_str(include_str!(
         "../../../examples/apps/inputs/movement-batch.json"
     ))
     .unwrap();
-    let response = axl_compiler::next::http::dispatch(&graph, "post", "/balance", batch);
+    let response = axl_compiler::next::http::dispatch(&graph, "post", "/balance", batch.clone());
     assert_eq!(response.status, 200);
     assert_eq!(response.body, 80000);
 

@@ -38,9 +38,9 @@ Gate 2 has started without closing Gate 1: `api` declarations now compile to
 status mapping work. One process-local provider runtime is shared across
 requests. A typed `auth bearer: Capacity = Provider` surface now protects whole
 APIs and the built-in fixture proves 401/403/200 behavior. Secret references,
-JWT/OAuth and response middleware remain. Scalar and composite body/path/query/
-header/cookie assembly is executable; ordered request middleware is capacity-backed.
-Typed events and multi-subscriber `emit` are executable. Durable/scheduled jobs with
-retry, idempotency and replaceable JobStore providers are executable across
-runtime recreate. Cache and observability remain. Gate 3
-continues with transactions, migrations and additional database families.
+JWT/OAuth, cache and observability remain. Scalar and composite body/path/query/
+header/cookie assembly is executable; ordered request and response middleware are
+capacity-backed. Typed events and multi-subscriber `emit` are executable. Durable/
+scheduled jobs with retry, idempotency and replaceable JobStore providers are
+executable across runtime recreate. Gate 3 continues with transactions, migrations
+and additional database families.

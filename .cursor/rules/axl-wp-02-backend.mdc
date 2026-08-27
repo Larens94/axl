@@ -8,8 +8,9 @@ alwaysApply: false
 
 Complete Gate 2 without handwritten controllers.
 
-Already executable: Axum routes, body/path/query/header/cookie binding, bearer auth, request middleware, typed events, durable SQLite.
+Already executable: Axum routes, body/path/query/header/cookie binding, bearer auth,
+request and response middleware, typed events, durable SQLite.
 
-Next: response middleware, cache, observability, CORS/rate-limit behind capacities.
+Next: cache, observability, CORS/rate-limit behind capacities.
 
 Use the prompt template in `docs/agent-work-packages.md`. Stop at the AXL boundary when a primitive is missing.

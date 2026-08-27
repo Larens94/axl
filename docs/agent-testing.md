@@ -205,6 +205,17 @@ curl -X POST http://127.0.0.1:8080/guarded/balance \
 The response is `80000`. Omitting the client header or using another value
 returns 403.
 
+Verify the open response middleware gate:
+
+```sh
+curl -i -X POST http://127.0.0.1:8080/annotated/balance \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/movement-batch.json
+```
+
+The body is `80000` and the response includes `x-axl-middleware: ok`. The header
+comes from capacity-backed response middleware, not Axum-only CORS logic.
+
 After saving the durable movement, verify both request bindings:
 
 ```sh
@@ -389,6 +400,7 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - configured SQLite data survives destruction and recreation of the runtime;
 - API auth is capacity-backed and proves missing, denied and accepted requests;
 - ordered request middleware is capacity-backed over typed envelopes;
+- ordered response middleware mutates response headers through typed envelopes;
 - typed events reach multiple subscribers through `emit`;
 - capacity-backed jobs enqueue, tick, retry and survive SQLite runtime recreate;
 - scalar path/query/header/cookie bindings are checked, decoded and exact-route-safe;

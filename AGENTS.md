@@ -28,7 +28,7 @@ WP-01.
 | Agent | Package | Next primitive |
 |---|---|---|
 | Language steward | WP-01 | review opcodes/diagnostics from vertical slices |
-| Backend | WP-02 | response middleware / cache / observability |
+| Backend | WP-02 | cache / observability |
 | Data | WP-03 | transactions / migrations (after jobs or in parallel on separate ABI surface) |
 
 Later waves: WP-04 UI, WP-05 AI/vector, WP-06 agents, WP-07 IoT, WP-08 security, WP-09 QA.

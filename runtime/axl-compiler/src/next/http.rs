@@ -561,7 +561,8 @@ fn api_middlewares<'a>(
         .filter(|edge| edge.kind == "owns" && edge.from == api)
         .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
         .filter(|node| {
-            node.kind == "middleware" && node.metadata.get("phase").map(String::as_str) == Some(phase)
+            node.kind == "middleware"
+                && node.metadata.get("phase").map(String::as_str) == Some(phase)
         })
         .collect::<Vec<_>>();
     middlewares.sort_by_key(|middleware| {
@@ -930,7 +931,10 @@ api AnnotatedApi
         );
         assert_eq!(annotated.status, 200);
         assert_eq!(
-            annotated.headers.get("x-axl-middleware").map(String::as_str),
+            annotated
+                .headers
+                .get("x-axl-middleware")
+                .map(String::as_str),
             Some("ok")
         );
     }

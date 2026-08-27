@@ -7,8 +7,8 @@ Operational notes for the experimentation phase. Pairs with `AGENTS.md` and
 
 Gate 2 remainder → Gate 3 data → Gate 4 UI → Gates 5–9.
 
-Immediate next executable slice: **response-phase middleware / response header
-mutation** (WP-02), then cache/observability, then Gate 3 data.
+Immediate next executable slice: **cache / observability** (WP-02), then Gate 3
+data.
 
 ## Autoloop
 

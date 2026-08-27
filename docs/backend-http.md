@@ -40,9 +40,31 @@ api GuardedCashflowApi
   post /guarded/balance MovementBatch -> money = CalculateLedgerBalance
 ```
 
-Each middleware runs before auth. Providers may transform the envelope or reject
-the request. The built-in `axl::middleware::header_gate` checks one configured
-header and is replaceable.
+Each request middleware runs before auth. Providers may transform the envelope or
+reject the request. The built-in `axl::middleware::header_gate` checks one
+configured header and is replaceable.
+
+Response middleware uses the same declaration form with phase `response` and a
+typed response envelope:
+
+```axl
+entity HttpResponse
+  status: int required
+  headers: Map<text,text> required
+  body: text required
+
+capacity HttpResponseMiddleware
+  op process HttpResponse -> Result<HttpResponse> idempotent
+
+api AnnotatedCashflowApi
+  middleware response: HttpResponseMiddleware = CashflowResponseHeaders
+  post /annotated/balance MovementBatch -> money = CalculateLedgerBalance
+```
+
+Response middleware runs after the flow. The built-in
+`axl::middleware::response_headers` skill merges one configured header into the
+envelope; providers remain replaceable. `HttpResult` carries the merged headers
+to Axum.
 
 Typed application events are separate from HTTP:
 
@@ -169,13 +191,12 @@ Status mapping:
 ## Current boundary
 
 Scalar bindings and composite entity assembly cover body, path, query, header
-and cookie sources. Ordered request middleware with typed envelopes is
-executable. Typed events and durable/scheduled jobs with replaceable JobStore
+and cookie sources. Ordered request and response middleware with typed envelopes
+are executable. Typed events and durable/scheduled jobs with replaceable JobStore
 providers are executable. Nested target paths beyond a single field name are
-not yet request sources. Response-phase middleware and response header mutation
-are not implemented. Memory and unconfigured SQLite remain process-local;
+not yet request sources. Memory and unconfigured SQLite remain process-local;
 configured SQLite paths are durable for records and jobs. Transactions and
-migrations remain data gates. The built-in static bearer and header-gate
-providers are demo fixtures and their config is visible in the manifest; secret
-references, JWT/OAuth validation, CORS, streaming, cache, rate limits and
-observability remain later backend gates.
+migrations remain data gates. The built-in static bearer, header-gate and
+response-headers providers are demo fixtures and their config is visible in the
+manifest; secret references, JWT/OAuth validation, CORS, streaming, cache, rate
+limits and observability remain later backend gates.
