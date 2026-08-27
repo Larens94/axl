@@ -1,0 +1,94 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://axl-lang.dev/schema/axl-open-block-1.schema.json",
+  "title": "AXL Open Block Manifest 1",
+  "type": "object",
+  "required": ["schema", "app", "protocol", "blocks"],
+  "additionalProperties": false,
+  "properties": {
+    "schema": { "const": "ax-ir/4.0" },
+    "app": { "type": "string", "minLength": 1 },
+    "protocol": { "const": "axl-open-block/1" },
+    "blocks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/block" }
+    }
+  },
+  "$defs": {
+    "block": {
+      "type": "object",
+      "required": [
+        "name",
+        "open_surface_count",
+        "surfaces",
+        "contracts",
+        "effects",
+        "capabilities"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "open_surface_count": { "type": "integer", "minimum": 1 },
+        "surfaces": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/surface" }
+        },
+        "contracts": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/contract" }
+        },
+        "effects": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "surface": {
+      "type": "object",
+      "required": [
+        "name",
+        "kind",
+        "type",
+        "default",
+        "provider",
+        "accepts_provider"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "kind": {
+          "enum": [
+            "input",
+            "output",
+            "slot",
+            "hook",
+            "parameter",
+            "state",
+            "event",
+            "action",
+            "error",
+            "policy"
+          ]
+        },
+        "type": { "type": "string", "minLength": 1 },
+        "default": { "type": ["string", "null"] },
+        "provider": { "type": ["string", "null"] },
+        "accepts_provider": { "type": "boolean" }
+      }
+    },
+    "contract": {
+      "type": "object",
+      "required": ["owner", "kind", "expression"],
+      "additionalProperties": false,
+      "properties": {
+        "owner": { "type": "string" },
+        "kind": { "enum": ["requires", "ensures", "invariant"] },
+        "expression": { "type": "string" }
+      }
+    }
+  }
+}

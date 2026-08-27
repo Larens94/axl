@@ -52,9 +52,18 @@ skill ValidateCustomer provides CustomerPolicy
   native rust crm::validate_customer
 
 blueprint CustomerCRM
+  param page_size: int = 25
+  param density: text = "comfortable"
+  state selected: Option<Customer>
+  event customer.selected: Customer
+  error load.failed: text
+
   in store: CustomerStore
   in auth: AuthProvider
   out api: CrudApi<Customer>
+
+  action refresh: CustomerStore = SqliteCustomers
+  policy access: AuthProvider = JwtAuth
 
   slot table.row: CustomerRow = DefaultCustomerRow
   slot mobile.card: CustomerCard = DefaultCustomerCard

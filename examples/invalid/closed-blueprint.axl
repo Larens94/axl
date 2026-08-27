@@ -1,0 +1,6 @@
+// Expected diagnostic: AXL-O401.
+axl 4
+app ClosedBlock
+
+blueprint ClosedPanel
+  out view: UI

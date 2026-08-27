@@ -10,7 +10,7 @@ fn main() -> Result<()> {
     }
 
     match args[1].as_str() {
-        "check" | "ir" | "pack" | "fmt" | "experiment" | "unpack" => run(&args[1..]),
+        "check" | "ir" | "pack" | "fmt" | "blocks" | "experiment" | "unpack" => run(&args[1..]),
         _ => {
             usage();
             bail!("invalid command")
@@ -77,6 +77,10 @@ fn run(args: &[String]) -> Result<()> {
             }
         }
         "fmt" => print!("{}", compilation.source),
+        "blocks" => println!(
+            "{}",
+            serde_json::to_string_pretty(&next::targets::open_block_manifest(&compilation.graph))?
+        ),
         "experiment" => {
             let Some(output) = args.get(2) else {
                 bail!("experiment requires an output directory")
@@ -99,6 +103,6 @@ fn run(args: &[String]) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "Usage:\n  axl-compiler check <input.axl> [--json]\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>"
+        "Usage:\n  axl-compiler check <input.axl> [--json]\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>"
     );
 }

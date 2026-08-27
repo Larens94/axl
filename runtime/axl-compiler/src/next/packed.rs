@@ -319,7 +319,22 @@ fn reconstruct_id(
             })?;
             Ok(format!("{parent}.{kind}.{order}"))
         }
-        Some(parent) if matches!(kind, "field" | "input" | "output" | "slot" | "hook") => {
+        Some(parent)
+            if matches!(
+                kind,
+                "field"
+                    | "input"
+                    | "output"
+                    | "slot"
+                    | "hook"
+                    | "parameter"
+                    | "state"
+                    | "event"
+                    | "action"
+                    | "error"
+                    | "policy"
+            ) =>
+        {
             Ok(format!("{parent}.{kind}.{name}"))
         }
         None => Err(PackedError(format!("node kind '{kind}' requires a parent"))),
@@ -346,6 +361,12 @@ fn node_kind_code(kind: &str) -> &str {
         "belief" => "12",
         "goal" => "13",
         "plan" => "14",
+        "parameter" => "15",
+        "state" => "16",
+        "event" => "17",
+        "action" => "18",
+        "error" => "19",
+        "policy" => "20",
         other => other,
     }
 }
@@ -367,6 +388,12 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "12" => "belief",
         "13" => "goal",
         "14" => "plan",
+        "15" => "parameter",
+        "16" => "state",
+        "17" => "event",
+        "18" => "action",
+        "19" => "error",
+        "20" => "policy",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

@@ -42,12 +42,7 @@ pub fn format(program: &Program) -> String {
             Declaration::Blueprint(blueprint) => {
                 output.push(format!("blueprint {}", blueprint.name));
                 for port in &blueprint.ports {
-                    let keyword = match port.kind {
-                        PortKind::Input => "in",
-                        PortKind::Output => "out",
-                        PortKind::Slot => "slot",
-                        PortKind::Hook => "hook",
-                    };
+                    let keyword = port.kind.keyword();
                     let default = port
                         .default
                         .as_ref()
@@ -71,6 +66,21 @@ pub fn format(program: &Program) -> String {
                 }
                 append_values(&mut output, "effect", &blueprint.effects);
                 append_values(&mut output, "capability", &blueprint.capabilities);
+            }
+            Declaration::Instance(instance) => {
+                output.push(format!(
+                    "instance {} of {}",
+                    instance.name, instance.blueprint
+                ));
+                for setting in &instance.settings {
+                    output.push(format!(
+                        "  set {} = {}",
+                        setting.parameter, setting.value
+                    ));
+                }
+                for binding in &instance.bindings {
+                    output.push(format!("  use {} = {}", binding.port, binding.provider));
+                }
             }
             Declaration::Agent(agent) => {
                 output.push(format!("agent {}", agent.name));

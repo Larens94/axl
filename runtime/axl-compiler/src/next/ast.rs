@@ -16,6 +16,7 @@ pub enum Declaration {
     Capacity(Capacity),
     Skill(Skill),
     Blueprint(Blueprint),
+    Instance(Instance),
     Agent(Agent),
 }
 
@@ -26,6 +27,7 @@ impl Declaration {
             Self::Capacity(value) => &value.name,
             Self::Skill(value) => &value.name,
             Self::Blueprint(value) => &value.name,
+            Self::Instance(value) => &value.name,
             Self::Agent(value) => &value.name,
         }
     }
@@ -36,6 +38,7 @@ impl Declaration {
             Self::Capacity(value) => &value.span,
             Self::Skill(value) => &value.span,
             Self::Blueprint(value) => &value.span,
+            Self::Instance(value) => &value.span,
             Self::Agent(value) => &value.span,
         }
     }
@@ -106,6 +109,58 @@ pub enum PortKind {
     Output,
     Slot,
     Hook,
+    Parameter,
+    State,
+    Event,
+    Action,
+    Error,
+    Policy,
+}
+
+impl PortKind {
+    pub fn keyword(&self) -> &'static str {
+        match self {
+            Self::Input => "in",
+            Self::Output => "out",
+            Self::Slot => "slot",
+            Self::Hook => "hook",
+            Self::Parameter => "param",
+            Self::State => "state",
+            Self::Event => "event",
+            Self::Action => "action",
+            Self::Error => "error",
+            Self::Policy => "policy",
+        }
+    }
+
+    pub fn graph_kind(&self) -> &'static str {
+        match self {
+            Self::Input => "input",
+            Self::Output => "output",
+            Self::Slot => "slot",
+            Self::Hook => "hook",
+            Self::Parameter => "parameter",
+            Self::State => "state",
+            Self::Event => "event",
+            Self::Action => "action",
+            Self::Error => "error",
+            Self::Policy => "policy",
+        }
+    }
+
+    pub fn accepts_provider(&self) -> bool {
+        matches!(
+            self,
+            Self::Input | Self::Slot | Self::Hook | Self::Action | Self::Policy
+        )
+    }
+
+    pub fn is_customization_surface(&self) -> bool {
+        matches!(
+            self,
+            Self::Input | Self::Slot | Self::Hook | Self::Parameter | Self::Action | Self::Policy
+        )
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +176,22 @@ pub struct Port {
 pub struct Binding {
     pub port: String,
     pub provider: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Instance {
+    pub name: String,
+    pub blueprint: String,
+    pub settings: Vec<Setting>,
+    pub bindings: Vec<Binding>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Setting {
+    pub parameter: String,
+    pub value: String,
     pub span: SourceSpan,
 }
 

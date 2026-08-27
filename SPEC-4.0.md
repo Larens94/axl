@@ -84,9 +84,17 @@ AXL validates the declared target and capacity. Target ABI validation is planned
 
 ```axl
 blueprint CustomerCRM
+  param page_size: int = 25
+  param density: text = "comfortable"
+  state selected: Option<Customer>
+  event customer.selected: Customer
+  error load.failed: text
+
   in store: CustomerStore
   out api: CrudApi<Customer>
 
+  action refresh: CustomerStore = SqliteCustomers
+  policy access: AuthProvider = JwtAuth
   slot table.row: CustomerRow = DefaultCustomerRow
   hook before.save: CustomerPolicy = ValidateCustomer
 
@@ -108,11 +116,28 @@ Blueprint connection points:
 | `out` | capacity exposed by the blueprint | no |
 | `slot` | replaceable UI or structural component | no |
 | `hook` | replaceable lifecycle behavior | no |
+| `param` | typed scalar configuration with a required default | n/a |
+| `state` | typed observable state surface | no |
+| `event` | typed event payload exposed by the block | no |
+| `action` | replaceable invokable capacity | no |
+| `error` | typed failure surface exposed by the block | no |
+| `policy` | replaceable policy capacity | no |
 | `use` | explicit provider binding | n/a |
 
-Providers are type checked. A skill satisfies a port only when its `provides`
-capacity equals the port type. A blueprint output may be referenced as
+`in`, `slot`, `hook`, `action` and `policy` accept providers. Providers are type
+checked: a skill satisfies one of these surfaces only when its `provides`
+capacity equals the declared type. A blueprint output may be referenced as
 `Blueprint.output`.
+
+Parameters currently support checked scalar defaults: `bool`, `int`, `float`,
+`money` and JSON-quoted `text`, `string`, `email`, `uuid`, `datetime` or
+`duration`. `state`, `event` and `error` are typed Graph IR surfaces and do not
+accept defaults or `use` bindings.
+
+Every blueprint must expose at least one customization surface among `in`,
+`slot`, `hook`, `param`, `action` and `policy`. A closed blueprint produces
+diagnostic `AXL-O401`. This rule is the first executable version of the AXL Open
+Block Protocol.
 
 ### Agent
 
@@ -212,6 +237,7 @@ axl-compiler check <input.axl> [--json]
 axl-compiler ir <input.axl>
 axl-compiler pack <input.axl> [--matrix]
 axl-compiler fmt <input.axl>
+axl-compiler blocks <input.axl>
 axl-compiler experiment <input.axl> <output-dir>
 axl-compiler unpack <packed.axl>
 ```
@@ -224,6 +250,7 @@ app.axir.json    Semantic Graph IR
 app.packed.axl   matrix-formatted Packed Graph IR
 targets/
   manifest.json
+  blocks/open-blocks.json
   rust/axl_contracts.rs
   react/axl_slots.ts
   sql/schema.sql
@@ -231,8 +258,9 @@ targets/
 ```
 
 The current target adapters generate Rust data/capacity contracts, a React slot
-registry, SQL entity DDL and an agent manifest. They deliberately stop before
-claiming to generate a complete production application.
+registry, SQL entity DDL, an agent manifest and an `axl-open-block/1` manifest
+that lists every blueprint surface. They deliberately stop before claiming to
+generate a complete production application.
 
 ## 8. Design sources adopted
 
@@ -255,6 +283,8 @@ claiming to generate a complete production application.
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
 - blueprint package registry;
+- blueprint instantiation and overlay syntax;
+- runtime behavior for state, events, actions, errors and policies;
 - effect budgets and capability policy enforcement;
 - source maps from generated target code;
 - AI and agent runtime execution;
@@ -269,6 +299,8 @@ open-port type model, agent diagnostics and deterministic IR pipeline.
 - `examples/blocks/02-ui-slot.axl` — typed React slot with a default provider.
 - `examples/blocks/03-hook.axl` — typed lifecycle hook and recorded contracts.
 - `examples/blocks/04-agent.axl` — belief/goal/plan graph model.
+- `examples/blocks/05-open-dataview.axl` — all implemented open-block surfaces.
+- `examples/catalog/software-foundation.axl` — fourteen primary open block contracts.
 - `examples/next/crm.axl` — composed CRM graph.
 - `docs/blocks.md` — construction guide and current limitations.
 - `docs/status.md` — concise implemented/planned matrix.

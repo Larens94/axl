@@ -1,0 +1,6 @@
+// Expected diagnostic: AXL-V403.
+axl 4
+app WrongParameter
+
+blueprint CustomerTable
+  param page_size: int = "many"

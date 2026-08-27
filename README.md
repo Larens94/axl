@@ -13,8 +13,8 @@ readable AXL
 ```
 
 AXL describes software through entities, capacities, skills and blueprints with
-typed open ports. Rust and React are target implementations rather than the
-source language.
+typed open surfaces. The compiler rejects closed blueprints. Rust and React are
+target implementations rather than the source language.
 
 ## Try the experiment
 
@@ -34,11 +34,14 @@ target contracts.
 - `SPEC-4.0.md` — implemented language boundary.
 - `docs/index.html` — concise browser documentation.
 - `docs/blocks.md` — verified guide to open block construction.
+- `docs/agent-testing.md` — repeatable test handoff for another agent.
 - `presentation.html` — simplified, responsive project presentation.
 - `examples/blocks` — small examples compiled by the test suite.
+- `examples/catalog/software-foundation.axl` — fourteen open foundation blocks.
 - `examples/next/crm.axl` — semantic CRM experiment.
 - `runtime/axl-compiler/src/next` — parser, analyzer, IR and target adapters.
 - `schema/axl-ir-4.0.schema.json` — Graph IR JSON schema.
+- `schema/axl-open-block-1.schema.json` — generated block manifest schema.
 
 ## Build an open block
 
@@ -55,6 +58,13 @@ blueprint CustomerList
 
 This exact example is compiled from `examples/blocks/02-ui-slot.axl`. See the
 [block guide](docs/blocks.md) for backend ports, hooks and agent declarations.
+
+The complete protocol example is `examples/blocks/05-open-dataview.axl`. It
+uses typed parameters, state, events, actions, errors, policies, slots and hooks
+without modifying generated target files.
+
+The foundation catalog adds fourteen compiler-verified contracts covering data,
+commands, API, UI, events, jobs, observability, agent tools and scenarios.
 
 ## Verification
 

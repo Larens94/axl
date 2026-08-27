@@ -11,7 +11,8 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     let react_dir = output.join("react");
     let sql_dir = output.join("sql");
     let agent_dir = output.join("agents");
-    for directory in [&rust_dir, &react_dir, &sql_dir, &agent_dir] {
+    let block_dir = output.join("blocks");
+    for directory in [&rust_dir, &react_dir, &sql_dir, &agent_dir, &block_dir] {
         std::fs::create_dir_all(directory)?;
     }
     std::fs::write(rust_dir.join("axl_contracts.rs"), rust_contracts(graph))?;
@@ -20,6 +21,10 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     std::fs::write(
         agent_dir.join("agents.json"),
         serde_json::to_string_pretty(&agent_manifest(graph))?,
+    )?;
+    std::fs::write(
+        block_dir.join("open-blocks.json"),
+        serde_json::to_string_pretty(&open_block_manifest(graph))?,
     )?;
     std::fs::write(
         output.join("manifest.json"),
@@ -117,6 +122,61 @@ pub fn react_slots(graph: &GraphIr) -> String {
     )
 }
 
+pub fn open_block_manifest(graph: &GraphIr) -> serde_json::Value {
+    let provider_kinds = ["input", "slot", "hook", "action", "policy"];
+    let blocks = nodes(graph, "blueprint")
+        .into_iter()
+        .map(|blueprint| {
+            let surfaces = graph
+                .nodes
+                .iter()
+                .filter(|node| {
+                    parent(graph, &node.id).is_some_and(|owner| owner.id == blueprint.id)
+                })
+                .map(|surface| {
+                    let provider = provider_for(graph, &surface.id);
+                    let provider_name = provider.as_ref().and_then(|id| {
+                        graph
+                            .nodes
+                            .iter()
+                            .find(|node| node.id == *id)
+                            .map(|node| node.name.clone())
+                    });
+                    json!({
+                        "name": surface.name,
+                        "kind": surface.kind,
+                        "type": surface.type_name,
+                        "default": surface.metadata.get("default"),
+                        "provider": provider_name,
+                        "accepts_provider": provider_kinds.contains(&surface.kind.as_str()),
+                    })
+                })
+                .collect::<Vec<_>>();
+            json!({
+                "name": blueprint.name,
+                "open_surface_count": surfaces.iter().filter(|surface| {
+                    matches!(
+                        surface.get("kind").and_then(serde_json::Value::as_str),
+                        Some("input" | "slot" | "hook" | "parameter" | "action" | "policy")
+                    )
+                }).count(),
+                "surfaces": surfaces,
+                "contracts": graph.contracts.iter()
+                    .filter(|contract| contract.owner == blueprint.id)
+                    .collect::<Vec<_>>(),
+                "effects": grants_for(&graph.effects, &blueprint.id),
+                "capabilities": grants_for(&graph.capabilities, &blueprint.id),
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "schema": graph.schema,
+        "app": graph.app,
+        "protocol": "axl-open-block/1",
+        "blocks": blocks,
+    })
+}
+
 pub fn sql_schema(graph: &GraphIr) -> String {
     let mut output = vec!["-- Generated from AXL Semantic Graph IR. Do not edit.".to_string()];
     for entity in nodes(graph, "entity") {
@@ -165,7 +225,8 @@ fn target_manifest(graph: &GraphIr) -> serde_json::Value {
             "rust": "rust/axl_contracts.rs",
             "react": "react/axl_slots.ts",
             "sql": "sql/schema.sql",
-            "agents": "agents/agents.json"
+            "agents": "agents/agents.json",
+            "blocks": "blocks/open-blocks.json"
         },
         "counts": {
             "nodes": graph.nodes.len(),
@@ -334,6 +395,10 @@ skill SqliteCustomers provides CustomerStore
 skill DefaultRow provides CustomerRow
   native react crm::DefaultRow
 blueprint CRM
+  param page_size: int = 25
+  state selected: Option<Customer>
+  event customer.selected: Customer
+  error load.failed: text
   in store: CustomerStore
   slot table.row: CustomerRow = DefaultRow
   use store = SqliteCustomers
@@ -348,10 +413,21 @@ agent Sales
         let rust = rust_contracts(&graph);
         let react = react_slots(&graph);
         let sql = sql_schema(&graph);
+        let blocks = open_block_manifest(&graph);
         assert!(rust.contains("pub trait CustomerStore"));
         assert!(rust.contains("Result<Customer, String>"));
         assert!(react.contains("crm::DefaultRow"));
         assert!(sql.contains("CREATE TABLE IF NOT EXISTS customers"));
         assert!(sql.contains("email TEXT NOT NULL UNIQUE"));
+        assert_eq!(blocks["protocol"], "axl-open-block/1");
+        assert_eq!(blocks["blocks"][0]["name"], "CRM");
+        assert_eq!(blocks["blocks"][0]["open_surface_count"], 3);
+        assert!(
+            blocks["blocks"][0]["surfaces"]
+                .as_array()
+                .is_some_and(|surfaces| surfaces.iter().any(|surface| {
+                    surface["kind"] == "parameter" && surface["default"] == "25"
+                }))
+        );
     }
 }

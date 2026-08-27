@@ -1,0 +1,263 @@
+// AXL foundation catalog: semantic contracts, not executable target bodies.
+axl 4
+app SoftwareFoundation
+
+entity Customer
+  id: uuid key readonly
+  name: text required
+  email: email required unique
+
+capacity DataStore
+  op save Customer -> Result<Customer>
+
+capacity QueryEngine
+  op list unit -> Result<List<Customer>>
+
+capacity CommandHandler
+  op run Customer -> Result<Customer>
+
+capacity TransactionManager
+  op run Customer -> Result<Customer>
+
+capacity AccessPolicy
+  op authorize text -> Result<bool>
+
+capacity LifecycleHook
+  op run Customer -> Result<Customer>
+
+capacity RequestHandler
+  op handle Customer -> Result<Customer>
+
+capacity Middleware
+  op handle text -> Result<bool>
+
+capacity ViewRenderer
+  op render Customer -> UI
+
+capacity ListRenderer
+  op render List<Customer> -> UI
+
+capacity FormRenderer
+  op render Customer -> UI
+
+capacity NavigationRenderer
+  op render unit -> UI
+
+capacity EventPublisher
+  op publish Customer -> Result<unit>
+
+capacity JobRunner
+  op run unit -> Result<unit>
+
+capacity Telemetry
+  op record text -> Result<unit>
+
+capacity AgentTool
+  op invoke Customer -> Result<Customer>
+
+capacity TestRunner
+  op run unit -> Result<bool>
+
+skill DefaultStore provides DataStore
+  native rust axl::foundation::store
+  effect db.read
+  effect db.write
+
+skill DefaultQuery provides QueryEngine
+  native rust axl::foundation::query
+  effect db.read
+
+skill DefaultCommand provides CommandHandler
+  native rust axl::foundation::command
+
+skill DefaultTransaction provides TransactionManager
+  native rust axl::foundation::transaction
+  effect db.write
+
+skill DefaultPolicy provides AccessPolicy
+  native rust axl::foundation::policy
+
+skill DefaultHook provides LifecycleHook
+  native rust axl::foundation::hook
+
+skill DefaultRequestHandler provides RequestHandler
+  native rust axl::foundation::request
+  effect net.listen
+
+skill DefaultMiddleware provides Middleware
+  native rust axl::foundation::middleware
+
+skill DefaultView provides ViewRenderer
+  native react axl::foundation::DefaultView
+
+skill DefaultList provides ListRenderer
+  native react axl::foundation::DefaultList
+
+skill DefaultForm provides FormRenderer
+  native react axl::foundation::DefaultForm
+
+skill DefaultNavigation provides NavigationRenderer
+  native react axl::foundation::DefaultNavigation
+
+skill DefaultPublisher provides EventPublisher
+  native rust axl::foundation::publisher
+  effect net.send
+
+skill DefaultJob provides JobRunner
+  native rust axl::foundation::job
+
+skill DefaultTelemetry provides Telemetry
+  native rust axl::foundation::telemetry
+  effect net.send
+
+skill DefaultAgentTool provides AgentTool
+  native ai axl::foundation::agent_tool
+  effect ai.generate
+
+skill DefaultTestRunner provides TestRunner
+  native rust axl::foundation::test_runner
+
+blueprint RepositoryBlock
+  param cache_enabled: bool = false
+  state last_saved: Option<Customer>
+  event saved: Customer
+  error persist.failed: text
+  in store: DataStore
+  hook before.save: LifecycleHook = DefaultHook
+  policy write: AccessPolicy = DefaultPolicy
+  use store = DefaultStore
+  effect db.write
+
+blueprint QueryBlock
+  param page_size: int = 25
+  state result: List<Customer>
+  event loaded: List<Customer>
+  error query.failed: text
+  in query: QueryEngine
+  action refresh: QueryEngine = DefaultQuery
+  policy read: AccessPolicy = DefaultPolicy
+  use query = DefaultQuery
+  effect db.read
+
+blueprint CommandBlock
+  param audit_enabled: bool = true
+  state result: Option<Customer>
+  event completed: Customer
+  error command.failed: text
+  in handler: CommandHandler
+  hook before.run: LifecycleHook = DefaultHook
+  hook after.run: LifecycleHook = DefaultHook
+  policy execute: AccessPolicy = DefaultPolicy
+  use handler = DefaultCommand
+
+blueprint TransactionBlock
+  param retry_count: int = 0
+  event committed: Customer
+  error rollback: text
+  in transaction: TransactionManager
+  hook before.commit: LifecycleHook = DefaultHook
+  hook after.commit: LifecycleHook = DefaultHook
+  use transaction = DefaultTransaction
+  effect db.write
+
+blueprint ApiBlock
+  param route: text = "/customers"
+  param timeout: duration = "30s"
+  event responded: Customer
+  error request.failed: text
+  in handler: RequestHandler
+  hook middleware: Middleware = DefaultMiddleware
+  policy access: AccessPolicy = DefaultPolicy
+  use handler = DefaultRequestHandler
+  effect net.listen
+
+blueprint PageBlock
+  param title: text = "Customers"
+  state model: Option<Customer>
+  event action.selected: Customer
+  error render.failed: text
+  slot content: ViewRenderer = DefaultView
+  slot loading: ViewRenderer = DefaultView
+  slot empty: ViewRenderer = DefaultView
+  policy view: AccessPolicy = DefaultPolicy
+
+blueprint DataViewBlock
+  param page_size: int = 25
+  param density: text = "comfortable"
+  state selection: Set<uuid>
+  event row.selected: Customer
+  error load.failed: text
+  in data: QueryEngine
+  action refresh: QueryEngine = DefaultQuery
+  slot desktop.list: ListRenderer = DefaultList
+  slot mobile.list: ListRenderer = DefaultList
+  policy view: AccessPolicy = DefaultPolicy
+  use data = DefaultQuery
+
+blueprint FormBlock
+  param mode: text = "create"
+  state model: Option<Customer>
+  event submitted: Customer
+  error validation.failed: text
+  slot fields: FormRenderer = DefaultForm
+  action submit: CommandHandler = DefaultCommand
+  hook validate: LifecycleHook = DefaultHook
+  policy edit: AccessPolicy = DefaultPolicy
+
+blueprint NavigationBlock
+  param mobile_breakpoint: int = 768
+  state active.route: text
+  event route.changed: text
+  error navigation.failed: text
+  slot desktop.menu: NavigationRenderer = DefaultNavigation
+  slot mobile.menu: NavigationRenderer = DefaultNavigation
+  policy visible: AccessPolicy = DefaultPolicy
+
+blueprint EventBlock
+  param durable: bool = true
+  event published: Customer
+  error publish.failed: text
+  in publisher: EventPublisher
+  action publish: EventPublisher = DefaultPublisher
+  hook before.publish: LifecycleHook = DefaultHook
+  use publisher = DefaultPublisher
+  effect net.send
+
+blueprint JobBlock
+  param retry_count: int = 3
+  param timeout: duration = "60s"
+  event completed: unit
+  error job.failed: text
+  in runner: JobRunner
+  action execute: JobRunner = DefaultJob
+  hook on.error: Telemetry = DefaultTelemetry
+  use runner = DefaultJob
+
+blueprint ObservabilityBlock
+  param service_name: text = "application"
+  event recorded: text
+  error telemetry.failed: text
+  in telemetry: Telemetry
+  action record: Telemetry = DefaultTelemetry
+  use telemetry = DefaultTelemetry
+  effect net.send
+
+blueprint AgentToolBlock
+  param approval_required: bool = true
+  state last_result: Option<Customer>
+  event completed: Customer
+  error tool.failed: text
+  in tool: AgentTool
+  action invoke: AgentTool = DefaultAgentTool
+  policy approval: AccessPolicy = DefaultPolicy
+  use tool = DefaultAgentTool
+  effect ai.generate
+
+blueprint ScenarioBlock
+  param name: text = "customer happy path"
+  state passed: bool
+  event completed: bool
+  error assertion.failed: text
+  in runner: TestRunner
+  action run: TestRunner = DefaultTestRunner
+  use runner = DefaultTestRunner

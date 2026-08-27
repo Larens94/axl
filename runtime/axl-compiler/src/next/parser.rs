@@ -74,6 +74,8 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             parse_skill(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("blueprint ") {
             parse_blueprint(line, body, &mut declarations, &mut diagnostics);
+        } else if line.text.starts_with("instance ") {
+            parse_instance(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("agent ") {
             parse_agent(line, body, &mut declarations, &mut diagnostics);
         } else {
@@ -402,6 +404,24 @@ fn parse_blueprint(
             parse_port(value, PortKind::Slot, line, &mut blueprint, diagnostics);
         } else if let Some(value) = line.text.strip_prefix("hook ") {
             parse_port(value, PortKind::Hook, line, &mut blueprint, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("param ") {
+            parse_port(
+                value,
+                PortKind::Parameter,
+                line,
+                &mut blueprint,
+                diagnostics,
+            );
+        } else if let Some(value) = line.text.strip_prefix("state ") {
+            parse_port(value, PortKind::State, line, &mut blueprint, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("event ") {
+            parse_port(value, PortKind::Event, line, &mut blueprint, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("action ") {
+            parse_port(value, PortKind::Action, line, &mut blueprint, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("error ") {
+            parse_port(value, PortKind::Error, line, &mut blueprint, diagnostics);
+        } else if let Some(value) = line.text.strip_prefix("policy ") {
+            parse_port(value, PortKind::Policy, line, &mut blueprint, diagnostics);
         } else if let Some(value) = line.text.strip_prefix("use ") {
             let Some((port, provider)) = value.split_once('=') else {
                 diagnostics.push(
@@ -491,6 +511,81 @@ fn contract(kind: ContractKind, expression: &str, line: &SourceLine) -> Contract
     }
 }
 
+fn parse_instance(
+    header: &SourceLine,
+    body: &[SourceLine],
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let value = header.text["instance ".len()..].trim();
+    let Some((name, blueprint)) = value.split_once(" of ") else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P610",
+                "parse",
+                "an instance must name its blueprint",
+                span(header),
+            )
+            .expected("instance Name of Blueprint", &header.text),
+        );
+        return;
+    };
+    let mut instance = Instance {
+        name: name.trim().to_string(),
+        blueprint: blueprint.trim().to_string(),
+        settings: Vec::new(),
+        bindings: Vec::new(),
+        span: span(header),
+    };
+    for line in body {
+        if let Some(value) = line.text.strip_prefix("set ") {
+            let Some((parameter, value)) = value.split_once('=') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P611",
+                        "parse",
+                        "a setting assigns a value to a parameter",
+                        span(line),
+                    )
+                    .expected("set parameter = value", &line.text),
+                );
+                continue;
+            };
+            instance.settings.push(Setting {
+                parameter: parameter.trim().to_string(),
+                value: value.trim().to_string(),
+                span: span(line),
+            });
+        } else if let Some(value) = line.text.strip_prefix("use ") {
+            let Some((port, provider)) = value.split_once('=') else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P612",
+                        "parse",
+                        "an instance override connects a surface to a provider",
+                        span(line),
+                    )
+                    .expected("use surface = Provider", &line.text),
+                );
+                continue;
+            };
+            instance.bindings.push(Binding {
+                port: port.trim().to_string(),
+                provider: provider.trim().to_string(),
+                span: span(line),
+            });
+        } else {
+            diagnostics.push(Diagnostic::error(
+                "AXL-P613",
+                "parse",
+                format!("unknown instance declaration '{}'", line.text),
+                span(line),
+            ));
+        }
+    }
+    declarations.push(Declaration::Instance(instance));
+}
+
 fn parse_agent(
     header: &SourceLine,
     body: &[SourceLine],
@@ -577,6 +672,10 @@ skill SqliteCustomers provides CustomerStore
   effect db.write
 
 blueprint CRM
+  param page_size: int = 25
+  state selected: Option<Customer>
+  event customer.selected: Customer
+  error load.failed: text
   in store: CustomerStore
   use store = SqliteCustomers
   invariant Customer.email unique
@@ -587,7 +686,13 @@ blueprint CRM
         let Declaration::Blueprint(blueprint) = &program.declarations[3] else {
             panic!("expected blueprint")
         };
-        assert_eq!(blueprint.ports[0].name, "store");
+        assert_eq!(blueprint.ports[0].name, "page_size");
+        assert_eq!(blueprint.ports[0].kind, PortKind::Parameter);
+        assert_eq!(blueprint.ports[0].default.as_deref(), Some("25"));
+        assert_eq!(blueprint.ports[1].kind, PortKind::State);
+        assert_eq!(blueprint.ports[2].kind, PortKind::Event);
+        assert_eq!(blueprint.ports[3].kind, PortKind::Error);
+        assert_eq!(blueprint.ports[4].name, "store");
         assert_eq!(blueprint.bindings[0].provider, "SqliteCustomers");
     }
 

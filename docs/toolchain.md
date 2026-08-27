@@ -24,14 +24,16 @@ cargo run -p axl-compiler -- check examples/next/crm.axl --json
 cargo run -p axl-compiler -- ir examples/next/crm.axl
 cargo run -p axl-compiler -- pack examples/next/crm.axl --matrix
 cargo run -p axl-compiler -- fmt examples/next/crm.axl
+cargo run -p axl-compiler -- blocks examples/next/crm.axl
 cargo run -p axl-compiler -- experiment examples/next/crm.axl build/axl4
 cargo run -p axl-compiler -- unpack build/axl4/app.packed.axl
 ```
 
 `check` parses and semantically validates a program. `fmt` prints canonical
 multiline source. `ir` and `pack` expose the two machine representations.
-`unpack` reconstructs JSON Graph IR. `experiment` writes all representations
-and target contracts.
+`blocks` prints the `axl-open-block/1` manifest without writing files. `unpack`
+reconstructs JSON Graph IR. `experiment` writes all representations and target
+contracts.
 
 ## Experiment output
 
@@ -42,13 +44,18 @@ build/axl4/
   app.packed.axl
   targets/
     manifest.json
+    blocks/open-blocks.json
     rust/axl_contracts.rs
     react/axl_slots.ts
     sql/schema.sql
     agents/agents.json
 ```
 
-These target files are contracts and registries. They are not a deployable CRM.
+`blocks/open-blocks.json` uses protocol identifier `axl-open-block/1` and exposes
+the typed surface of every blueprint to agents and tools. These target files are
+contracts and registries. They are not a deployable CRM.
+
+Its JSON shape is documented by `schema/axl-open-block-1.schema.json`.
 
 ## Verification
 

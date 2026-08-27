@@ -1,0 +1,64 @@
+// An open UI block with configuration, observable surfaces and providers.
+axl 4
+app OpenDataViewBlock
+
+entity Customer
+  id: uuid key readonly
+  name: text required
+
+capacity CustomerQuery
+  op list unit -> Result<List<Customer>>
+
+capacity CustomerRow
+  op render Customer -> UI
+
+capacity CustomerCard
+  op render Customer -> UI
+
+capacity DataToolbar
+  op render unit -> UI
+
+capacity LoadHook
+  op run unit -> Result<unit>
+
+capacity AccessPolicy
+  op authorize text -> Result<bool>
+
+skill SqliteCustomerQuery provides CustomerQuery
+  native rust demo::customer_query
+  effect db.read
+
+skill DefaultCustomerRow provides CustomerRow
+  native react crm::DefaultCustomerRow
+
+skill DefaultCustomerCard provides CustomerCard
+  native react crm::DefaultCustomerCard
+
+skill DefaultDataToolbar provides DataToolbar
+  native react crm::DefaultDataToolbar
+
+skill TraceLoad provides LoadHook
+  native rust crm::trace_load
+
+skill RolePolicy provides AccessPolicy
+  native rust crm::role_policy
+  capability crm.customer.read
+
+blueprint CustomerDataView
+  param page_size: int = 25
+  param density: text = "comfortable"
+  state selection: Set<uuid>
+  event row.selected: Customer
+  error load.failed: text
+
+  in data: CustomerQuery
+  action refresh: CustomerQuery = SqliteCustomerQuery
+  policy view: AccessPolicy = RolePolicy
+  slot toolbar: DataToolbar = DefaultDataToolbar
+  slot table.row: CustomerRow = DefaultCustomerRow
+  slot mobile.card: CustomerCard = DefaultCustomerCard
+  hook before.load: LoadHook = TraceLoad
+
+  use data = SqliteCustomerQuery
+  effect db.read
+  capability crm.customer.read

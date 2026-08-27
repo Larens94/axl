@@ -25,7 +25,8 @@
     <h1>Il software come grafo aperto.</h1>
     <p class="lede">AXL descrive cosa compone un'applicazione e lascia Rust,
       React, SQL e gli altri target sotto il linguaggio. Le porte tipizzate
-      mantengono ogni blocco sostituibile.</p>
+      mantengono ogni blocco sostituibile. Il compilatore rifiuta blueprint
+      completamente chiusi.</p>
     <div class="actions">
       <a class="button" href="blocks.md">Costruire un blocco</a>
       <a class="button secondary" href="../examples/next/crm.axl">Aprire il CRM AXL</a>
@@ -45,7 +46,7 @@
     </section>
 
     <section id="blocchi" aria-labelledby="blocks-title">
-      <div class="eyebrow">Anatomia verificata</div>
+      <div class="eyebrow">Protocollo verificato</div>
       <h2 id="blocks-title">Un blocco non chiude le possibilità.</h2>
       <p class="section-copy">Il compilatore implementa tre elementi. Insieme
         separano l'intenzione dall'implementazione senza nascondere i punti di
@@ -55,6 +56,9 @@
         <article class="card"><div class="number">02</div><h3>Skill</h3><p>L'implementazione nativa: per esempio una funzione Rust o un componente React.</p></article>
         <article class="card"><div class="number">03</div><h3>Blueprint</h3><p>Il grafo di porte, slot, hook e collegamenti controllati dal compilatore.</p></article>
       </div>
+      <p class="section-copy">Ogni blueprint deve esporre almeno una superficie
+        tra input, slot, hook, parametro, azione o policy. Stato, eventi ed
+        errori completano la sua interfaccia osservabile.</p>
     </section>
 
     <section aria-labelledby="sample-title">
@@ -85,7 +89,8 @@ blueprint CustomerList
       <table class="status">
         <thead><tr><th>Area</th><th>Oggi</th><th>Prossimo gate</th></tr></thead>
         <tbody>
-          <tr><td>Blocchi</td><td class="yes">Porte, slot, hook e binding tipizzati</td><td>Registry di pacchetti</td></tr>
+          <tr><td>Blocchi</td><td class="yes">Protocollo aperto imposto dal compilatore</td><td>Istanze, overlay e registry</td></tr>
+          <tr><td>Superfici</td><td class="yes">Parametri, stato, eventi, azioni, errori e policy</td><td>Esecuzione runtime</td></tr>
           <tr><td>Target</td><td class="yes">Contratti Rust, React, SQL e agenti</td><td>Vertical slice eseguibile</td></tr>
           <tr><td>Contratti</td><td class="yes">Registrati nel Graph IR</td><td>Type-check ed esecuzione</td></tr>
           <tr><td>Controllo di flusso</td><td class="no">Non implementato</td><td>Semantica prima della sintassi</td></tr>
@@ -98,9 +103,9 @@ blueprint CustomerList
       <div class="eyebrow">Approfondisci</div>
       <h2 id="links-title">Documentazione collegata al codice.</h2>
       <div class="grid">
-        <a class="card" href="blocks.md"><h3>Guida ai blocchi</h3><p>Store, UI slot, hook, agente e composizione CRM.</p></a>
+        <a class="card" href="blocks.md"><h3>Guida ai blocchi</h3><p>Protocollo aperto, DataView, store, UI, hook e CRM.</p></a>
         <a class="card" href="toolchain.md"><h3>Toolchain</h3><p>Comandi, IR, formato packed e output generati.</p></a>
-        <a class="card" href="status.md"><h3>Stato</h3><p>Confine chiaro tra implementato e pianificato.</p></a>
+        <a class="card" href="agent-testing.md"><h3>Test per agenti</h3><p>Comandi ripetibili e risultati attesi.</p></a>
       </div>
     </section>
   </main>

@@ -202,6 +202,38 @@ fn check_blueprint(
         check_type(&port.type_name, &port.span, declarations, diagnostics);
     }
 
+    if !blueprint
+        .ports
+        .iter()
+        .any(|port| port.kind.is_customization_surface())
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-O401",
+                "openness",
+                format!(
+                    "blueprint '{}' has no customization surface",
+                    blueprint.name
+                ),
+                blueprint.span.clone(),
+            )
+            .expected("in|slot|hook|param|action|policy", "closed blueprint")
+            .repair(
+                FixSafety::Manual,
+                Repair {
+                    kind: "open".into(),
+                    target: blueprint.name.clone(),
+                    replacement: None,
+                    candidates: vec![
+                        "param option: text = \"default\"".into(),
+                        "slot content: Capacity = Provider".into(),
+                        "hook before: Capacity = Provider".into(),
+                    ],
+                },
+            ),
+        );
+    }
+
     let mut bindings = BTreeMap::new();
     for binding in &blueprint.bindings {
         if bindings.insert(binding.port.as_str(), binding).is_some() {
@@ -238,11 +270,15 @@ fn check_blueprint(
             );
             continue;
         };
-        if matches!(port.kind, PortKind::Output) {
+        if !port.kind.accepts_provider() {
             diagnostics.push(Diagnostic::error(
                 "AXL-P404",
                 "ports",
-                format!("output port '{}' cannot consume a provider", port.name),
+                format!(
+                    "{} surface '{}' cannot consume a provider",
+                    port.kind.keyword(),
+                    port.name
+                ),
                 binding.span.clone(),
             ));
             continue;
@@ -258,15 +294,50 @@ fn check_blueprint(
     }
 
     for port in &blueprint.ports {
-        if let Some(default) = &port.default {
-            check_provider(
-                blueprint,
-                port,
-                default,
-                &port.span,
-                declarations,
-                diagnostics,
-            );
+        match (&port.kind, &port.default) {
+            (PortKind::Parameter, Some(default)) => {
+                check_parameter_default(port, default, diagnostics);
+            }
+            (PortKind::Parameter, None) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-V402",
+                    "values",
+                    format!(
+                        "parameter '{}.{}' requires a default",
+                        blueprint.name, port.name
+                    ),
+                    port.span.clone(),
+                )
+                .expected("param name: Type = value", "missing default"),
+            ),
+            (_, Some(default)) if port.kind.accepts_provider() => {
+                check_provider(
+                    blueprint,
+                    port,
+                    default,
+                    &port.span,
+                    declarations,
+                    diagnostics,
+                );
+            }
+            (_, Some(_)) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P407",
+                    "ports",
+                    format!(
+                        "{} surface '{}.{}' cannot declare a default",
+                        port.kind.keyword(),
+                        blueprint.name,
+                        port.name
+                    ),
+                    port.span.clone(),
+                )
+                .expected(
+                    format!("{} name: Type", port.kind.keyword()),
+                    "default value",
+                ),
+            ),
+            (_, None) => {}
         }
         if matches!(port.kind, PortKind::Input)
             && port.default.is_none()
@@ -314,6 +385,42 @@ fn check_blueprint(
         &blueprint.span,
         diagnostics,
     );
+}
+
+fn check_parameter_default(port: &Port, value: &str, diagnostics: &mut Vec<Diagnostic>) {
+    let valid = match port.type_name.as_str() {
+        "bool" => matches!(value, "true" | "false"),
+        "int" => value.parse::<i64>().is_ok(),
+        "float" | "money" => value.parse::<f64>().is_ok(),
+        "text" | "string" | "email" | "uuid" | "datetime" | "duration" => {
+            serde_json::from_str::<String>(value).is_ok()
+        }
+        _ => false,
+    };
+    if !valid {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-V403",
+                "values",
+                format!(
+                    "default '{}' does not match parameter type '{}'",
+                    value, port.type_name
+                ),
+                port.span.clone(),
+            )
+            .expected(parameter_value_hint(&port.type_name), value),
+        );
+    }
+}
+
+fn parameter_value_hint(type_name: &str) -> &'static str {
+    match type_name {
+        "bool" => "true or false",
+        "int" => "integer literal",
+        "float" | "money" => "numeric literal",
+        "text" | "string" | "email" | "uuid" | "datetime" | "duration" => "JSON string literal",
+        _ => "scalar parameter type",
+    }
 }
 
 fn check_provider(
@@ -630,12 +737,7 @@ fn lower_blueprint(blueprint: &Blueprint, graph: &mut GraphIr) {
         .nodes
         .push(node(&blueprint_id, "blueprint", &blueprint.name));
     for port in &blueprint.ports {
-        let port_kind = match port.kind {
-            PortKind::Input => "input",
-            PortKind::Output => "output",
-            PortKind::Slot => "slot",
-            PortKind::Hook => "hook",
-        };
+        let port_kind = port.kind.graph_kind();
         let id = format!("{blueprint_id}.{port_kind}.{}", port.name);
         let mut value = node(&id, port_kind, &port.name);
         value.type_name = Some(port.type_name.clone());
@@ -644,7 +746,9 @@ fn lower_blueprint(blueprint: &Blueprint, graph: &mut GraphIr) {
         }
         graph.nodes.push(value);
         graph.edges.push(edge(&blueprint_id, &id, "owns", None));
-        if let Some(default) = &port.default {
+        if let Some(default) = &port.default
+            && port.kind.accepts_provider()
+        {
             graph.edges.push(edge(
                 &id,
                 &provider_id(default),
@@ -659,12 +763,7 @@ fn lower_blueprint(blueprint: &Blueprint, graph: &mut GraphIr) {
             .iter()
             .find(|port| port.name == binding.port)
         {
-            let port_kind = match port.kind {
-                PortKind::Input => "input",
-                PortKind::Output => "output",
-                PortKind::Slot => "slot",
-                PortKind::Hook => "hook",
-            };
+            let port_kind = port.kind.graph_kind();
             graph.edges.push(edge(
                 &format!("{blueprint_id}.{port_kind}.{}", port.name),
                 &provider_id(&binding.provider),
@@ -766,6 +865,10 @@ capacity CustomerStore
 skill SqliteCustomers provides CustomerStore
   native rust crm::sqlite
 blueprint CRM
+  param page_size: int = 25
+  state selected: Option<Customer>
+  event customer.selected: Customer
+  error load.failed: text
   in store: CustomerStore
 "#;
         let program = parser::parse(source).unwrap();
@@ -788,6 +891,10 @@ capacity CustomerStore
 skill SqliteCustomers provides CustomerStore
   native rust crm::sqlite
 blueprint CRM
+  param page_size: int = 25
+  state selected: Option<Customer>
+  event customer.selected: Customer
+  error load.failed: text
   in store: CustomerStore
   out api: CrudApi<Customer>
   use store = SqliteCustomers
@@ -800,5 +907,43 @@ blueprint CRM
                 && edge.interface.as_deref() == Some("CustomerStore")
         }));
         assert_eq!(graph.contracts[0].kind, "invariant");
+        assert!(graph.nodes.iter().any(|node| {
+            node.kind == "parameter"
+                && node.name == "page_size"
+                && node.metadata.get("default").map(String::as_str) == Some("25")
+        }));
+        assert!(graph.nodes.iter().any(|node| node.kind == "state"));
+        assert!(graph.nodes.iter().any(|node| node.kind == "event"));
+        assert!(graph.nodes.iter().any(|node| node.kind == "error"));
+    }
+
+    #[test]
+    fn rejects_a_blueprint_without_customization_surfaces() {
+        let source = r#"axl 4
+app Demo
+blueprint Closed
+  out view: UI
+"#;
+        let diagnostics = analyze(&parser::parse(source).unwrap()).unwrap_err();
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "AXL-O401")
+        );
+    }
+
+    #[test]
+    fn rejects_a_parameter_default_with_the_wrong_type() {
+        let source = r#"axl 4
+app Demo
+blueprint Configurable
+  param page_size: int = "many"
+"#;
+        let diagnostics = analyze(&parser::parse(source).unwrap()).unwrap_err();
+        assert!(
+            diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.code == "AXL-V403")
+        );
     }
 }
