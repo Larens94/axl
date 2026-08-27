@@ -13,7 +13,7 @@ This table is the short source of truth for the current experiment.
 | Agents | belief/goal/plan graph model | planning and execution runtime |
 | Runtime | records, transforms, `parallel`, `race`, retry/timeout, flow/capacity calls, `Result` propagation, forkable configured provider ABI and HTTP | state, events and UI |
 | Storage | generic memory and SQLite providers; typed durable SQLite paths | transactions, migrations, queries and other databases |
-| Backend | checked `api` routes, Axum JSON server, shared state and restart-durable SQLite | params/query, auth, middleware, events and jobs |
+| Backend | checked routes, Axum JSON server, typed bearer auth, shared state and restart-durable SQLite | params/query, secrets, JWT/OAuth, middleware, events and jobs |
 | Targets | Rust/React/SQL contracts plus agent, block, flow, HTTP and provider manifests | executable full-stack application generation |
 | IR | canonical JSON graph, packed opcode round-trip | stable compatibility guarantee |
 
@@ -29,5 +29,5 @@ This table is the short source of truth for the current experiment.
 The project remains an experiment. AXL flows call replaceable capacities; the
 same cashflow graph executes against memory and SQLite. A runtime test saves to
 a configured SQLite file, destroys the runtime and reads through a new runtime.
-Auth, middleware, request extraction, events and jobs are the next backend
-milestones.
+Secret references, JWT/OAuth providers, middleware, request extraction, events
+and jobs are the next backend milestones.

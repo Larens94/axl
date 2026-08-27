@@ -381,6 +381,26 @@ api CashflowApi
   post /balance MovementBatch -> money = CalculateLedgerBalance
 ```
 
+An API can protect all of its routes through an open typed auth capacity:
+
+```axl
+capacity HttpAuth
+  op authorize text -> Result<bool> idempotent
+
+skill DemoBearer provides HttpAuth
+  native rust axl::auth::bearer
+  config token: text = "demo-only"
+
+api SecuredApi
+  auth bearer: HttpAuth = DemoBearer
+  post /secure/balance MovementBatch -> money = CalculateLedgerBalance
+```
+
+The compiler requires the exact idempotent `authorize` contract and a compatible
+provider. The Axum adapter maps a missing bearer header to 401 and denial to 403.
+The static token adapter is an executable test fixture; production secret
+references and JWT/OAuth adapters are not implemented.
+
 Implemented methods are `get`, `post`, `put`, `patch` and `delete`. Paths are
 currently exact absolute paths. Input/output types must exactly match the bound
 flow signature. Duplicate routes inside one API and conflicts across APIs are

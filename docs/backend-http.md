@@ -11,6 +11,19 @@ api CashflowApi
   post /balance MovementBatch -> money = CalculateLedgerBalance
 ```
 
+Auth is an open capacity attached to an API, not controller-specific Rust:
+
+```axl
+capacity HttpAuth
+  op authorize text -> Result<bool> idempotent
+
+api SecuredCashflowApi
+  auth bearer: HttpAuth = CashflowDemoBearer
+  post /secure/balance MovementBatch -> money = CalculateLedgerBalance
+```
+
+The selected skill can be replaced by any provider satisfying `HttpAuth`.
+
 The compiler verifies:
 
 - supported methods: `get`, `post`, `put`, `patch`, `delete`;
@@ -51,6 +64,8 @@ Status mapping:
 |---|---:|
 | successful flow value | 200 |
 | AXL `Result` error | 422 |
+| missing authorization | 401 |
+| authorization denied/failed | 403 |
 | invalid JSON or runtime input | 400 |
 | unknown method/path | 404 |
 
@@ -58,6 +73,7 @@ Status mapping:
 
 Paths are exact: parameters and query decoding are not implemented. Memory and
 unconfigured SQLite remain process-local; configured SQLite paths are durable.
-Transactions and migrations remain data gates. Authentication, middleware,
-CORS, streaming, events, jobs, cache, rate limits and observability remain later
-backend gates.
+Transactions and migrations remain data gates. The built-in static bearer
+provider is a demo fixture and its config is visible in the manifest; secret
+references, JWT/OAuth validation, middleware chains, CORS, streaming, events,
+jobs, cache, rate limits and observability remain later backend gates.

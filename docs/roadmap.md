@@ -36,6 +36,8 @@ survives independent runtime instances.
 Gate 2 has started without closing Gate 1: `api` declarations now compile to
 `axl-http/1` and execute through a generic Axum server. Exact JSON routes and
 status mapping work. One process-local provider runtime is shared across
-requests. Path/query extraction, auth, middleware, events, jobs, cache and
+requests. A typed `auth bearer: Capacity = Provider` surface now protects whole
+APIs and the built-in fixture proves 401/403/200 behavior. Secret references,
+JWT/OAuth, path/query extraction, middleware, events, jobs, cache and
 observability remain. Gate 3 continues with transactions, migrations and
 additional database families.

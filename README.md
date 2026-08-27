@@ -103,5 +103,6 @@ commands, API, UI, events, jobs, observability, agent tools and scenarios.
 ```
 
 Status: experiment. Typed flows, replaceable configured providers, durable
-SQLite paths and exact JSON HTTP routes execute. Transactions, richer backend
-services and React runtime generation are not implemented yet.
+SQLite paths, exact JSON HTTP routes and capacity-backed bearer auth execute.
+Production secrets/JWT, transactions, richer backend services and React runtime
+generation are not implemented yet.
