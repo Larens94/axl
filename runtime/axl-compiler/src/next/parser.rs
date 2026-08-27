@@ -963,6 +963,20 @@ fn parse_flow(
                     span: span(line),
                 });
             }
+        } else if let Some(value) = line.text.strip_prefix("sort ") {
+            if let Some((name, type_name, collection, item, key, direction)) =
+                parse_sort(value, line, body, line_index, diagnostics)
+            {
+                statements.push(FlowStatement::Sort {
+                    name,
+                    type_name,
+                    collection,
+                    item,
+                    key,
+                    direction,
+                    span: span(line),
+                });
+            }
         } else if let Some(expression) = line.text.strip_prefix("return ") {
             statements.push(FlowStatement::Return {
                 expression: expression.trim().to_string(),
@@ -1213,6 +1227,76 @@ fn parse_transform(
         collection.into(),
         item.into(),
         expression,
+    ))
+}
+
+fn parse_sort(
+    value: &str,
+    line: &SourceLine,
+    body: &[SourceLine],
+    line_index: usize,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<(String, String, String, String, String, String)> {
+    let parsed = value.split_once('=').and_then(|(name_and_type, source)| {
+        let (name, type_name) = name_and_type.split_once(':')?;
+        let (collection, item) = source.rsplit_once(" as ")?;
+        Some((
+            name.trim(),
+            type_name.trim(),
+            collection.trim(),
+            item.trim(),
+        ))
+    });
+    let Some((name, type_name, collection, item)) = parsed else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P832",
+                "parse",
+                "a sort requires a result type, source and item",
+                span(line),
+            )
+            .expected("sort name: List<T> = collection as item", &line.text),
+        );
+        return None;
+    };
+    let nested = body
+        .iter()
+        .skip(line_index + 1)
+        .take_while(|candidate| candidate.indent > line.indent)
+        .collect::<Vec<_>>();
+    let key = nested.iter().find_map(|nested_line| {
+        nested_line
+            .text
+            .split_once('=')
+            .filter(|(keyword, _)| keyword.trim() == "by")
+            .map(|(_, value)| value.trim().to_string())
+    });
+    let direction = nested.iter().find_map(|nested_line| {
+        nested_line
+            .text
+            .split_once('=')
+            .filter(|(keyword, _)| keyword.trim() == "direction")
+            .map(|(_, value)| value.trim().to_string())
+    });
+    let (Some(key), Some(direction)) = (key, direction) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P833",
+                "parse",
+                "a sort requires 'by' and 'direction' clauses",
+                span(line),
+            )
+            .expected("by = expression\n  direction = asc|desc", "missing clause"),
+        );
+        return None;
+    };
+    Some((
+        name.into(),
+        type_name.into(),
+        collection.into(),
+        item.into(),
+        key,
+        direction,
     ))
 }
 

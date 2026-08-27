@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use axum::body::Bytes;
 use axum::extract::State;
@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 
 use super::ir::GraphIr;
 use super::runtime;
+use super::runtime::{BuiltinRuntime, ProviderRuntime};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HttpResult {
@@ -20,9 +21,26 @@ pub struct HttpResult {
 #[derive(Clone)]
 struct HttpState {
     graph: Arc<GraphIr>,
+    runtime: Arc<Mutex<BuiltinRuntime>>,
 }
 
 pub fn dispatch(graph: &GraphIr, method: &str, path: &str, input: Value) -> HttpResult {
+    let Ok(mut runtime) = BuiltinRuntime::new() else {
+        return HttpResult {
+            status: 500,
+            body: json!({ "error": "provider_runtime_initialization_failed" }),
+        };
+    };
+    dispatch_with_runtime(graph, &mut runtime, method, path, input)
+}
+
+pub fn dispatch_with_runtime(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    method: &str,
+    path: &str,
+    input: Value,
+) -> HttpResult {
     let method = method.to_ascii_lowercase();
     let route = graph.nodes.iter().find(|node| {
         node.kind == "route"
@@ -41,7 +59,7 @@ pub fn dispatch(graph: &GraphIr, method: &str, path: &str, input: Value) -> Http
             body: json!({ "error": "route_has_no_flow" }),
         };
     };
-    match runtime::evaluate_flow(graph, flow, input) {
+    match runtime::evaluate_flow_with_runtime(graph, flow, input, runtime) {
         Ok(body) => HttpResult {
             status: if body.get("error").is_some() {
                 422
@@ -64,6 +82,7 @@ pub async fn serve(graph: GraphIr, address: &str) -> anyhow::Result<()> {
     println!("AXL HTTP listening on http://{local}");
     let app = Router::new().fallback(handle).with_state(HttpState {
         graph: Arc::new(graph),
+        runtime: Arc::new(Mutex::new(BuiltinRuntime::new()?)),
     });
     axum::serve(listener, app).await?;
     Ok(())
@@ -84,7 +103,19 @@ async fn handle(State(state): State<HttpState>, method: Method, uri: Uri, body: 
             }
         }
     };
-    let result = dispatch(&state.graph, method.as_str(), uri.path(), input);
+    let result = match state.runtime.lock() {
+        Ok(mut runtime) => dispatch_with_runtime(
+            &state.graph,
+            &mut *runtime,
+            method.as_str(),
+            uri.path(),
+            input,
+        ),
+        Err(_) => HttpResult {
+            status: 500,
+            body: json!({ "error": "provider_runtime_unavailable" }),
+        },
+    };
     let status = StatusCode::from_u16(result.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
     (status, Json(result.body)).into_response()
 }

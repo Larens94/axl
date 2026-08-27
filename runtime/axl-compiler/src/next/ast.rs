@@ -302,6 +302,15 @@ pub enum FlowStatement {
         predicate: String,
         span: SourceSpan,
     },
+    Sort {
+        name: String,
+        type_name: String,
+        collection: String,
+        item: String,
+        key: String,
+        direction: String,
+        span: SourceSpan,
+    },
     Return {
         expression: String,
         span: SourceSpan,
@@ -320,6 +329,7 @@ impl FlowStatement {
             | Self::Match { span, .. }
             | Self::Map { span, .. }
             | Self::Filter { span, .. }
+            | Self::Sort { span, .. }
             | Self::Return { span, .. } => span,
         }
     }

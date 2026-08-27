@@ -1524,6 +1524,99 @@ fn check_flow(
                 }
                 bind_transform_result(name, type_name, span, &mut variables, diagnostics);
             }
+            FlowStatement::Sort {
+                name,
+                type_name,
+                collection,
+                item,
+                key,
+                direction,
+                span,
+            } => {
+                check_type(type_name, span, declarations, diagnostics);
+                check_transform_names(name, item, span, diagnostics);
+                let source_type = infer_source_expression(
+                    collection,
+                    span,
+                    &variables,
+                    declarations,
+                    diagnostics,
+                );
+                let source_item = source_type
+                    .as_deref()
+                    .and_then(collection_inner)
+                    .map(|(_, inner)| inner);
+                if source_type.is_some() && source_item.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X876",
+                            "execution",
+                            "sort source must be List<T> or Set<T>",
+                            span.clone(),
+                        )
+                        .expected(
+                            "List<T>|Set<T>",
+                            source_type.as_deref().unwrap_or("unknown"),
+                        ),
+                    );
+                }
+                let output_item = generic_inner(type_name, "List");
+                if let Some(source_item) = source_item {
+                    if output_item != Some(source_item) {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X877",
+                                "execution",
+                                "sort result must be List<T> with the source item type",
+                                span.clone(),
+                            )
+                            .expected(format!("List<{source_item}>"), type_name),
+                        );
+                    }
+                    let mut sort_variables = variables.clone();
+                    sort_variables.insert(item.clone(), source_item.to_string());
+                    if let Some(found) = infer_source_expression(
+                        key,
+                        span,
+                        &sort_variables,
+                        declarations,
+                        diagnostics,
+                    ) && !sortable_type(&found, declarations)
+                    {
+                        diagnostics.push(
+                            Diagnostic::error(
+                                "AXL-X878",
+                                "execution",
+                                "sort key must be an ordered scalar or enum",
+                                span.clone(),
+                            )
+                            .expected("ordered scalar|enum", found),
+                        );
+                    }
+                } else if output_item.is_none() {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X877",
+                            "execution",
+                            "sort result must be List<T>",
+                            span.clone(),
+                        )
+                        .expected("List<T>", type_name),
+                    );
+                }
+                if !matches!(direction.as_str(), "asc" | "desc") {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-X879",
+                            "execution",
+                            "sort direction must be asc or desc",
+                            span.clone(),
+                        )
+                        .expected("asc|desc", direction),
+                    );
+                }
+                bind_transform_result(name, type_name, span, &mut variables, diagnostics);
+            }
             FlowStatement::Return { expression, span } => {
                 return_count += 1;
                 if index + 1 != flow.statements.len() {
@@ -1901,6 +1994,21 @@ fn collection_inner(value: &str) -> Option<(&str, &str)> {
         }
     }
     None
+}
+
+fn sortable_type(value: &str, declarations: &BTreeMap<&str, &Declaration>) -> bool {
+    matches!(
+        value,
+        "int"
+            | "float"
+            | "money"
+            | "text"
+            | "string"
+            | "email"
+            | "uuid"
+            | "datetime"
+            | "duration"
+    ) || matches!(declarations.get(value), Some(Declaration::Enum(_)))
 }
 
 fn check_transform_names(
@@ -2431,6 +2539,7 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
             FlowStatement::Match { name, .. } => ("match", name.as_str()),
             FlowStatement::Map { name, .. } => ("map", name.as_str()),
             FlowStatement::Filter { name, .. } => ("filter", name.as_str()),
+            FlowStatement::Sort { name, .. } => ("sort", name.as_str()),
             FlowStatement::Return { .. } => ("return", "return"),
         };
         let id = format!("{flow_id}.{kind}.{index}");
@@ -2526,6 +2635,24 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                     .insert("collection".into(), collection.clone());
                 value.metadata.insert("item".into(), item.clone());
                 value.metadata.insert("predicate".into(), predicate.clone());
+            }
+            FlowStatement::Sort {
+                type_name,
+                collection,
+                item,
+                key,
+                direction,
+                ..
+            } => {
+                value.type_name = Some(type_name.clone());
+                value
+                    .metadata
+                    .insert("collection".into(), collection.clone());
+                value.metadata.insert("item".into(), item.clone());
+                value.metadata.insert("key".into(), key.clone());
+                value
+                    .metadata
+                    .insert("direction".into(), direction.clone());
             }
         }
         if let FlowStatement::Require { message, .. } = statement {

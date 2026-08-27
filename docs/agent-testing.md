@@ -14,10 +14,11 @@ cargo clippy --workspace --all-targets -- -D warnings
 jq empty schema/axl-ir-4.0.schema.json
 jq empty schema/axl-open-block-2.schema.json
 jq empty schema/axl-flow-2.schema.json
+jq empty schema/axl-http-1.schema.json
 ```
 
 The integration suite compiles nine valid documented programs, round-trips each
-through Packed Graph IR and verifies ten intentionally invalid programs.
+through Packed Graph IR and verifies eleven intentionally invalid programs.
 
 The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
@@ -110,7 +111,40 @@ and a folded ledger balance of `80000`. The storage evaluations must return
 movement `movement-001`; the composed flow must validate before saving. No
 application-specific Rust function contains these rules.
 
-## 6. Verify invalid programs
+## 6. Verify the HTTP backend
+
+```sh
+cargo run -p axl-compiler -- \
+  serve examples/apps/cashflow-core.axl 127.0.0.1:8080
+```
+
+From another terminal:
+
+```sh
+curl -X POST http://127.0.0.1:8080/balance \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/movement-batch.json
+```
+
+The response must be `80000`. Posting `movement-invalid.json` to `/movements`
+must return HTTP 422 with `amount_must_be_positive`.
+
+Verify state continuity while the server remains running:
+
+```sh
+curl -X POST http://127.0.0.1:8080/movements \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/movement-valid.json
+
+curl -X POST http://127.0.0.1:8080/movement-by-id \
+  -H 'content-type: application/json' \
+  --data-binary '"movement-001"'
+```
+
+Both responses must contain movement `movement-001`. This proves shared
+process-local provider state, not restart durability.
+
+## 7. Verify invalid programs
 
 These commands are expected to fail:
 
@@ -144,6 +178,9 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   check examples/invalid/flow-transforms.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/http-routes.axl --json
 ```
 
 The first diagnostic set must include `AXL-O401`; the second must include
@@ -154,8 +191,9 @@ from `AXL-X816` through `AXL-X821`; the sixth must include every code from
 `AXL-X841` through `AXL-X843`; the eighth must include `AXL-X851` through
 `AXL-X856`; the ninth must include `AXL-X861` through `AXL-X865`.
 The tenth must include `AXL-N806` and `AXL-X871` through `AXL-X875`.
+The eleventh must include every code from `AXL-H901` through `AXL-H907`.
 
-## 7. Verify canonical formatting and transport
+## 8. Verify canonical formatting and transport
 
 ```sh
 cargo run -p axl-compiler -- \
@@ -182,9 +220,11 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - folds and composed flow runs survive formatting and Packed IR round-trips;
 - enum matches are exhaustive and executable;
 - map/filter transforms are scoped, typed and executable;
+- HTTP routes dispatch through the generic Axum runtime;
+- consecutive HTTP requests share one process-local provider runtime;
 - memory and SQLite providers execute through the same replaceable ABI;
 - documentation examples remain coupled to compiler tests.
 
-It does not prove durable persistence, HTTP or runtime UI rendering. SQLite is
-currently an in-memory connection scoped to one runtime evaluation. Generated
-target files are not yet a deployable app.
+It does not prove durable persistence or runtime UI rendering. HTTP execution
+and process-local state continuity are proven; the SQLite provider still uses
+an in-memory connection. Generated target files are not yet a deployable app.

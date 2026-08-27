@@ -101,5 +101,6 @@ commands, API, UI, events, jobs, observability, agent tools and scenarios.
 ~/.cargo/bin/cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Status: experiment. Pure typed flows execute; persistence, HTTP and React
-runtime generation are not implemented yet.
+Status: experiment. Typed flows, replaceable providers and exact JSON HTTP
+routes execute. Durable persistence and React runtime generation are not
+implemented yet.

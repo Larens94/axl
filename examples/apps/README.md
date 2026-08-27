@@ -73,8 +73,21 @@ multiline `make name: Entity` record construction. Flow Runtime 2 adds typed `in
 `call value = dependency.operation(argument)?` with `Result` propagation.
 `fold` provides immutable collection aggregation and `run` composes flows.
 
-This is not yet the complete cashflow application. SQLite currently lives only
-for one `eval`; there is no durable database configuration, list aggregation,
-event emission, state mutation or rendered UI.
+The `CashflowApi` declaration exposes `/movements`, `/movement-by-id`,
+`/balance` and `/income-amounts` through the generic Axum runtime:
+
+```sh
+cargo run -p axl-compiler -- \
+  serve examples/apps/cashflow-core.axl 127.0.0.1:8080
+```
+
+The server shares one provider runtime across requests. A movement saved through
+`/movements` can be loaded by posting its JSON string ID to `/movement-by-id`.
+The state remains process-local and is lost when the server restarts.
+
+This is not yet the complete cashflow application. SQLite is currently an
+in-memory connection owned by one evaluation or server process; there is no
+durable database configuration, list aggregation, event emission, state
+mutation or rendered UI.
 Those missing capabilities must be added to AXL rather than implemented inside
 this application with handwritten Rust or React.

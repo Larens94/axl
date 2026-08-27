@@ -32,5 +32,6 @@ invocation and replacement, not process-level persistence.
 
 Gate 2 has started without closing Gate 1: `api` declarations now compile to
 `axl-http/1` and execute through a generic Axum server. Exact JSON routes and
-status mapping work. Shared provider state, path/query extraction, auth,
+status mapping work. One process-local provider runtime is shared across
+requests. Durable runtime configuration, path/query extraction, auth,
 middleware, events, jobs, cache and observability remain.

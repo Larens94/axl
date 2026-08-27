@@ -240,6 +240,7 @@ instance CompactCustomerList of CustomerList
           <article class="card"><h3>Agenti</h3><p>Manifest di belief, goal e plan.</p></article>
           <article class="card"><h3>Open blocks</h3><p>Manifest delle superfici personalizzabili.</p></article>
           <article class="card"><h3>Flow Runtime 2</h3><p>Valida input e chiama provider tipizzati.</p></article>
+          <article class="card"><h3>HTTP Runtime 1</h3><p>Route AXL eseguite da Axum.</p></article>
           <article class="card"><h3>Graph IR</h3><p>JSON esplicito e canonico.</p></article>
           <article class="card"><h3>Packed IR</h3><p>Frame opcode reversibili.</p></article>
         </div>
@@ -251,10 +252,10 @@ instance CompactCustomerList of CustomerList
         <div class="eyebrow">Confine onesto</div>
         <h2>È un linguaggio sperimentale funzionante. Non ancora un generatore full-stack.</h2>
         <div class="grid two">
-          <article class="card"><h3 class="accent">Funziona oggi</h3><p>I flow costruiscono record, filtrano, trasformano e aggregano liste, poi chiamano provider sostituibili.</p></article>
-          <article class="card"><h3 class="violet">Prossimo gate</h3><p>API HTTP collegata ai flow; poi async e storage durevole.</p></article>
+          <article class="card"><h3 class="accent">Funziona oggi</h3><p>I flow trasformano dati, chiamano provider e sono esposti da route Axum dichiarate in AXL.</p></article>
+          <article class="card"><h3 class="violet">Prossimo gate</h3><p>Persistenza durevole, auth e middleware; poi eventi e job.</p></article>
         </div>
-        <div class="callout">SQLite è reale ma oggi vive in memoria per una singola eval. Persistenza durevole, HTTP, UI runtime e agent runtime restano gate successivi.</div>
+        <div class="callout">HTTP è eseguibile e le richieste condividono lo stato finché il server resta attivo. Persistenza dopo il riavvio, UI runtime e agent runtime restano gate successivi.</div>
       </div>
     </section>
 
@@ -265,7 +266,7 @@ instance CompactCustomerList of CustomerList
         <div class="grid">
           <article class="card"><div class="metric">14</div><div class="metric-label">foundation block aperti</div></article>
           <article class="card"><div class="metric">9</div><div class="metric-label">programmi validi nel round-trip</div></article>
-          <article class="card"><div class="metric">39</div><div class="metric-label">diagnostiche negative verificate</div></article>
+          <article class="card"><div class="metric">46</div><div class="metric-label">diagnostiche negative verificate</div></article>
         </div>
         <p class="lead">Apri <a href="docs/index.html">docs/index.html</a>, prova <a href="examples/apps/cashflow-core.axl">cashflow-core.axl</a> oppure esegui <code>cargo test --workspace</code>.</p>
       </div>

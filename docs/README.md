@@ -11,6 +11,7 @@ This documentation deliberately separates verified behavior from the roadmap.
 - [Implementation status](status.md) — what works now and what does not.
 - [Executable flows](executable-flows.md) — implemented expression and runtime semantics.
 - [Provider runtime ABI](runtime-abi.md) — replaceable native integration contract.
+- [HTTP backend](backend-http.md) — typed routes and the executable Axum adapter.
 - [Autoloop roadmap](roadmap.md) — executable gates and current position.
 - [Agent testing guide](agent-testing.md) — repeatable verification commands.
 - [Language specification](../SPEC-4.0.md) — the complete implemented boundary.

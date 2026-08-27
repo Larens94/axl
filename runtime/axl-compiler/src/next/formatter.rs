@@ -211,6 +211,21 @@ pub fn format(program: &Program) -> String {
                             ));
                             output.push(format!("    where = {predicate}"));
                         }
+                        FlowStatement::Sort {
+                            name,
+                            type_name,
+                            collection,
+                            item,
+                            key,
+                            direction,
+                            ..
+                        } => {
+                            output.push(format!(
+                                "  sort {name}: {type_name} = {collection} as {item}"
+                            ));
+                            output.push(format!("    by = {key}"));
+                            output.push(format!("    direction = {direction}"));
+                        }
                         FlowStatement::Return { expression, .. } => {
                             output.push(format!("  return {expression}"));
                         }

@@ -335,4 +335,27 @@ fn documented_cashflow_core_executes() {
     let response = axl_compiler::next::http::dispatch(&graph, "post", "/balance", batch);
     assert_eq!(response.status, 200);
     assert_eq!(response.body, 80000);
+
+    let mut runtime = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+    let movement = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-valid.json"
+    ))
+    .unwrap();
+    let stored = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/movements",
+        movement,
+    );
+    assert_eq!(stored.status, 200);
+    let found = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/movement-by-id",
+        serde_json::json!("movement-001"),
+    );
+    assert_eq!(found.status, 200);
+    assert_eq!(found.body["ok"]["id"], "movement-001");
 }

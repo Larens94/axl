@@ -96,7 +96,13 @@ flow ValidateAndStoreMovement Movement -> Result<Movement>
   call saved = store.save(valid)?
   return saved
 
+flow FindMovement uuid -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call found = store.find(input)?
+  return found
+
 api CashflowApi
   post /movements Movement -> Result<Movement> = ValidateAndStoreMovement
+  post /movement-by-id uuid -> Result<Movement> = FindMovement
   post /balance MovementBatch -> money = CalculateLedgerBalance
   post /income-amounts MovementBatch -> List<money> = IncomeAmounts

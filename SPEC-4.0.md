@@ -297,6 +297,7 @@ An API exposes checked flows without handwritten controllers:
 ```axl
 api CashflowApi
   post /movements Movement -> Result<Movement> = ValidateAndStoreMovement
+  post /movement-by-id uuid -> Result<Movement> = FindMovement
   post /balance MovementBatch -> money = CalculateLedgerBalance
 ```
 
@@ -308,8 +309,9 @@ rejected.
 `axl-compiler serve` runs a generic Axum adapter over the HTTP nodes in Graph
 IR. JSON input is validated by the flow runtime. A successful value returns
 HTTP 200, an AXL `{ "error": ... }` returns 422, invalid input returns 400 and
-an unknown route returns 404. Each request currently creates a new built-in
-provider runtime, so memory and SQLite state do not persist between requests.
+an unknown route returns 404. One built-in provider runtime is shared by all
+requests for the lifetime of the server process. Memory and in-memory SQLite
+state therefore survive consecutive requests, but not a server restart.
 
 ## 3. Type system
 
@@ -459,7 +461,8 @@ generate a complete production application.
 These are later gates. The current experiment validates the source language,
 open-port type model, agent diagnostics and deterministic IR pipeline. Flow
 Runtime 2 executes expressions and capacity calls through a replaceable runtime
-ABI. It does not yet provide durable persistence, HTTP or UI behavior.
+ABI. HTTP Runtime 1 dispatches exact JSON routes through Axum. Durable
+persistence and runtime UI behavior are not implemented yet.
 
 ## 10. Verified examples and guides
 
