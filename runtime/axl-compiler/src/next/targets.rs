@@ -312,6 +312,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                 .chain(children(graph, &flow.id, "group"))
                 .chain(children(graph, &flow.id, "parallel"))
                 .chain(children(graph, &flow.id, "race"))
+                .chain(children(graph, &flow.id, "emit"))
                 .chain(children(graph, &flow.id, "return"))
                 .collect::<Vec<_>>();
             statements.sort_by_key(|statement| {
@@ -384,6 +385,7 @@ pub fn flow_manifest(graph: &GraphIr) -> serde_json::Value {
                             .and_then(|value| value.parse::<u32>().ok()),
                         "timeout_ms": statement.metadata.get("timeout_ms")
                             .and_then(|value| value.parse::<u64>().ok()),
+                        "event": statement.metadata.get("event"),
                     })
                 }).collect::<Vec<_>>(),
             })
@@ -411,6 +413,14 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
                         "provider": auth.metadata.get("provider"),
                     })
                 });
+            let mut middlewares = children(graph, &api.id, "middleware");
+            middlewares.sort_by_key(|middleware| {
+                middleware
+                    .metadata
+                    .get("order")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
             let mut routes = children(graph, &api.id, "route");
             routes.sort_by_key(|route| {
                 route
@@ -421,6 +431,11 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
             });
             json!({
                 "name": api.name,
+                "middlewares": middlewares.into_iter().map(|middleware| json!({
+                    "phase": middleware.metadata.get("phase").cloned().unwrap_or_else(|| middleware.name.clone()),
+                    "capacity": middleware.type_name,
+                    "provider": middleware.metadata.get("provider"),
+                })).collect::<Vec<_>>(),
                 "auth": auth,
                 "routes": routes.into_iter().map(|route| {
                     let (input, output) = route.type_name.as_deref()

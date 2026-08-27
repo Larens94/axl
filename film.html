@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="Film narrativo del piano AXL: stato reale, architettura, roadmap e lavoro per agenti.">
+  <title>AXL — Il piano completo</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f7f6f2;
+      --muted: #aaa8a2;
+      --night: #0b0c0f;
+      --panel: rgba(255,255,255,.075);
+      --line: rgba(255,255,255,.12);
+      --orange: #ff7a4e;
+      --violet: #9b8cff;
+      --cyan: #62d9ef;
+      --green: #63d7a0;
+      --red: #ff6d7b;
+      --shadow: 0 35px 110px rgba(0,0,0,.45);
+      font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: var(--night); }
+    body { color: var(--ink); }
+    body::before {
+      content: ""; position: fixed; inset: -20%; pointer-events: none;
+      background:
+        radial-gradient(circle at 18% 18%, rgba(255,122,78,.18), transparent 31%),
+        radial-gradient(circle at 84% 68%, rgba(155,140,255,.18), transparent 34%),
+        radial-gradient(circle at 50% 110%, rgba(98,217,239,.10), transparent 32%);
+      animation: drift 18s ease-in-out infinite alternate;
+    }
+    @keyframes drift { to { transform: translate3d(3%, -2%, 0) scale(1.04); } }
+    .noise { position: fixed; inset: 0; pointer-events: none; opacity: .045; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E"); }
+    .film { position: relative; width: 100%; height: 100%; }
+    .scene {
+      position: absolute; inset: 0; display: grid; align-items: center;
+      padding: clamp(86px, 8vw, 145px) clamp(34px, 8vw, 150px) clamp(108px, 10vh, 130px);
+      opacity: 0; visibility: hidden; transform: scale(.985) translateY(18px);
+      transition: opacity .75s ease, transform .75s ease, visibility .75s;
+    }
+    .scene.active { opacity: 1; visibility: visible; transform: none; }
+    .scene.active .reveal { animation: reveal .85s cubic-bezier(.2,.75,.2,1) both; }
+    .scene.active .reveal:nth-child(2) { animation-delay: .12s; }
+    .scene.active .reveal:nth-child(3) { animation-delay: .22s; }
+    @keyframes reveal { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+    .content { width: min(1500px, 100%); margin: auto; }
+    .eyebrow { margin-bottom: 22px; color: var(--orange); font-size: clamp(13px, 1.1vw, 18px); font-weight: 820; letter-spacing: .16em; text-transform: uppercase; }
+    h1, h2, h3, p { margin: 0; }
+    h1 { max-width: 1370px; font-size: clamp(68px, 10vw, 170px); line-height: .86; letter-spacing: -.075em; }
+    h2 { max-width: 1350px; font-size: clamp(50px, 7.2vw, 116px); line-height: .92; letter-spacing: -.065em; }
+    h3 { font-size: clamp(21px, 2vw, 34px); letter-spacing: -.035em; }
+    .lead { max-width: 1050px; margin-top: 28px; color: var(--muted); font-size: clamp(23px, 2.6vw, 42px); line-height: 1.34; letter-spacing: -.025em; }
+    .accent { color: var(--orange); }
+    .violet { color: var(--violet); }
+    .cyan { color: var(--cyan); }
+    .green { color: var(--green); }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-top: 42px; }
+    .grid.two { grid-template-columns: repeat(2, 1fr); }
+    .grid.four { grid-template-columns: repeat(4, 1fr); }
+    .card { min-height: 190px; padding: clamp(24px, 2.5vw, 40px); border: 1px solid var(--line); border-radius: 30px; background: var(--panel); box-shadow: var(--shadow); backdrop-filter: blur(24px); }
+    .card p { margin-top: 12px; color: var(--muted); font-size: clamp(16px, 1.45vw, 24px); line-height: 1.48; }
+    .number { margin-bottom: 30px; color: var(--orange); font: 760 13px/1 ui-monospace, monospace; letter-spacing: .1em; }
+    .pipeline { display: grid; grid-template-columns: repeat(5,1fr); gap: 1px; overflow: hidden; margin-top: 52px; border: 1px solid var(--line); border-radius: 30px; background: var(--line); box-shadow: var(--shadow); }
+    .pipeline div { min-height: 230px; padding: 30px; background: rgba(15,16,20,.93); }
+    .pipeline b { display: block; margin-top: 78px; font-size: clamp(17px,1.7vw,29px); }
+    .pipeline small { display: block; margin-top: 8px; color: var(--muted); font-size: clamp(13px,1.1vw,18px); line-height: 1.45; }
+    .split { display: grid; grid-template-columns: .9fr 1.1fr; gap: 7vw; align-items: center; }
+    pre { margin: 0; padding: 34px 38px; overflow: hidden; border: 1px solid var(--line); border-radius: 30px; background: rgba(5,6,8,.82); color: #f1eee8; box-shadow: var(--shadow); font: clamp(13px,1.35vw,22px)/1.7 "SFMono-Regular", Consolas, monospace; white-space: pre-wrap; }
+    .architecture { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin-top: 42px; }
+    .layer { min-height: 168px; padding: 27px; border: 1px solid var(--line); border-radius: 26px; background: var(--panel); }
+    .layer strong { display: block; font-size: clamp(20px,1.8vw,30px); }
+    .layer span { display: block; margin-top: 12px; color: var(--muted); font-size: clamp(14px,1.2vw,19px); line-height: 1.5; }
+    .layer.done { border-color: rgba(99,215,160,.44); }
+    .layer.now { border-color: rgba(255,122,78,.56); }
+    .layer.next { border-color: rgba(155,140,255,.38); }
+    .legend { display: flex; gap: 22px; margin-top: 26px; color: var(--muted); font-size: 15px; }
+    .legend i { display: inline-block; width: 9px; height: 9px; margin-right: 8px; border-radius: 50%; background: currentColor; }
+    .timeline { display: grid; grid-template-columns: repeat(5,1fr); gap: 12px; margin-top: 46px; }
+    .gate { min-height: 230px; padding: 25px; border: 1px solid var(--line); border-radius: 25px; background: var(--panel); }
+    .gate b { display: block; color: var(--orange); font: 800 13px/1 ui-monospace,monospace; }
+    .gate strong { display: block; margin-top: 55px; font-size: clamp(18px,1.7vw,28px); }
+    .gate small { display: block; margin-top: 8px; color: var(--muted); font-size: clamp(13px,1.05vw,17px); line-height: 1.45; }
+    .metric { font-size: clamp(58px,7vw,112px); font-weight: 770; line-height: .85; letter-spacing: -.07em; }
+    .metric-label { margin-top: 17px; color: var(--muted); font-size: clamp(15px,1.3vw,21px); }
+    .rule { display: grid; grid-template-columns: 64px 1fr; gap: 20px; align-items: start; margin-top: 20px; max-width: 1200px; font-size: clamp(20px,2vw,34px); line-height: 1.35; }
+    .rule i { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 18px; background: rgba(255,122,78,.14); color: var(--orange); font-style: normal; font-weight: 850; }
+    .packages { display: grid; grid-template-columns: repeat(3,1fr); gap: 13px; margin-top: 34px; }
+    .package { padding: 20px 22px; border: 1px solid var(--line); border-radius: 21px; background: var(--panel); }
+    .package b { font-size: clamp(16px,1.35vw,22px); }
+    .package span { display: block; margin-top: 7px; color: var(--muted); font-size: clamp(12px,1vw,16px); }
+    .caption { position: fixed; z-index: 10; left: 50%; bottom: 52px; width: min(1200px, calc(100% - 250px)); transform: translateX(-50%); color: rgba(247,246,242,.82); font-size: clamp(15px,1.25vw,21px); line-height: 1.45; text-align: center; text-shadow: 0 2px 12px #000; }
+    .chrome { position: fixed; z-index: 20; inset: 0; pointer-events: none; }
+    .top { position: absolute; top: 28px; left: 34px; right: 34px; display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; font-weight: 780; letter-spacing: .12em; text-transform: uppercase; }
+    .counter { position: absolute; left: 34px; bottom: 31px; color: var(--muted); font: 13px/1 ui-monospace,monospace; }
+    .controls { position: absolute; right: 28px; bottom: 22px; display: flex; gap: 8px; pointer-events: auto; }
+    button { width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 50%; background: rgba(255,255,255,.08); color: var(--ink); font: 700 17px/1 inherit; cursor: pointer; backdrop-filter: blur(16px); }
+    button:hover { background: var(--ink); color: var(--night); }
+    .progress { position: absolute; left: 0; bottom: 0; width: 100%; height: 4px; background: rgba(255,255,255,.08); }
+    .progress i { display: block; height: 100%; background: linear-gradient(90deg,var(--orange),var(--violet),var(--cyan)); transition: width .4s linear; }
+    body.capture .chrome, body.capture .caption { display: none; }
+    body.capture .scene { transition: none; }
+    @media (max-width: 850px) {
+      .scene { align-items: start; overflow-y: auto; padding: 80px 20px 120px; }
+      .grid,.grid.two,.grid.four,.architecture,.timeline,.packages,.split { grid-template-columns: 1fr; }
+      .pipeline { grid-template-columns: 1fr 1fr; }
+      .pipeline div { min-height: 140px; }
+      .pipeline b { margin-top: 30px; }
+      .caption { width: calc(100% - 120px); bottom: 78px; }
+    }
+    @media (prefers-reduced-motion: reduce) { *,*::before { animation: none !important; transition: none !important; } }
+  </style>
+</head>
+<body>
+  <div class="noise"></div>
+  <main class="film">
+    <section class="scene active" data-title="AXL" data-caption="AXL vuole trasformare il software in un grafo aperto, leggibile e costruibile dagli agenti.">
+      <div class="content"><div class="eyebrow reveal">AXL · Il piano completo</div><h1 class="reveal">Software come<br><span class="accent">grafo aperto.</span></h1><p class="lead reveal">Un linguaggio principale per agenti. Rust, React, database, AI e IoT restano sotto come motori sostituibili.</p></div>
+    </section>
+    <section class="scene" data-title="Problema" data-caption="Il problema non è la potenza di Rust o React. È dover riscrivere dettagli e collegamenti per ogni applicazione.">
+      <div class="content"><div class="eyebrow reveal">Il problema</div><h2 class="reveal">Oggi gli agenti riscrivono <span class="accent">troppo dettaglio.</span></h2><div class="grid reveal"><article class="card"><div class="number">01</div><h3>Backend</h3><p>Controller, DTO, storage, auth, retry e integrazioni ripetono strutture note.</p></article><article class="card"><div class="number">02</div><h3>Frontend</h3><p>Routing, form, tabelle, responsive e stato vengono ricostruiti schermata per schermata.</p></article><article class="card"><div class="number">03</div><h3>Sistemi</h3><p>AI, agenti e IoT aggiungono nuovi protocolli, ma non una semantica comune.</p></article></div></div>
+    </section>
+    <section class="scene" data-title="Principio" data-caption="AXL descrive intenzione, tipi, capacità e connessioni. I target nativi eseguono il lavoro specializzato.">
+      <div class="content"><div class="eyebrow reveal">La scelta</div><h2 class="reveal">AXL sopra.<br><span class="violet">Motori nativi sotto.</span></h2><div class="architecture reveal"><div class="layer now"><strong>AXL</strong><span>Entità, flow, API, UI, agenti, device, contratti e porte aperte.</span></div><div class="layer"><strong>Rust</strong><span>Runtime, provider, rete, concorrenza e sicurezza.</span></div><div class="layer"><strong>React</strong><span>Renderer UI, componenti e interazione responsive.</span></div><div class="layer"><strong>Provider</strong><span>SQL, vector, modelli AI, broker IoT e servizi esterni.</span></div></div></div>
+    </section>
+    <section class="scene" data-title="Pipeline" data-caption="Ogni programma attraversa sorgente leggibile, AST tipizzato, Graph IR, Packed IR e runtime o target.">
+      <div class="content"><div class="eyebrow reveal">Una semantica verificabile</div><h2 class="reveal">Dal testo al sistema, senza perdere il significato.</h2><div class="pipeline reveal"><div><span class="number">01</span><b>Readable AXL</b><small>Compatto, multilinea, revisionabile.</small></div><div><span class="number">02</span><b>Typed AST</b><small>Errori stabili e riparazioni.</small></div><div><span class="number">03</span><b>Graph IR</b><small>Nodi, edge, porte e contratti.</small></div><div><span class="number">04</span><b>Packed IR</b><small>Opcode deterministici per agenti.</small></div><div><span class="number">05</span><b>Runtime</b><small>Rust, React e provider aperti.</small></div></div></div>
+    </section>
+    <section class="scene" data-title="Blocco aperto" data-caption="Un blocco AXL è utile solo se ogni parte importante resta sostituibile attraverso una porta tipizzata.">
+      <div class="content"><div class="eyebrow reveal">Il principio non negoziabile</div><h2 class="reveal">Ogni blocco ha <span class="accent">porte aperte.</span></h2><div class="grid reveal"><article class="card"><h3>Capacity</h3><p>Descrive cosa serve, senza scegliere come viene implementato.</p></article><article class="card"><h3>Skill</h3><p>Collega una capacity a Rust, React, SQL, AI, IoT o WASM.</p></article><article class="card"><h3>Surface</h3><p>Input, slot, hook, parametri, azioni e policy restano personalizzabili.</p></article></div></div>
+    </section>
+    <section class="scene" data-title="Sintassi" data-caption="La compattezza nasce da blocchi semantici riusabili, non dalla compressione artificiale di un altro linguaggio.">
+      <div class="content split"><div><div class="eyebrow reveal">Compatto, ma leggibile</div><h2 class="reveal">Descrivere il <span class="cyan">collegamento.</span></h2><p class="lead reveal">Il codice applicativo resta AXL. Se manca una primitiva, l’agente si ferma e segnala il punto esatto.</p></div><pre class="reveal"><code>capacity MovementStore
+  op save Movement -&gt; Result&lt;Movement&gt;
+
+skill DurableStore provides MovementStore
+  native rust axl::store::sqlite
+  config path: text = "./data.db"
+
+flow Save Movement -&gt; Result&lt;Movement&gt;
+  in store: MovementStore = DurableStore
+  call saved = store.save(input)?
+  return saved</code></pre></div>
+    </section>
+    <section class="scene" data-title="Stato reale" data-caption="Oggi il compilatore e il backend sono eseguibili. Frontend, AI, agenti e IoT sono ancora gate da completare.">
+      <div class="content"><div class="eyebrow reveal">Confine onesto · oggi</div><h2 class="reveal">Una base eseguibile, <span class="green">non ancora il sistema completo.</span></h2><div class="architecture reveal"><div class="layer done"><strong>Linguaggio</strong><span>Tipi, flow, collezioni, parallel, race, retry, Graph e Packed IR.</span></div><div class="layer done"><strong>Backend</strong><span>Axum, body/path/query, auth, middleware request e SQLite durevole.</span></div><div class="layer now"><strong>In corso</strong><span>Eventi, job, response middleware, transazioni e multi-database.</span></div><div class="layer next"><strong>Successivo</strong><span>React runtime, vector/AI, agenti eseguibili e IoT.</span></div></div><div class="legend reveal"><span class="green"><i></i>provato</span><span class="accent"><i></i>in costruzione</span><span class="violet"><i></i>pianificato</span></div></div>
+    </section>
+    <section class="scene" data-title="Prove" data-caption="Ogni avanzamento deve produrre codice eseguibile, diagnostiche negative, round trip IR, schema, documentazione e prova end to end.">
+      <div class="content"><div class="eyebrow reveal">Evidence first</div><h2 class="reveal">Nessuna feature esiste senza una <span class="accent">prova ripetibile.</span></h2><div class="grid reveal"><article class="card"><div class="metric">24</div><div class="metric-label">unit test attuali</div></article><article class="card"><div class="metric">93</div><div class="metric-label">diagnostiche negative stabili</div></article><article class="card"><div class="metric">3</div><div class="metric-label">integration gate documentati</div></article></div></div>
+    </section>
+    <section class="scene" data-title="Roadmap 0–4" data-caption="I primi gate chiudono linguaggio e backend. Il gate quattro trasforma la UI in un grafo eseguibile da React.">
+      <div class="content"><div class="eyebrow reveal">Roadmap · fondazione e prodotto</div><h2 class="reveal">Prima il nucleo. Poi il <span class="violet">software completo.</span></h2><div class="timeline reveal"><div class="gate"><b>GATE 0</b><strong>Provider ABI</strong><small>Capacity e skill aperte. Completato.</small></div><div class="gate"><b>GATE 1</b><strong>Flow language</strong><small>Logica, collezioni, concorrenza. Completato.</small></div><div class="gate"><b>GATE 2</b><strong>Backend</strong><small>HTTP, auth, middleware, eventi e job.</small></div><div class="gate"><b>GATE 3</b><strong>Data</strong><small>Multi-DB, transazioni e migrazioni.</small></div><div class="gate"><b>GATE 4</b><strong>React UI</strong><small>Routing, form, tabelle e responsive.</small></div></div></div>
+    </section>
+    <section class="scene" data-title="UI" data-caption="Il frontend richiede una UI IR con slot aperti e un renderer React che copra almeno il settanta per cento del kit admin e CRM.">
+      <div class="content"><div class="eyebrow reveal">Gate 4 · frontend</div><h2 class="reveal">Una UI descritta in AXL.<br><span class="cyan">React la rende viva.</span></h2><div class="grid four reveal"><article class="card"><h3>Navigation</h3><p>Sidebar desktop, bottom menu mobile, breadcrumb e routing.</p></article><article class="card"><h3>Data</h3><p>Tabelle, filtri, paginazione, detail e bulk actions.</p></article><article class="card"><h3>Input</h3><p>Form, validation, picker, upload, modal e drawer.</p></article><article class="card"><h3>Insight</h3><p>KPI, chart, timeline, activity, empty/error/loading state.</p></article></div></div>
+    </section>
+    <section class="scene" data-title="AI e vector" data-caption="AI e vector store devono essere provider neutrali, con embedding, ricerca, streaming e RAG dichiarati nel grafo.">
+      <div class="content"><div class="eyebrow reveal">Gate 5 · conoscenza</div><h2 class="reveal">Modelli e vector store sono <span class="violet">provider.</span></h2><div class="grid reveal"><article class="card"><h3>Embedding</h3><p>Chunk, dimensioni e modello diventano contratti tipizzati.</p></article><article class="card"><h3>Retrieval</h3><p>Namespace, filtro, top-k e score restano indipendenti dal database.</p></article><article class="card"><h3>Generation</h3><p>Prompt strutturati, output schema, streaming, cache e RAG osservabile.</p></article></div></div>
+    </section>
+    <section class="scene" data-title="Agenti e IoT" data-caption="Gli agenti devono eseguire tool, memoria, piani e approvazioni. IoT deve unire device, telemetria, comandi e regole edge.">
+      <div class="content"><div class="eyebrow reveal">Gate 6 e 7 · sistemi autonomi</div><h2 class="reveal">Agenti e device nello <span class="accent">stesso grafo.</span></h2><div class="grid two reveal"><article class="card"><h3>Agent runtime</h3><p>Tool tipizzati, memoria, goal, plan, budget, approval, trace e handoff tra agenti.</p></article><article class="card"><h3>IoT runtime</h3><p>Registry device, telemetry, command, MQTT, HTTP, WebSocket, digital twin e regole edge.</p></article></div></div>
+    </section>
+    <section class="scene" data-title="Ecosistema" data-caption="Prima della produzione servono package firmati, segreti, capability enforcement, deployment e una suite di conformità per provider esterni.">
+      <div class="content"><div class="eyebrow reveal">Gate 8 · fiducia</div><h2 class="reveal">Aperto non significa <span class="accent">senza controllo.</span></h2><div class="grid reveal"><article class="card"><h3>Packages</h3><p>Versioni, dipendenze, firma e registry per blocchi e provider.</p></article><article class="card"><h3>Security</h3><p>Secret references, capability runtime, sandbox, policy e audit.</p></article><article class="card"><h3>Conformance</h3><p>SDK e test obbligatori per ogni adapter backend, AI, IoT o UI.</p></article></div></div>
+    </section>
+    <section class="scene" data-title="Protocollo agenti" data-caption="Gli agenti lavorano per gate: esempio rosso, primitiva generale, diagnostiche, prove, documentazione e presentazione.">
+      <div class="content"><div class="eyebrow reveal">Come devono lavorare gli agenti</div><h2 class="reveal">Un protocollo comune.<br><span class="green">Zero scorciatoie.</span></h2><div class="reveal"><div class="rule"><i>1</i><span>Partire da un esempio AXL che non compila o non gira.</span></div><div class="rule"><i>2</i><span>Implementare una primitiva generale con tutte le porte aperte.</span></div><div class="rule"><i>3</i><span>Se manca qualcosa, fermarsi e segnalarlo. Mai spostare la logica applicativa in Rust o React.</span></div><div class="rule"><i>4</i><span>Chiudere con test positivo, negativo, round trip, schema, docs e film/presentazione aggiornati.</span></div></div></div>
+    </section>
+    <section class="scene" data-title="Squadre" data-caption="Nove pacchetti indipendenti permettono ad agenti specializzati di avanzare in parallelo con dipendenze e criteri di uscita espliciti.">
+      <div class="content"><div class="eyebrow reveal">Handoff operativo</div><h2 class="reveal">Nove agenti. Un solo <span class="cyan">Graph IR.</span></h2><div class="packages reveal"><div class="package"><b>Language</b><span>Parser, tipi, IR e diagnostiche.</span></div><div class="package"><b>Backend</b><span>Eventi, job, response middleware e osservabilità.</span></div><div class="package"><b>Data</b><span>Transazioni, migrazioni e multi-DB.</span></div><div class="package"><b>Frontend</b><span>UI IR, React renderer e kit CRM.</span></div><div class="package"><b>AI / Vector</b><span>Embedding, retrieval, RAG e streaming.</span></div><div class="package"><b>Agents</b><span>Tool, memoria, plan, approval e trace.</span></div><div class="package"><b>IoT</b><span>Device, telemetry, command e protocol adapter.</span></div><div class="package"><b>Security</b><span>Packages, secrets, capability e deploy.</span></div><div class="package"><b>QA / Docs</b><span>Conformance, esempi, film e release evidence.</span></div></div></div>
+    </section>
+    <section class="scene" data-title="Destinazione" data-caption="La destinazione è un software completo scritto principalmente in AXL, con ogni motore sostituibile e ogni avanzamento dimostrabile.">
+      <div class="content"><div class="eyebrow reveal">La destinazione</div><h1 class="reveal">AXL è il piano.<br><span class="accent">Le prove lo rendono reale.</span></h1><p class="lead reveal">CRM, cashflow, AI e IoT end-to-end. Logica in AXL. Motori aperti sotto. Agenti capaci di costruire senza ricominciare ogni volta.</p></div>
+    </section>
+  </main>
+  <div class="caption" id="caption"></div>
+  <div class="chrome">
+    <div class="top"><span>AXL · Project film</span><span id="title">AXL</span></div>
+    <div class="counter"><span id="current">01</span> / <span id="total">16</span></div>
+    <div class="controls"><button id="prev" aria-label="Precedente">←</button><button id="play" aria-label="Play o pausa">Ⅱ</button><button id="voice" aria-label="Voce">◉</button><button id="next" aria-label="Successiva">→</button></div>
+    <div class="progress"><i id="progress"></i></div>
+  </div>
+  <script>
+    const scenes = [...document.querySelectorAll('.scene')];
+    const params = new URLSearchParams(location.search);
+    let index = Math.max(0, Math.min(scenes.length - 1, Number(params.get('scene') || 0)));
+    let playing = params.get('capture') !== '1';
+    let voiced = false;
+    let timer;
+    const duration = 8500;
+    if (params.get('capture') === '1') document.body.classList.add('capture');
+    const pad = value => String(value).padStart(2, '0');
+    function speak() {
+      speechSynthesis.cancel();
+      if (!voiced || !('speechSynthesis' in window)) return;
+      const utterance = new SpeechSynthesisUtterance(scenes[index].dataset.caption);
+      utterance.lang = 'it-IT'; utterance.rate = .92; speechSynthesis.speak(utterance);
+    }
+    function show(next) {
+      index = (next + scenes.length) % scenes.length;
+      scenes.forEach((scene, value) => scene.classList.toggle('active', value === index));
+      document.querySelector('#title').textContent = scenes[index].dataset.title;
+      document.querySelector('#caption').textContent = scenes[index].dataset.caption;
+      document.querySelector('#current').textContent = pad(index + 1);
+      document.querySelector('#total').textContent = pad(scenes.length);
+      document.querySelector('#progress').style.width = `${((index + 1) / scenes.length) * 100}%`;
+      speak(); schedule();
+    }
+    function schedule() { clearTimeout(timer); if (playing) timer = setTimeout(() => show(index + 1), duration); }
+    document.querySelector('#prev').onclick = () => show(index - 1);
+    document.querySelector('#next').onclick = () => show(index + 1);
+    document.querySelector('#play').onclick = event => { playing = !playing; event.currentTarget.textContent = playing ? 'Ⅱ' : '▶'; schedule(); };
+    document.querySelector('#voice').onclick = event => { voiced = !voiced; event.currentTarget.textContent = voiced ? '●' : '◉'; speak(); };
+    addEventListener('keydown', event => { if (event.key === 'ArrowRight') show(index + 1); if (event.key === 'ArrowLeft') show(index - 1); if (event.key === ' ') document.querySelector('#play').click(); });
+    show(index);
+  </script>
+</body>
+</html>

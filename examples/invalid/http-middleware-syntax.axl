@@ -1,0 +1,7 @@
+axl 4
+app InvalidHttpMiddlewareSyntax
+flow Identity text -> text
+  return input
+api BrokenMiddlewareApi
+  middleware request HttpMiddleware
+  post /identity text -> text = Identity

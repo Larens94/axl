@@ -42,7 +42,7 @@ pub fn dispatch_with_runtime(
     path: &str,
     input: Value,
 ) -> HttpResult {
-    dispatch_with_authorization(graph, runtime, method, path, input, None)
+    dispatch_with_headers(graph, runtime, method, path, input, &BTreeMap::new())
 }
 
 pub fn dispatch_with_authorization(
@@ -52,6 +52,21 @@ pub fn dispatch_with_authorization(
     path: &str,
     input: Value,
     authorization: Option<&str>,
+) -> HttpResult {
+    let mut headers = BTreeMap::new();
+    if let Some(authorization) = authorization {
+        headers.insert("authorization".into(), authorization.into());
+    }
+    dispatch_with_headers(graph, runtime, method, path, input, &headers)
+}
+
+pub fn dispatch_with_headers(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    method: &str,
+    path: &str,
+    input: Value,
+    headers: &BTreeMap<String, String>,
 ) -> HttpResult {
     let method = method.to_ascii_lowercase();
     let (request_path, query) = path.split_once('?').unwrap_or((path, ""));
@@ -79,7 +94,17 @@ pub fn dispatch_with_authorization(
             body: json!({ "error": "route_not_found" }),
         };
     };
-    if let Some(result) = authorize_request(graph, runtime, route, authorization) {
+    if let Some(result) =
+        apply_request_middleware(graph, runtime, route, &method, request_path, headers)
+    {
+        return result;
+    }
+    if let Some(result) = authorize_request(
+        graph,
+        runtime,
+        route,
+        headers.get("authorization").map(String::as_str),
+    ) {
         return result;
     }
     let input = match bind_request_input(graph, route, input, &path_parameters, query) {
@@ -314,6 +339,103 @@ fn parse_bound_scalar(type_name: &str, value: &str) -> Result<Value, String> {
     }
 }
 
+fn apply_request_middleware(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    route: &super::ir::GraphNode,
+    method: &str,
+    path: &str,
+    headers: &BTreeMap<String, String>,
+) -> Option<HttpResult> {
+    let api = graph
+        .edges
+        .iter()
+        .find(|edge| edge.kind == "owns" && edge.to == route.id)
+        .map(|edge| edge.from.as_str())?;
+    let mut middlewares = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == api)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .filter(|node| node.kind == "middleware")
+        .collect::<Vec<_>>();
+    if middlewares.is_empty() {
+        return None;
+    }
+    middlewares.sort_by_key(|middleware| {
+        middleware
+            .metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    let mut envelope = json!({
+        "method": method,
+        "path": path,
+        "headers": headers,
+    });
+    for middleware in middlewares {
+        let provider_id = graph
+            .edges
+            .iter()
+            .find(|edge| edge.kind == "bind" && edge.from == middleware.id)
+            .map(|edge| edge.to.as_str());
+        let provider = provider_id.and_then(|id| graph.nodes.iter().find(|node| node.id == id));
+        let Some(provider) = provider else {
+            return Some(HttpResult {
+                status: 500,
+                body: json!({ "error": "middleware_provider_missing" }),
+            });
+        };
+        let Some(implementation) = provider.implementation.as_deref() else {
+            return Some(HttpResult {
+                status: 500,
+                body: json!({ "error": "middleware_provider_has_no_binding" }),
+            });
+        };
+        let config = match runtime::provider_config(graph, &provider.id) {
+            Ok(config) => config,
+            Err(error) => {
+                return Some(HttpResult {
+                    status: 500,
+                    body: json!({ "error": error.to_string() }),
+                });
+            }
+        };
+        match runtime.invoke(ProviderCall {
+            provider: &provider.name,
+            capacity: middleware.type_name.as_deref().unwrap_or(""),
+            implementation,
+            operation: "process",
+            config,
+            input: envelope.clone(),
+        }) {
+            Ok(Value::Object(object)) if object.contains_key("method") => {
+                envelope = Value::Object(object);
+            }
+            Ok(Value::Object(object)) if object.get("error").is_some() => {
+                return Some(HttpResult {
+                    status: 403,
+                    body: Value::Object(object),
+                });
+            }
+            Ok(_) => {
+                return Some(HttpResult {
+                    status: 403,
+                    body: json!({ "error": "middleware_rejected" }),
+                });
+            }
+            Err(error) => {
+                return Some(HttpResult {
+                    status: 403,
+                    body: json!({ "error": error }),
+                });
+            }
+        }
+    }
+    None
+}
+
 fn authorize_request(
     graph: &GraphIr,
     runtime: &mut dyn ProviderRuntime,
@@ -426,18 +548,27 @@ async fn handle(
         }
     };
     let result = match state.runtime.lock() {
-        Ok(mut runtime) => dispatch_with_authorization(
-            &state.graph,
-            &mut *runtime,
-            method.as_str(),
-            uri.path_and_query()
-                .map(|value| value.as_str())
-                .unwrap_or_else(|| uri.path()),
-            input,
-            headers
-                .get(axum::http::header::AUTHORIZATION)
-                .and_then(|value| value.to_str().ok()),
-        ),
+        Ok(mut runtime) => {
+            let headers = headers
+                .iter()
+                .filter_map(|(name, value)| {
+                    Some((
+                        name.as_str().to_ascii_lowercase(),
+                        value.to_str().ok()?.to_string(),
+                    ))
+                })
+                .collect::<BTreeMap<_, _>>();
+            dispatch_with_headers(
+                &state.graph,
+                &mut *runtime,
+                method.as_str(),
+                uri.path_and_query()
+                    .map(|value| value.as_str())
+                    .unwrap_or_else(|| uri.path()),
+                input,
+                &headers,
+            )
+        }
         Err(_) => HttpResult {
             status: 500,
             body: json!({ "error": "provider_runtime_unavailable" }),
@@ -461,6 +592,10 @@ entity CompositeInput
   term: text required
   amount: money required
   verbose: bool optional
+entity HttpRequest
+  method: text required
+  path: text required
+  headers: Map<text,text> required
 flow Validate Input -> Result<Input>
   require input.amount > 0 else "amount_invalid"
   return input
@@ -470,9 +605,15 @@ flow EchoComposite CompositeInput -> CompositeInput
   return input
 capacity HttpAuth
   op authorize text -> Result<bool> idempotent
+capacity HttpMiddleware
+  op process HttpRequest -> Result<HttpRequest> idempotent
 skill DemoBearer provides HttpAuth
   native rust axl::auth::bearer
   config token: text = "secret"
+skill DemoClientGate provides HttpMiddleware
+  native rust axl::middleware::header_gate
+  config header: text = "x-axl-client"
+  config value: text = "demo"
 api DemoApi
   post /validate Input -> Result<Input> = Validate
   get /items/{id} text -> text = EchoText from path.id
@@ -485,6 +626,9 @@ api DemoApi
 api SecureApi
   auth bearer: HttpAuth = DemoBearer
   post /secure Input -> Result<Input> = Validate
+api GuardedApi
+  middleware request: HttpMiddleware = DemoClientGate
+  post /guarded Input -> Result<Input> = Validate
 "#;
 
     #[test]
@@ -548,5 +692,36 @@ api SecureApi
             Some("Bearer secret"),
         );
         assert_eq!(authorized.status, 200);
+
+        let mut headers = BTreeMap::new();
+        let missing_client = dispatch_with_headers(
+            &graph,
+            &mut runtime,
+            "post",
+            "/guarded",
+            json!({"amount": 10}),
+            &headers,
+        );
+        assert_eq!(missing_client.status, 403);
+        headers.insert("x-axl-client".into(), "wrong".into());
+        let denied_client = dispatch_with_headers(
+            &graph,
+            &mut runtime,
+            "post",
+            "/guarded",
+            json!({"amount": 10}),
+            &headers,
+        );
+        assert_eq!(denied_client.status, 403);
+        headers.insert("x-axl-client".into(), "demo".into());
+        let allowed_client = dispatch_with_headers(
+            &graph,
+            &mut runtime,
+            "post",
+            "/guarded",
+            json!({"amount": 10}),
+            &headers,
+        );
+        assert_eq!(allowed_client.status, 200);
     }
 }

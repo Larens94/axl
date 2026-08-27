@@ -316,14 +316,32 @@ pub fn format(program: &Program) -> String {
                                 if *propagate { "?" } else { "" }
                             ));
                         }
+                        FlowStatement::Emit {
+                            event, argument, ..
+                        } => output.push(format!("  emit {event}({argument})")),
                         FlowStatement::Return { expression, .. } => {
                             output.push(format!("  return {expression}"));
                         }
                     }
                 }
             }
+            Declaration::Event(event) => {
+                output.push(format!("event {}: {}", event.name, event.payload));
+            }
+            Declaration::Subscription(subscription) => {
+                output.push(format!(
+                    "on {} {} = {}",
+                    subscription.event, subscription.payload, subscription.flow
+                ));
+            }
             Declaration::Api(api) => {
                 output.push(format!("api {}", api.name));
+                for middleware in &api.middlewares {
+                    output.push(format!(
+                        "  middleware {}: {} = {}",
+                        middleware.phase, middleware.capacity, middleware.provider
+                    ));
+                }
                 if let Some(auth) = &api.auth {
                     output.push(format!(
                         "  auth {}: {} = {}",

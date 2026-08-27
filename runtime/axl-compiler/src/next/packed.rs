@@ -315,11 +315,18 @@ fn reconstruct_id(
                 | "blueprint"
                 | "instance"
                 | "flow"
+                | "event"
                 | "api"
                 | "agent"
         ) =>
         {
             Ok(format!("{kind}.{name}"))
+        }
+        None if kind == "subscription" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("subscription node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("subscription.{order}"))
         }
         Some(parent) if kind == "operation" => Ok(format!("{parent}.op.{name}")),
         Some(parent) if kind == "variant" => Ok(format!("{parent}.variant.{name}")),
@@ -346,7 +353,9 @@ fn reconstruct_id(
                     | "group"
                     | "parallel"
                     | "race"
+                    | "emit"
                     | "request_binding"
+                    | "middleware"
                     | "return"
             ) =>
         {
@@ -443,6 +452,9 @@ fn node_kind_code(kind: &str) -> &str {
         "config" => "46",
         "auth" => "47",
         "request_binding" => "48",
+        "middleware" => "49",
+        "subscription" => "50",
+        "emit" => "51",
         other => other,
     }
 }
@@ -498,6 +510,9 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "46" => "config",
         "47" => "auth",
         "48" => "request_binding",
+        "49" => "middleware",
+        "50" => "subscription",
+        "51" => "emit",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

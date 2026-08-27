@@ -10,6 +10,9 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
     let mut declarations = BTreeMap::new();
 
     for declaration in &program.declarations {
+        if matches!(declaration, Declaration::Subscription(_)) {
+            continue;
+        }
         if !valid_name(declaration.name(), false) {
             diagnostics.push(Diagnostic::error(
                 "AXL-N001",
@@ -49,10 +52,13 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
                 check_instance(instance, &declarations, &mut diagnostics)
             }
             Declaration::Flow(flow) => check_flow(flow, &declarations, &mut diagnostics),
+            Declaration::Event(event) => check_event(event, &declarations, &mut diagnostics),
+            Declaration::Subscription(_) => {}
             Declaration::Api(api) => check_api(api, &declarations, &mut diagnostics),
             Declaration::Agent(agent) => check_agent(agent, &mut diagnostics),
         }
     }
+    check_subscriptions(program, &declarations, &mut diagnostics);
     check_global_api_routes(program, &mut diagnostics);
 
     if !diagnostics.is_empty() {
@@ -2207,6 +2213,38 @@ fn check_flow(
                 }
                 bind_transform_result(name, type_name, span, &mut variables, diagnostics);
             }
+            FlowStatement::Emit {
+                event,
+                argument,
+                span,
+            } => {
+                let Some(Declaration::Event(event_decl)) = declarations.get(event.as_str()) else {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-E905",
+                            "events",
+                            format!("unknown event '{event}'"),
+                            span.clone(),
+                        )
+                        .expected("declared event", event),
+                    );
+                    continue;
+                };
+                if let Some(found) =
+                    infer_source_expression(argument, span, &variables, declarations, diagnostics)
+                    && !same_type(&found, &event_decl.payload)
+                {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-E906",
+                            "events",
+                            format!("emit payload type must match event '{event}'"),
+                            span.clone(),
+                        )
+                        .expected(&event_decl.payload, found),
+                    );
+                }
+            }
             FlowStatement::Return { expression, span } => {
                 return_count += 1;
                 if index + 1 != flow.statements.len() {
@@ -2288,6 +2326,7 @@ fn flow_is_idempotent(
                 _ => None,
             })
             .is_some_and(|flow| flow_is_idempotent(flow, declarations, visiting)),
+        FlowStatement::Emit { .. } => false,
         _ => true,
     });
     visiting.remove(&flow.name);
@@ -2331,11 +2370,119 @@ fn check_flow_provider(
     }
 }
 
+fn check_api_middleware(
+    middleware: &ApiMiddleware,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if middleware.phase != "request" {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-H918",
+                "http",
+                format!("unsupported middleware phase '{}'", middleware.phase),
+                middleware.span.clone(),
+            )
+            .expected("request", &middleware.phase),
+        );
+    }
+    match declarations.get(middleware.capacity.as_str()) {
+        Some(Declaration::Capacity(capacity)) => {
+            let process = capacity.operations.iter().find(|op| op.name == "process");
+            let valid = process.is_some_and(|op| {
+                op.idempotent
+                    && generic_inner(&op.output, "Result") == Some(op.input.as_str())
+                    && http_request_envelope(&op.input, declarations)
+            });
+            if !valid {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-H919",
+                        "http",
+                        format!(
+                            "middleware capacity '{}' has an invalid contract",
+                            middleware.capacity
+                        ),
+                        middleware.span.clone(),
+                    )
+                    .expected(
+                        "op process HttpRequest -> Result<HttpRequest> idempotent",
+                        "missing or incompatible operation",
+                    ),
+                );
+            }
+        }
+        Some(found) => diagnostics.push(
+            Diagnostic::error(
+                "AXL-H920",
+                "http",
+                format!(
+                    "middleware type '{}' is not a capacity",
+                    middleware.capacity
+                ),
+                middleware.span.clone(),
+            )
+            .expected("capacity", declaration_kind(found)),
+        ),
+        None => diagnostics.push(
+            Diagnostic::error(
+                "AXL-H920",
+                "http",
+                format!("unknown middleware capacity '{}'", middleware.capacity),
+                middleware.span.clone(),
+            )
+            .expected("declared capacity", &middleware.capacity),
+        ),
+    }
+    match provider_type(&middleware.provider, declarations) {
+        Some(provided) if provided == middleware.capacity => {}
+        Some(provided) => diagnostics.push(
+            Diagnostic::error(
+                "AXL-H921",
+                "http",
+                format!(
+                    "middleware provider '{}' is incompatible",
+                    middleware.provider
+                ),
+                middleware.span.clone(),
+            )
+            .expected(&middleware.capacity, provided),
+        ),
+        None => diagnostics.push(
+            Diagnostic::error(
+                "AXL-H922",
+                "http",
+                format!("unknown middleware provider '{}'", middleware.provider),
+                middleware.span.clone(),
+            )
+            .expected(
+                format!("provider of {}", middleware.capacity),
+                "unknown provider",
+            ),
+        ),
+    }
+}
+
+fn http_request_envelope(type_name: &str, declarations: &BTreeMap<&str, &Declaration>) -> bool {
+    let Some(Declaration::Entity(entity)) = declarations.get(type_name) else {
+        return false;
+    };
+    let method = entity.fields.iter().find(|field| field.name == "method");
+    let path = entity.fields.iter().find(|field| field.name == "path");
+    let headers = entity.fields.iter().find(|field| field.name == "headers");
+    method.is_some_and(|field| field.type_name == "text")
+        && path.is_some_and(|field| field.type_name == "text")
+        && headers.is_some_and(|field| field.type_name == "Map<text,text>")
+}
+
 fn check_api(
     api: &Api,
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
+    for middleware in &api.middlewares {
+        check_api_middleware(middleware, declarations, diagnostics);
+    }
     if let Some(auth) = &api.auth {
         if auth.scheme != "bearer" {
             diagnostics.push(
@@ -3061,6 +3208,86 @@ fn check_provider(
     }
 }
 
+fn check_event(
+    event: &EventDecl,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if event.name.contains('.') || !valid_name(&event.name, false) {
+        diagnostics.push(Diagnostic::error(
+            "AXL-N001",
+            "names",
+            format!("invalid event name '{}'", event.name),
+            event.span.clone(),
+        ));
+    }
+    check_type(&event.payload, &event.span, declarations, diagnostics);
+}
+
+fn check_subscriptions(
+    program: &Program,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for declaration in &program.declarations {
+        let Declaration::Subscription(subscription) = declaration else {
+            continue;
+        };
+        let Some(Declaration::Event(event)) = declarations.get(subscription.event.as_str()) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-E901",
+                    "events",
+                    format!("unknown event '{}'", subscription.event),
+                    subscription.span.clone(),
+                )
+                .expected("declared event", &subscription.event),
+            );
+            continue;
+        };
+        if !same_type(&subscription.payload, &event.payload) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-E902",
+                    "events",
+                    format!(
+                        "subscription payload type must match event '{}'",
+                        subscription.event
+                    ),
+                    subscription.span.clone(),
+                )
+                .expected(&event.payload, &subscription.payload),
+            );
+        }
+        let Some(Declaration::Flow(flow)) = declarations.get(subscription.flow.as_str()) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-E903",
+                    "events",
+                    format!("unknown subscriber flow '{}'", subscription.flow),
+                    subscription.span.clone(),
+                )
+                .expected("declared flow", &subscription.flow),
+            );
+            continue;
+        };
+        if !same_type(&flow.input, &event.payload) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-E904",
+                    "events",
+                    format!(
+                        "subscriber flow '{}' input must match event '{}'",
+                        flow.name, event.name
+                    ),
+                    subscription.span.clone(),
+                )
+                .expected(&event.payload, &flow.input),
+            );
+        }
+    }
+}
+
 fn check_agent(agent: &Agent, diagnostics: &mut Vec<Diagnostic>) {
     if agent.goals.is_empty() {
         diagnostics.push(Diagnostic::error(
@@ -3233,6 +3460,8 @@ fn declaration_kind(declaration: &Declaration) -> &'static str {
         Declaration::Blueprint(_) => "blueprint",
         Declaration::Instance(_) => "instance",
         Declaration::Flow(_) => "flow",
+        Declaration::Event(_) => "event",
+        Declaration::Subscription(_) => "subscription",
         Declaration::Api(_) => "api",
         Declaration::Agent(_) => "agent",
     }
@@ -3265,11 +3494,50 @@ fn lower(program: &Program) -> GraphIr {
             Declaration::Blueprint(blueprint) => lower_blueprint(blueprint, &mut graph),
             Declaration::Instance(instance) => lower_instance(instance, program, &mut graph),
             Declaration::Flow(flow) => lower_flow(flow, &mut graph),
+            Declaration::Event(event) => lower_event(event, &mut graph),
+            Declaration::Subscription(_) => {}
             Declaration::Api(api) => lower_api(api, &mut graph),
             Declaration::Agent(agent) => lower_agent(agent, &mut graph),
         }
     }
+    let mut subscription_order = 0usize;
+    for declaration in &program.declarations {
+        if let Declaration::Subscription(subscription) = declaration {
+            lower_subscription(subscription, subscription_order, &mut graph);
+            subscription_order += 1;
+        }
+    }
     graph
+}
+
+fn lower_event(event: &EventDecl, graph: &mut GraphIr) {
+    let id = format!("event.{}", event.name);
+    let mut value = node(&id, "event", &event.name);
+    value.type_name = Some(event.payload.clone());
+    graph.nodes.push(value);
+}
+
+fn lower_subscription(subscription: &Subscription, order: usize, graph: &mut GraphIr) {
+    let id = format!("subscription.{order}");
+    let mut value = node(&id, "subscription", &subscription.event);
+    value.type_name = Some(subscription.payload.clone());
+    value.metadata.insert("order".into(), order.to_string());
+    value
+        .metadata
+        .insert("flow".into(), subscription.flow.clone());
+    graph.nodes.push(value);
+    graph.edges.push(edge(
+        &id,
+        &format!("event.{}", subscription.event),
+        "bind",
+        Some(&subscription.payload),
+    ));
+    graph.edges.push(edge(
+        &id,
+        &format!("flow.{}", subscription.flow),
+        "dispatch",
+        Some(&subscription.payload),
+    ));
 }
 
 fn lower_enum(value: &Enum, graph: &mut GraphIr) {
@@ -3478,6 +3746,7 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
             FlowStatement::Group { name, .. } => ("group", name.as_str()),
             FlowStatement::Parallel { name, .. } => ("parallel", name.as_str()),
             FlowStatement::Race { name, .. } => ("race", name.as_str()),
+            FlowStatement::Emit { event, .. } => ("emit", event.as_str()),
             FlowStatement::Return { .. } => ("return", "return"),
         };
         let id = format!("{flow_id}.{kind}.{index}");
@@ -3490,6 +3759,12 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
                 value
                     .metadata
                     .insert("expression".into(), expression.clone());
+            }
+            FlowStatement::Emit {
+                event, argument, ..
+            } => {
+                value.metadata.insert("event".into(), event.clone());
+                value.metadata.insert("argument".into(), argument.clone());
             }
             FlowStatement::Call {
                 dependency,
@@ -3700,6 +3975,26 @@ fn lower_flow(flow: &Flow, graph: &mut GraphIr) {
 fn lower_api(api: &Api, graph: &mut GraphIr) {
     let api_id = format!("api.{}", api.name);
     graph.nodes.push(node(&api_id, "api", &api.name));
+    for (index, middleware) in api.middlewares.iter().enumerate() {
+        let id = format!("{api_id}.middleware.{index}");
+        let mut value = node(&id, "middleware", &middleware.phase);
+        value.type_name = Some(middleware.capacity.clone());
+        value
+            .metadata
+            .insert("provider".into(), middleware.provider.clone());
+        value.metadata.insert("order".into(), index.to_string());
+        value
+            .metadata
+            .insert("phase".into(), middleware.phase.clone());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&api_id, &id, "owns", None));
+        graph.edges.push(edge(
+            &id,
+            &provider_id(&middleware.provider),
+            "bind",
+            Some(&middleware.capacity),
+        ));
+    }
     if let Some(auth) = &api.auth {
         let id = format!("{api_id}.auth.{}", auth.scheme);
         let mut value = node(&id, "auth", &auth.scheme);

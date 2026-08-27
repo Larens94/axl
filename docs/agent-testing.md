@@ -19,7 +19,7 @@ jq empty schema/axl-provider-1.schema.json
 ```
 
 The integration suite compiles nine valid documented programs, round-trips each
-through Packed Graph IR and verifies nineteen intentionally invalid programs.
+through Packed Graph IR and verifies twenty-one intentionally invalid programs.
 
 The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
@@ -169,6 +169,18 @@ The response is `80000`. Omitting the authorization header returns 401; using a
 different token returns 403. The token is deliberately a visible demo fixture,
 not a production secret.
 
+Verify the open request middleware gate:
+
+```sh
+curl -X POST http://127.0.0.1:8080/guarded/balance \
+  -H 'content-type: application/json' \
+  -H 'x-axl-client: cashflow-demo' \
+  --data-binary @examples/apps/inputs/movement-batch.json
+```
+
+The response is `80000`. Omitting the client header or using another value
+returns 403.
+
 After saving the durable movement, verify both request bindings:
 
 ```sh
@@ -252,6 +264,12 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   check examples/invalid/http-request-bindings.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/http-middleware-syntax.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/http-middleware.axl --json
 ```
 
 The first diagnostic set must include `AXL-O401`; the second must include
@@ -272,6 +290,8 @@ The fifteenth must include `AXL-P313` and `AXL-P314`. The sixteenth must include
 The seventeenth must include every code from `AXL-P913` through `AXL-P917`. The eighteenth must
 include every code from `AXL-H908` through `AXL-H912`.
 The nineteenth must include every code from `AXL-H913` through `AXL-H917`.
+The twentieth must include `AXL-P918`. The twenty-first must include every code
+from `AXL-H918` through `AXL-H922`.
 
 ## 8. Verify canonical formatting and transport
 
@@ -312,6 +332,7 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - typed provider config survives Graph/Packed IR and `axl-provider/1` generation;
 - configured SQLite data survives destruction and recreation of the runtime;
 - API auth is capacity-backed and proves missing, denied and accepted requests;
+- ordered request middleware is capacity-backed over typed envelopes;
 - scalar path/query bindings are checked, decoded and exact-route-safe;
 - composite request entities are assembled from checked body/path/query nodes;
 - documentation examples remain coupled to compiler tests.

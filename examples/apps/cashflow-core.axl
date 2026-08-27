@@ -42,6 +42,18 @@ capacity MovementStore
 capacity HttpAuth
   op authorize text -> Result<bool> idempotent
 
+entity HttpRequest
+  method: text required
+  path: text required
+  headers: Map<text,text> required
+
+capacity HttpMiddleware
+  op process HttpRequest -> Result<HttpRequest> idempotent
+
+capacity EventLog
+  op append text -> Result<text>
+  op list unit -> Result<List<text>>
+
 skill MemoryMovements provides MovementStore
   native rust axl::store::memory
   effect db.read
@@ -63,6 +75,20 @@ skill CashflowDemoBearer provides HttpAuth
   native rust axl::auth::bearer
   config token: text = "axl-cashflow-demo"
   capability auth.verify
+
+skill CashflowClientGate provides HttpMiddleware
+  native rust axl::middleware::header_gate
+  config header: text = "x-axl-client"
+  config value: text = "cashflow-demo"
+  capability net.filter
+
+skill MemoryEventLog provides EventLog
+  native rust axl::event::log
+
+event MovementSaved: Movement
+
+on MovementSaved Movement = TagMovementPersisted
+on MovementSaved Movement = TagMovementAnnounced
 
 flow ValidateMovement Movement -> Result<Movement>
   let known_kind = input.kind == MovementKind.income || input.kind == MovementKind.expense
@@ -152,6 +178,27 @@ flow ValidateAndStoreMovement Movement -> Result<Movement>
   call saved = store.save(valid)?
   return saved
 
+flow TagMovementPersisted Movement -> Result<text>
+  in log: EventLog = MemoryEventLog
+  call tagged = log.append("persisted")?
+  return tagged
+
+flow TagMovementAnnounced Movement -> Result<text>
+  in log: EventLog = MemoryEventLog
+  call tagged = log.append("announced")?
+  return tagged
+
+flow SaveAndAnnounce Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call saved = store.save(input)?
+  emit MovementSaved(saved)
+  return saved
+
+flow ListMovementTags unit -> Result<List<text>>
+  in log: EventLog = MemoryEventLog
+  call tags = log.list(input)?
+  return tags
+
 flow FindMovement uuid -> Result<Movement>
   in store: MovementStore = MemoryMovements
   call found = store.find(input)?
@@ -196,3 +243,7 @@ api CashflowApi
 api SecuredCashflowApi
   auth bearer: HttpAuth = CashflowDemoBearer
   post /secure/balance MovementBatch -> money = CalculateLedgerBalance
+
+api GuardedCashflowApi
+  middleware request: HttpMiddleware = CashflowClientGate
+  post /guarded/balance MovementBatch -> money = CalculateLedgerBalance

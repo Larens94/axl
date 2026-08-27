@@ -1,0 +1,16 @@
+0|AXL vuole trasformare il software in un grafo aperto, leggibile e costruibile dagli agenti. Il linguaggio resta sopra, mentre Rust, React, database, intelligenza artificiale e IoT lavorano come motori sostituibili.
+1|Il problema non è la potenza dei linguaggi esistenti. È la quantità di dettagli ripetuti che un agente deve riscrivere per ogni backend, interfaccia e integrazione.
+2|La scelta è separare la semantica dall'implementazione. AXL descrive tipi, flow, componenti e connessioni. I target nativi eseguono il lavoro specializzato.
+3|Ogni programma attraversa una pipeline verificabile: sorgente leggibile, albero tipizzato, grafo semantico, formato packed a opcode, quindi runtime e target.
+4|Il principio decisivo è l'apertura. Una capacity descrive il contratto. Una skill sceglie il motore. Le surface mantengono sostituibili dati, comportamento e interfaccia.
+5|La compattezza non nasce comprimendo Rust. Nasce da blocchi semantici riusabili. Se manca una primitiva, l'agente si ferma e indica esattamente il punto mancante.
+6|Oggi il linguaggio e il backend request sono eseguibili: Axum, binding, auth, middleware e SQLite. Eventi, job, frontend, AI, agenti e IoT restano gate dichiarati.
+7|Ogni avanzamento richiede prove ripetibili: test positivi e negativi, round trip del grafo, schema, documentazione, presentazione e una verifica end to end.
+8|I primi gate chiudono provider, flow, backend e dati. Il quarto gate trasforma la UI in un grafo eseguibile attraverso un renderer React.
+9|La UI AXL dovrà coprire routing, navigazione responsive, form, tabelle, filtri, stati, grafici e almeno il settanta per cento del kit necessario a un CRM moderno.
+10|Modelli e vector store saranno provider neutrali. Embedding, ricerca, streaming e RAG resteranno contratti tipizzati, osservabili e sostituibili.
+11|Il runtime agenti unirà tool, memoria, goal, plan, budget, approvazioni e trace. Il runtime IoT unirà device, telemetria, comandi, protocolli e regole edge.
+12|Prima della produzione servono package firmati, riferimenti sicuri ai segreti, capability applicate a runtime, deployment e una suite di conformità per provider esterni.
+13|Gli agenti lavorano per gate. Partono da un esempio rosso, implementano una primitiva generale, non nascondono logica applicativa sotto il cofano, e chiudono con tutte le prove.
+14|Nove pacchetti permettono lavoro specializzato: linguaggio, backend eventi e job, dati, frontend, AI e vector, agenti, IoT, sicurezza, qualità e documentazione. Tutti convergono sullo stesso Graph IR.
+15|La destinazione è un software completo scritto principalmente in AXL. Ogni motore resta aperto sotto. Ogni passo è dimostrabile. Le prove trasformano il piano in realtà.

@@ -401,6 +401,58 @@ provider. The Axum adapter maps a missing bearer header to 401 and denial to 403
 The static token adapter is an executable test fixture; production secret
 references and JWT/OAuth adapters are not implemented.
 
+An API can also attach an ordered open request middleware pipeline. Each entry is
+a capacity over a typed request envelope:
+
+```axl
+entity HttpRequest
+  method: text required
+  path: text required
+  headers: Map<text,text> required
+
+capacity HttpMiddleware
+  op process HttpRequest -> Result<HttpRequest> idempotent
+
+skill DemoClientGate provides HttpMiddleware
+  native rust axl::middleware::header_gate
+  config header: text = "x-axl-client"
+  config value: text = "demo"
+
+api GuardedApi
+  middleware request: HttpMiddleware = DemoClientGate
+  post /guarded/balance MovementBatch -> money = CalculateLedgerBalance
+```
+
+Middleware runs in declaration order before auth. The built-in header gate is a
+replaceable fixture; rejection maps to HTTP 403. Response-phase middleware and
+response header mutation are not implemented yet.
+
+### Events
+
+Applications declare typed top-level events, subscribe any number of flows, and
+emit payloads from flow statements:
+
+```axl
+event MovementSaved: Movement
+
+on MovementSaved Movement = TagMovementPersisted
+on MovementSaved Movement = TagMovementAnnounced
+
+flow SaveAndAnnounce Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call saved = store.save(input)?
+  emit MovementSaved(saved)
+  return saved
+```
+
+Event names are simple identifiers without dots. Each `on` line names the event,
+repeats the payload type and binds a subscriber flow whose input must match.
+`emit Event(expression)` evaluates the payload, then calls every matching
+subscription in declaration order through the shared provider runtime. Subscriber
+outputs are discarded; a `{ "error": ... }` Result or runtime failure becomes an
+error for the emitting flow. Graph IR stores app-owned `event` nodes,
+`subscription` nodes (opcode 50) and `emit` statements (opcode 51).
+
 Route inputs use the JSON body by default. A scalar or enum input can instead
 come directly from a named path or query value:
 
@@ -573,13 +625,14 @@ generate a complete production application. `providers/providers.json` uses
 - contract expression type checking;
 - branch statement blocks and mutable variables;
 - generated standalone Rust handlers and React components from Graph IR;
-- path parameters, query decoding, middleware and streaming HTTP bodies;
+- header/cookie request bindings, response middleware and streaming HTTP bodies;
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
 - transactions, migrations, queries and multi-database adapters;
 - blueprint package registry;
 - package imports and cross-package blueprint overlays;
-- runtime behavior for state, events, actions, errors and policies;
+- runtime behavior for state, actions, errors and policies;
+- durable/scheduled jobs with retry and idempotency;
 - effect budgets and capability policy enforcement;
 - source maps from generated target code;
 - AI and agent runtime execution;

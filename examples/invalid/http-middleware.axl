@@ -1,0 +1,20 @@
+axl 4
+app InvalidHttpMiddleware
+entity HttpRequest
+  method: text required
+  path: text required
+  headers: Map<text,text> required
+capacity BadMiddleware
+  op process int -> bool
+capacity Store
+  op save text -> Result<text>
+skill StoreProvider provides Store
+  native rust axl::store::memory
+flow Identity text -> text
+  return input
+api WrongPhaseAndContract
+  middleware response: BadMiddleware = MissingProvider
+  post /one text -> text = Identity
+api WrongCapacityAndProvider
+  middleware request: MissingMiddleware = StoreProvider
+  post /two text -> text = Identity

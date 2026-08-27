@@ -17,10 +17,23 @@
   "$defs": {
     "api": {
       "type": "object",
-      "required": ["name", "auth", "routes"],
+      "required": ["name", "middlewares", "auth", "routes"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string", "minLength": 1 },
+        "middlewares": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["phase", "capacity", "provider"],
+            "additionalProperties": false,
+            "properties": {
+              "phase": { "const": "request" },
+              "capacity": { "type": "string", "minLength": 1 },
+              "provider": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
         "auth": {
           "oneOf": [
             { "type": "null" },
@@ -52,8 +65,7 @@
         "path": { "type": "string", "pattern": "^/" },
         "input": { "type": "string", "minLength": 1 },
         "output": { "type": "string", "minLength": 1 },
-        "flow": { "type": "string", "minLength": 1 }
-        ,
+        "flow": { "type": "string", "minLength": 1 },
         "input_source": { "enum": ["body", "path", "query", "composite"] },
         "input_name": { "type": ["string", "null"] },
         "bindings": {

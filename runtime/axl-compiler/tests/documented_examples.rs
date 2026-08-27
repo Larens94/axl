@@ -126,6 +126,58 @@ fn documented_invalid_examples_report_stable_codes() {
             include_str!("../../../examples/invalid/http-request-bindings.axl"),
         ),
         (
+            "AXL-P918",
+            include_str!("../../../examples/invalid/http-middleware-syntax.axl"),
+        ),
+        (
+            "AXL-H918",
+            include_str!("../../../examples/invalid/http-middleware.axl"),
+        ),
+        (
+            "AXL-H919",
+            include_str!("../../../examples/invalid/http-middleware.axl"),
+        ),
+        (
+            "AXL-H920",
+            include_str!("../../../examples/invalid/http-middleware.axl"),
+        ),
+        (
+            "AXL-H921",
+            include_str!("../../../examples/invalid/http-middleware.axl"),
+        ),
+        (
+            "AXL-H922",
+            include_str!("../../../examples/invalid/http-middleware.axl"),
+        ),
+        (
+            "AXL-P920",
+            include_str!("../../../examples/invalid/flow-events-syntax.axl"),
+        ),
+        (
+            "AXL-E901",
+            include_str!("../../../examples/invalid/flow-events.axl"),
+        ),
+        (
+            "AXL-E902",
+            include_str!("../../../examples/invalid/flow-events.axl"),
+        ),
+        (
+            "AXL-E903",
+            include_str!("../../../examples/invalid/flow-events.axl"),
+        ),
+        (
+            "AXL-E904",
+            include_str!("../../../examples/invalid/flow-events.axl"),
+        ),
+        (
+            "AXL-E905",
+            include_str!("../../../examples/invalid/flow-events.axl"),
+        ),
+        (
+            "AXL-E906",
+            include_str!("../../../examples/invalid/flow-events.axl"),
+        ),
+        (
             "AXL-P314",
             include_str!("../../../examples/invalid/provider-config-syntax.axl"),
         ),

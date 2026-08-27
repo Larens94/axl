@@ -19,6 +19,8 @@ pub enum Declaration {
     Blueprint(Blueprint),
     Instance(Instance),
     Flow(Flow),
+    Event(EventDecl),
+    Subscription(Subscription),
     Api(Api),
     Agent(Agent),
 }
@@ -33,6 +35,8 @@ impl Declaration {
             Self::Blueprint(value) => &value.name,
             Self::Instance(value) => &value.name,
             Self::Flow(value) => &value.name,
+            Self::Event(value) => &value.name,
+            Self::Subscription(value) => &value.flow,
             Self::Api(value) => &value.name,
             Self::Agent(value) => &value.name,
         }
@@ -47,10 +51,27 @@ impl Declaration {
             Self::Blueprint(value) => &value.span,
             Self::Instance(value) => &value.span,
             Self::Flow(value) => &value.span,
+            Self::Event(value) => &value.span,
+            Self::Subscription(value) => &value.span,
             Self::Api(value) => &value.span,
             Self::Agent(value) => &value.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EventDecl {
+    pub name: String,
+    pub payload: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Subscription {
+    pub event: String,
+    pub payload: String,
+    pub flow: String,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -359,6 +380,11 @@ pub enum FlowStatement {
         propagate: bool,
         span: SourceSpan,
     },
+    Emit {
+        event: String,
+        argument: String,
+        span: SourceSpan,
+    },
     Return {
         expression: String,
         span: SourceSpan,
@@ -382,6 +408,7 @@ impl FlowStatement {
             | Self::Group { span, .. }
             | Self::Parallel { span, .. }
             | Self::Race { span, .. }
+            | Self::Emit { span, .. }
             | Self::Return { span, .. } => span,
         }
     }
@@ -404,8 +431,17 @@ pub struct MatchCase {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Api {
     pub name: String,
+    pub middlewares: Vec<ApiMiddleware>,
     pub auth: Option<ApiAuth>,
     pub routes: Vec<ApiRoute>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiMiddleware {
+    pub phase: String,
+    pub capacity: String,
+    pub provider: String,
     pub span: SourceSpan,
 }
 

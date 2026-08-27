@@ -1,0 +1,21 @@
+axl 4
+app InvalidFlowEvents
+entity Movement
+  id: text required
+entity Other
+  id: text required
+event MovementSaved: Movement
+flow ListenerWrong Other -> Other
+  return input
+flow ListenerOk Movement -> Movement
+  return input
+flow EmitUnknown Movement -> Movement
+  emit MissingEvent(input)
+  return input
+flow EmitWrongType Movement -> Movement
+  emit MovementSaved("not-a-movement")
+  return input
+on MissingEvent Movement = ListenerOk
+on MovementSaved Other = ListenerOk
+on MovementSaved Movement = MissingListener
+on MovementSaved Movement = ListenerWrong

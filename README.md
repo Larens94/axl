@@ -58,6 +58,10 @@ Serve routes declared in AXL through the generic Axum runtime:
 - `docs/backend-http.md` — executable Axum route adapter and current boundary.
 - `docs/roadmap.md` — executable autoloop gates and current position.
 - `presentation.html` — simplified, responsive project presentation.
+- `mondo.html` — 3D kid-simple marketing world: truthful status as building blocks.
+- `film.html` — autoplaying cinematic explanation of the complete plan.
+- `film/axl-plan-film.mp4` — narrated 1080p Italian export.
+- `docs/agent-work-packages.md` — nine executable work packages for specialized agents.
 - `examples/blocks` — small examples compiled by the test suite.
 - `examples/catalog/software-foundation.axl` — fourteen open foundation blocks.
 - `examples/apps/cashflow-core.axl` — executable validation and balance flows.

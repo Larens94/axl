@@ -108,6 +108,10 @@ process-local. The durable routes use the path declared on
 401 and 403. The credential is intentionally visible test data until AXL gains
 secret references and production auth adapters.
 
+`POST /guarded/balance` uses ordered request middleware. It requires
+`x-axl-client: cashflow-demo` and returns 403 when the header is missing or
+wrong. The header-gate skill is a replaceable capacity, not route-specific Rust.
+
 The durable lookup is also exposed as `GET /movements/{id}` and
 `GET /movements/find?id=...`. These routes bind a path or query string directly
 to the typed `uuid` flow input; exact `/movements/find` matching takes precedence

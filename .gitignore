@@ -9,3 +9,4 @@ generated
 .DS_Store
 .mimocode/node_modules/
 db__*
+film/rendered/

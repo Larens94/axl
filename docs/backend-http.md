@@ -24,6 +24,44 @@ api SecuredCashflowApi
 
 The selected skill can be replaced by any provider satisfying `HttpAuth`.
 
+Request middleware is an ordered open pipeline over a typed envelope:
+
+```axl
+entity HttpRequest
+  method: text required
+  path: text required
+  headers: Map<text,text> required
+
+capacity HttpMiddleware
+  op process HttpRequest -> Result<HttpRequest> idempotent
+
+api GuardedCashflowApi
+  middleware request: HttpMiddleware = CashflowClientGate
+  post /guarded/balance MovementBatch -> money = CalculateLedgerBalance
+```
+
+Each middleware runs before auth. Providers may transform the envelope or reject
+the request. The built-in `axl::middleware::header_gate` checks one configured
+header and is replaceable.
+
+Typed application events are separate from HTTP:
+
+```axl
+event MovementSaved: Movement
+on MovementSaved Movement = TagMovementPersisted
+on MovementSaved Movement = TagMovementAnnounced
+
+flow SaveAndAnnounce Movement -> Result<Movement>
+  in store: MovementStore = MemoryMovements
+  call saved = store.save(input)?
+  emit MovementSaved(saved)
+  return saved
+```
+
+`emit` fans out to every matching subscription in declaration order. A generic
+`EventLog` capacity (`native rust axl::event::log`) lets listeners record side
+effects without cashflow-specific Rust.
+
 The body is the default flow input. Scalar and enum flows can bind a path or
 query value without a handwritten extractor:
 
@@ -91,15 +129,18 @@ Status mapping:
 | AXL `Result` error | 422 |
 | missing authorization | 401 |
 | authorization denied/failed | 403 |
+| middleware rejection | 403 |
 | invalid JSON or runtime input | 400 |
 | unknown method/path | 404 |
 
 ## Current boundary
 
-Scalar bindings and composite entity assembly are implemented. Header/cookie
-fields and nested target paths are not yet request sources. Memory and
-unconfigured SQLite remain process-local; configured SQLite paths are durable.
-Transactions and migrations remain data gates. The built-in static bearer
-provider is a demo fixture and its config is visible in the manifest; secret
-references, JWT/OAuth validation, middleware chains, CORS, streaming, events,
-jobs, cache, rate limits and observability remain later backend gates.
+Scalar bindings and composite entity assembly are implemented. Ordered request
+middleware with typed envelopes is executable. Header/cookie fields and nested
+target paths are not yet request sources. Response-phase middleware and response
+header mutation are not implemented. Memory and unconfigured SQLite remain
+process-local; configured SQLite paths are durable. Transactions and migrations
+remain data gates. The built-in static bearer and header-gate providers are demo
+fixtures and their config is visible in the manifest; secret references,
+JWT/OAuth validation, CORS, streaming, events, jobs, cache, rate limits and
+observability remain later backend gates.

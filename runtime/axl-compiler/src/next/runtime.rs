@@ -40,6 +40,7 @@ pub trait ProviderRuntime: Send {
 #[derive(Clone)]
 pub struct BuiltinRuntime {
     memory: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
+    event_logs: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
     sqlite: Arc<Mutex<BTreeMap<String, Arc<Mutex<Connection>>>>>,
 }
 
@@ -47,6 +48,7 @@ impl BuiltinRuntime {
     pub fn new() -> Result<Self, RuntimeError> {
         Ok(Self {
             memory: Arc::new(Mutex::new(BTreeMap::new())),
+            event_logs: Arc::new(Mutex::new(BTreeMap::new())),
             sqlite: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
@@ -101,6 +103,14 @@ impl ProviderRuntime for BuiltinRuntime {
                 sqlite_store_call(&sqlite, call)
             }
             "rust::axl::auth::bearer" => bearer_auth_call(call),
+            "rust::axl::middleware::header_gate" => header_gate_call(call),
+            "rust::axl::event::log" => {
+                let mut logs = self
+                    .event_logs
+                    .lock()
+                    .map_err(|_| "event log provider state is unavailable".to_string())?;
+                event_log_call(&mut logs, call)
+            }
             implementation => Err(format!(
                 "unsupported provider implementation '{implementation}'"
             )),
@@ -806,6 +816,35 @@ fn evaluate_flow_inner(
                     return Err(RuntimeError(message));
                 }
             }
+            "emit" => {
+                let event_name = metadata(statement, "event")?;
+                let argument = expression::parse(metadata(statement, "argument")?)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let argument = expression::evaluate(&argument, &values)
+                    .map_err(|message| RuntimeError(format!("{}: {message}", statement.id)))?;
+                let mut subscriptions = graph
+                    .nodes
+                    .iter()
+                    .filter(|node| node.kind == "subscription" && node.name == event_name)
+                    .collect::<Vec<_>>();
+                subscriptions.sort_by_key(|node| {
+                    node.metadata
+                        .get("order")
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .unwrap_or(usize::MAX)
+                });
+                for subscription in subscriptions {
+                    let flow = metadata(subscription, "flow")?;
+                    let result =
+                        evaluate_flow_inner(graph, flow, argument.clone(), runtime, depth + 1)?;
+                    if result
+                        .as_object()
+                        .is_some_and(|object| object.contains_key("error"))
+                    {
+                        return Ok(result);
+                    }
+                }
+            }
             "return" => {
                 let expression = statement_expression(statement)?;
                 let value = expression::evaluate(&expression, &values)
@@ -969,6 +1008,68 @@ fn bearer_auth_call(call: ProviderCall<'_>) -> Result<Value, String> {
         .as_str()
         .ok_or_else(|| "bearer authorize requires a text token".to_string())?;
     Ok(Value::Bool(supplied == expected))
+}
+
+fn header_gate_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    if call.operation != "process" {
+        return Err(format!(
+            "header gate does not implement operation '{}'",
+            call.operation
+        ));
+    }
+    let header = call
+        .config
+        .get("header")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "middleware_header_not_configured".to_string())?
+        .to_ascii_lowercase();
+    let expected = call
+        .config
+        .get("value")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "middleware_value_not_configured".to_string())?;
+    let headers = call
+        .input
+        .get("headers")
+        .and_then(Value::as_object)
+        .ok_or_else(|| "middleware_request_missing_headers".to_string())?;
+    let supplied = headers
+        .get(&header)
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if supplied == expected {
+        Ok(call.input.clone())
+    } else {
+        Err("middleware_rejected".into())
+    }
+}
+
+fn event_log_call(
+    logs: &mut BTreeMap<String, Vec<Value>>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let log = logs.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "append" => {
+            let entry = call
+                .input
+                .as_str()
+                .ok_or_else(|| "event log append requires text".to_string())?
+                .to_string();
+            log.push(Value::String(entry.clone()));
+            Ok(Value::String(entry))
+        }
+        "list" => {
+            if !call.input.is_null() {
+                return Err("event log list requires unit".into());
+            }
+            Ok(Value::Array(log.clone()))
+        }
+        operation => Err(format!(
+            "event log does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
 }
 
 fn initialize_sqlite(connection: &Connection) -> Result<(), String> {
@@ -1148,6 +1249,7 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
                     | "group"
                     | "parallel"
                     | "race"
+                    | "emit"
                     | "return"
             )
         })
@@ -1597,5 +1699,51 @@ flow Find uuid -> Result<Record>
         assert_eq!(found["ok"]["value"], "survives restart");
         drop(second_runtime);
         std::fs::remove_file(database).unwrap();
+    }
+
+    #[test]
+    fn emit_invokes_subscribers_in_declaration_order() {
+        const SOURCE: &str = r#"axl 4
+app EventDemo
+entity Item
+  id: text required
+capacity EventLog
+  op append text -> Result<text>
+  op list unit -> Result<List<text>>
+skill MemoryEventLog provides EventLog
+  native rust axl::event::log
+event ItemSaved: Item
+flow TagPersisted Item -> Result<text>
+  in log: EventLog = MemoryEventLog
+  call tagged = log.append("persisted")?
+  return tagged
+flow TagAnnounced Item -> Result<text>
+  in log: EventLog = MemoryEventLog
+  call tagged = log.append("announced")?
+  return tagged
+on ItemSaved Item = TagPersisted
+on ItemSaved Item = TagAnnounced
+flow SaveAndAnnounce Item -> Result<Item>
+  emit ItemSaved(input)
+  return input
+flow ReadTags unit -> Result<List<text>>
+  in log: EventLog = MemoryEventLog
+  call tags = log.list(input)?
+  return tags
+"#;
+
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let saved = evaluate_flow_with_runtime(
+            &graph,
+            "SaveAndAnnounce",
+            json!({"id": "item-1"}),
+            &mut runtime,
+        )
+        .unwrap();
+        assert_eq!(saved, json!({"ok": {"id": "item-1"}}));
+        let tags = evaluate_flow_with_runtime(&graph, "ReadTags", Value::Null, &mut runtime)
+            .unwrap();
+        assert_eq!(tags, json!({"ok": ["persisted", "announced"]}));
     }
 }

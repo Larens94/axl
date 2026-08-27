@@ -80,6 +80,10 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             parse_instance(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("flow ") {
             parse_flow(line, body, &mut declarations, &mut diagnostics);
+        } else if line.text.starts_with("event ") {
+            parse_event(line, body, &mut declarations, &mut diagnostics);
+        } else if line.text.starts_with("on ") {
+            parse_subscription(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("api ") {
             parse_api(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("agent ") {
@@ -681,6 +685,162 @@ fn parse_instance(
     declarations.push(Declaration::Instance(instance));
 }
 
+fn parse_event(
+    header: &SourceLine,
+    body: &[SourceLine],
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !body.is_empty() {
+        diagnostics.push(unexpected_body(header, "event declaration"));
+    }
+    let value = header.text["event ".len()..].trim();
+    let Some((name, payload)) = value.split_once(':') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P920",
+                "parse",
+                "an event requires a name and payload type",
+                span(header),
+            )
+            .expected("event Name: Type", &header.text),
+        );
+        return;
+    };
+    let name = name.trim();
+    let payload = payload.trim();
+    if name.is_empty()
+        || payload.is_empty()
+        || name.contains('.')
+        || name.split_whitespace().nth(1).is_some()
+        || payload.split_whitespace().nth(1).is_some()
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P920",
+                "parse",
+                "an event requires a simple name and one payload type",
+                span(header),
+            )
+            .expected("event Name: Type", &header.text),
+        );
+        return;
+    }
+    declarations.push(Declaration::Event(EventDecl {
+        name: name.into(),
+        payload: payload.into(),
+        span: span(header),
+    }));
+}
+
+fn parse_subscription(
+    header: &SourceLine,
+    body: &[SourceLine],
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !body.is_empty() {
+        diagnostics.push(unexpected_body(header, "event subscription"));
+    }
+    let value = header.text["on ".len()..].trim();
+    let Some((left, flow)) = value.split_once('=') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P920",
+                "parse",
+                "a subscription requires an event, payload type and flow",
+                span(header),
+            )
+            .expected("on Event Type = Flow", &header.text),
+        );
+        return;
+    };
+    let mut left = left.split_whitespace();
+    let (Some(event), Some(payload), None) = (left.next(), left.next(), left.next()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P920",
+                "parse",
+                "a subscription requires an event, payload type and flow",
+                span(header),
+            )
+            .expected("on Event Type = Flow", &header.text),
+        );
+        return;
+    };
+    let flow = flow.trim();
+    if event.contains('.') || flow.is_empty() || flow.split_whitespace().nth(1).is_some() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P920",
+                "parse",
+                "a subscription requires an event, payload type and flow",
+                span(header),
+            )
+            .expected("on Event Type = Flow", &header.text),
+        );
+        return;
+    }
+    declarations.push(Declaration::Subscription(Subscription {
+        event: event.into(),
+        payload: payload.into(),
+        flow: flow.into(),
+        span: span(header),
+    }));
+}
+
+fn parse_emit(
+    value: &str,
+    line: &SourceLine,
+    statements: &mut Vec<FlowStatement>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let value = value.trim();
+    let Some((event, argument)) = value.split_once('(') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P920",
+                "parse",
+                "emit requires an event and parenthesized payload expression",
+                span(line),
+            )
+            .expected("emit Event(expression)", &line.text),
+        );
+        return;
+    };
+    let Some(argument) = argument.strip_suffix(')') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P920",
+                "parse",
+                "emit requires a closing ')'",
+                span(line),
+            )
+            .expected("emit Event(expression)", &line.text),
+        );
+        return;
+    };
+    let event = event.trim();
+    let argument = argument.trim();
+    if event.is_empty() || event.contains('.') || argument.is_empty() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P920",
+                "parse",
+                "emit requires an event and parenthesized payload expression",
+                span(line),
+            )
+            .expected("emit Event(expression)", &line.text),
+        );
+        return;
+    }
+    statements.push(FlowStatement::Emit {
+        event: event.into(),
+        argument: argument.into(),
+        span: span(line),
+    });
+}
+
 fn parse_flow(
     header: &SourceLine,
     body: &[SourceLine],
@@ -1093,6 +1253,8 @@ fn parse_flow(
                     span: span(line),
                 });
             }
+        } else if let Some(value) = line.text.strip_prefix("emit ") {
+            parse_emit(value, line, &mut statements, diagnostics);
         } else if let Some(expression) = line.text.strip_prefix("return ") {
             statements.push(FlowStatement::Return {
                 expression: expression.trim().to_string(),
@@ -1693,10 +1855,57 @@ fn parse_api(
         return;
     }
     let mut routes = Vec::new();
+    let mut middlewares = Vec::new();
     let mut auth = None;
     let mut cursor = 0;
     while cursor < body.len() {
         let line = &body[cursor];
+        if let Some(value) = line.text.strip_prefix("middleware ") {
+            let parsed = value.split_once('=').and_then(|(surface, provider)| {
+                let (phase, capacity) = surface.split_once(':')?;
+                Some((phase.trim(), capacity.trim(), provider.trim()))
+            });
+            let Some((phase, capacity, provider)) = parsed else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P918",
+                        "parse",
+                        "API middleware requires a phase, capacity and provider",
+                        span(line),
+                    )
+                    .expected(
+                        "middleware request: HttpMiddleware = MiddlewareProvider",
+                        &line.text,
+                    ),
+                );
+                cursor += 1;
+                continue;
+            };
+            if phase.is_empty() || capacity.is_empty() || provider.is_empty() {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P918",
+                        "parse",
+                        "API middleware requires a phase, capacity and provider",
+                        span(line),
+                    )
+                    .expected(
+                        "middleware request: HttpMiddleware = MiddlewareProvider",
+                        &line.text,
+                    ),
+                );
+                cursor += 1;
+                continue;
+            }
+            middlewares.push(ApiMiddleware {
+                phase: phase.into(),
+                capacity: capacity.into(),
+                provider: provider.into(),
+                span: span(line),
+            });
+            cursor += 1;
+            continue;
+        }
         if let Some(value) = line.text.strip_prefix("auth ") {
             let parsed = value.split_once('=').and_then(|(surface, provider)| {
                 let (scheme, capacity) = surface.split_once(':')?;
@@ -1916,6 +2125,7 @@ fn parse_api(
     }
     declarations.push(Declaration::Api(Api {
         name: name.into(),
+        middlewares,
         auth,
         routes,
         span: span(header),

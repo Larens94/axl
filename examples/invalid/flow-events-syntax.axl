@@ -1,0 +1,9 @@
+axl 4
+app InvalidFlowEventsSyntax
+entity Movement
+  id: text required
+event Movement.Saved: Movement
+on MovementSaved = MissingType
+flow Broken Movement -> Movement
+  emit MovementSaved
+  return input

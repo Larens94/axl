@@ -1,0 +1,649 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="description" content="AXL spiegato in 3D, in modo semplice e vero: un disegno del software dove i pezzi si collegano e i motori si possono cambiare.">
+  <title>AXL — Il mondo a mattoncini</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #f3f7f4;
+      --soft: #b7c8bc;
+      --night: #06110d;
+      --moss: #14352a;
+      --leaf: #2f9e6d;
+      --sand: #f0d9a8;
+      --coral: #ff6b45;
+      --sky: #6ed7ff;
+      --done: #49d69a;
+      --now: #ffb454;
+      --next: #8aa4ff;
+      --panel: rgba(10, 28, 22, .72);
+      --line: rgba(240, 217, 168, .18);
+      font-family: Outfit, ui-sans-serif, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 18% 12%, rgba(255,107,69,.22), transparent 28%),
+        radial-gradient(circle at 82% 78%, rgba(110,215,255,.14), transparent 32%),
+        radial-gradient(circle at 50% 100%, rgba(47,158,109,.18), transparent 40%),
+        linear-gradient(165deg, #081611 0%, #0b1c16 45%, #07120e 100%);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(240,217,168,.16) 1px, transparent 1px);
+      background-size: 28px 28px;
+      opacity: .22;
+      mask-image: radial-gradient(circle at center, black 35%, transparent 78%);
+    }
+
+    .shell {
+      position: relative;
+      z-index: 1;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      width: 100%;
+      height: 100%;
+      padding: clamp(18px, 3vw, 34px);
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+    .brand h1 {
+      margin: 0;
+      font-family: "Baloo 2", Outfit, sans-serif;
+      font-size: clamp(52px, 9vw, 108px);
+      line-height: .86;
+      letter-spacing: -.04em;
+      text-shadow: 0 18px 50px rgba(0,0,0,.35);
+    }
+    .brand h1 span { color: var(--coral); }
+    .brand p {
+      max-width: 420px;
+      margin: 0;
+      color: var(--soft);
+      font-size: clamp(15px, 1.7vw, 20px);
+      line-height: 1.4;
+    }
+
+    .stage {
+      position: relative;
+      min-height: 0;
+      border: 1px solid var(--line);
+      border-radius: 36px;
+      overflow: hidden;
+      background:
+        linear-gradient(180deg, rgba(240,217,168,.05), transparent 40%),
+        rgba(4, 14, 11, .55);
+      box-shadow: 0 40px 120px rgba(0,0,0,.35);
+      cursor: grab;
+      touch-action: none;
+      user-select: none;
+    }
+    .stage:active { cursor: grabbing; }
+    .stage-hint {
+      position: absolute;
+      z-index: 4;
+      left: 22px;
+      bottom: 18px;
+      color: var(--soft);
+      font-size: 13px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      opacity: .8;
+    }
+
+    .world {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      perspective: 1200px;
+      transform-style: preserve-3d;
+    }
+    .orbit {
+      position: relative;
+      width: min(72vw, 720px);
+      height: min(72vw, 720px);
+      transform-style: preserve-3d;
+      transform: rotateX(var(--rx, -18deg)) rotateY(var(--ry, 22deg));
+      transition: transform .08s linear;
+    }
+    .orbit.auto {
+      animation: spin 28s linear infinite;
+    }
+    @keyframes spin {
+      from { transform: rotateX(var(--rx, -18deg)) rotateY(0deg); }
+      to { transform: rotateX(var(--rx, -18deg)) rotateY(360deg); }
+    }
+
+    .core {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 150px;
+      height: 150px;
+      margin: -75px 0 0 -75px;
+      transform-style: preserve-3d;
+      animation: float 4.8s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateZ(0) translateY(0); }
+      50% { transform: translateZ(24px) translateY(-10px); }
+    }
+    .cube {
+      position: absolute;
+      inset: 0;
+      transform-style: preserve-3d;
+    }
+    .face {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(255,255,255,.18);
+      background: linear-gradient(145deg, rgba(255,107,69,.95), rgba(255,155,90,.82));
+      color: #1a100c;
+      font-family: "Baloo 2", Outfit, sans-serif;
+      font-size: 42px;
+      font-weight: 800;
+      box-shadow: inset 0 0 40px rgba(255,255,255,.18);
+      backface-visibility: hidden;
+    }
+    .face.front  { transform: translateZ(75px); }
+    .face.back   { transform: rotateY(180deg) translateZ(75px); }
+    .face.right  { transform: rotateY(90deg) translateZ(75px); }
+    .face.left   { transform: rotateY(-90deg) translateZ(75px); }
+    .face.top    { transform: rotateX(90deg) translateZ(75px); background: linear-gradient(145deg, #ffd29a, #ff9a62); }
+    .face.bottom { transform: rotateX(-90deg) translateZ(75px); background: #b84a2e; }
+
+    .node {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 118px;
+      height: 118px;
+      margin: -59px 0 0 -59px;
+      transform-style: preserve-3d;
+      cursor: pointer;
+      border: 0;
+      padding: 0;
+      background: transparent;
+      color: inherit;
+      font: inherit;
+      animation: bob 5.4s ease-in-out infinite;
+    }
+    .node:nth-child(odd) { animation-delay: -.8s; }
+    .node:nth-child(3n) { animation-delay: -1.7s; }
+    @keyframes bob {
+      0%, 100% { translate: 0 0; }
+      50% { translate: 0 -8px; }
+    }
+    .node .brick {
+      position: absolute;
+      inset: 0;
+      transform-style: preserve-3d;
+      transition: transform .25s ease, filter .25s ease;
+    }
+    .node:hover .brick,
+    .node.active .brick {
+      transform: scale3d(1.08, 1.08, 1.08);
+      filter: brightness(1.12);
+    }
+    .node .side {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      gap: 4px;
+      border: 1px solid rgba(255,255,255,.16);
+      border-radius: 18px;
+      padding: 10px;
+      text-align: center;
+      backface-visibility: hidden;
+      box-shadow: inset 0 0 28px rgba(255,255,255,.08);
+    }
+    .node .side strong {
+      font-family: "Baloo 2", Outfit, sans-serif;
+      font-size: 18px;
+      line-height: 1;
+    }
+    .node .side small {
+      color: rgba(255,255,255,.78);
+      font-size: 11px;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .node .side.front  { transform: translateZ(59px); }
+    .node .side.back   { transform: rotateY(180deg) translateZ(59px); }
+    .node .side.right  { transform: rotateY(90deg) translateZ(59px); }
+    .node .side.left   { transform: rotateY(-90deg) translateZ(59px); }
+    .node .side.top    { transform: rotateX(90deg) translateZ(59px); }
+    .node .side.bottom { transform: rotateX(-90deg) translateZ(59px); opacity: .7; }
+
+    .node.done .side { background: linear-gradient(145deg, rgba(73,214,154,.95), rgba(28,120,84,.92)); color: #042015; }
+    .node.done .side small { color: rgba(4,32,21,.7); }
+    .node.now .side { background: linear-gradient(145deg, rgba(255,180,84,.96), rgba(214,112,36,.9)); color: #2a1404; }
+    .node.now .side small { color: rgba(42,20,4,.7); }
+    .node.next .side { background: linear-gradient(145deg, rgba(138,164,255,.92), rgba(62,78,160,.9)); color: #0d1430; }
+    .node.next .side small { color: rgba(13,20,48,.7); }
+
+    .ring {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 520px;
+      height: 520px;
+      margin: -260px 0 0 -260px;
+      border: 1px dashed rgba(240,217,168,.22);
+      border-radius: 50%;
+      transform: rotateX(72deg);
+      animation: pulse 3.6s ease-in-out infinite;
+    }
+    .ring.inner {
+      width: 300px;
+      height: 300px;
+      margin: -150px 0 0 -150px;
+      border-color: rgba(110,215,255,.18);
+      animation-delay: -.9s;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: .35; }
+      50% { opacity: .8; }
+    }
+
+    .story {
+      display: grid;
+      grid-template-columns: 1.2fr .8fr;
+      gap: 14px;
+      align-items: stretch;
+    }
+    @media (max-width: 900px) {
+      .story { grid-template-columns: 1fr; }
+      .brand p { max-width: none; }
+      .node { width: 96px; height: 96px; margin: -48px 0 0 -48px; }
+      .node .side.front,
+      .node .side.back,
+      .node .side.right,
+      .node .side.left,
+      .node .side.top,
+      .node .side.bottom { border-radius: 14px; }
+      .node .side.front { transform: translateZ(48px); }
+      .node .side.back { transform: rotateY(180deg) translateZ(48px); }
+      .node .side.right { transform: rotateY(90deg) translateZ(48px); }
+      .node .side.left { transform: rotateY(-90deg) translateZ(48px); }
+      .node .side.top { transform: rotateX(90deg) translateZ(48px); }
+      .node .side.bottom { transform: rotateX(-90deg) translateZ(48px); }
+      .node .side strong { font-size: 15px; }
+      .core { width: 110px; height: 110px; margin: -55px 0 0 -55px; }
+      .face { font-size: 30px; }
+      .face.front { transform: translateZ(55px); }
+      .face.back { transform: rotateY(180deg) translateZ(55px); }
+      .face.right { transform: rotateY(90deg) translateZ(55px); }
+      .face.left { transform: rotateY(-90deg) translateZ(55px); }
+      .face.top { transform: rotateX(90deg) translateZ(55px); }
+      .face.bottom { transform: rotateX(-90deg) translateZ(55px); }
+      .ring { width: 360px; height: 360px; margin: -180px 0 0 -180px; }
+      .ring.inner { width: 210px; height: 210px; margin: -105px 0 0 -105px; }
+    }
+
+    .panel {
+      padding: clamp(18px, 2.4vw, 28px);
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: var(--panel);
+      backdrop-filter: blur(18px);
+      box-shadow: 0 24px 70px rgba(0,0,0,.28);
+    }
+    .panel .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 12px;
+      color: var(--sand);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .panel .tag i {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .panel h2 {
+      margin: 0;
+      font-family: "Baloo 2", Outfit, sans-serif;
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1;
+      letter-spacing: -.02em;
+    }
+    .panel .kid {
+      margin: 14px 0 0;
+      color: var(--ink);
+      font-size: clamp(18px, 2.1vw, 24px);
+      line-height: 1.35;
+    }
+    .panel .truth {
+      margin: 12px 0 0;
+      color: var(--soft);
+      font-size: clamp(14px, 1.4vw, 17px);
+      line-height: 1.5;
+    }
+    .legend {
+      display: grid;
+      gap: 10px;
+      align-content: start;
+    }
+    .legend .row {
+      display: grid;
+      grid-template-columns: 14px 1fr;
+      gap: 12px;
+      align-items: start;
+      color: var(--soft);
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .legend .row b { color: var(--ink); }
+    .legend .dot { width: 14px; height: 14px; margin-top: 3px; border-radius: 5px; }
+    .legend .dot.done { background: var(--done); }
+    .legend .dot.now { background: var(--now); }
+    .legend .dot.next { background: var(--next); }
+
+    .links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .links a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 40px;
+      padding: 0 16px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      color: var(--ink);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 600;
+      background: rgba(255,255,255,.04);
+    }
+    .links a:hover { background: rgba(255,107,69,.18); border-color: rgba(255,107,69,.45); }
+
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0,0,0,0);
+      border: 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="brand">
+      <h1>AXL <span>mondo</span></h1>
+      <p>Immagina un disegno del software fatto di mattoncini. Puoi girarlo, toccare i pezzi e capire cosa c’è già — e cosa stiamo ancora costruendo.</p>
+    </header>
+
+    <main class="stage" id="stage" aria-label="Mondo 3D interattivo di AXL">
+      <p class="sr-only">Trascina per girare il mondo. Tocca un mattoncino per ascoltare la sua storia.</p>
+      <div class="world">
+        <div class="orbit auto" id="orbit">
+          <div class="ring"></div>
+          <div class="ring inner"></div>
+          <div class="core" aria-hidden="true">
+            <div class="cube">
+              <div class="face front">AXL</div>
+              <div class="face back">AXL</div>
+              <div class="face right">AXL</div>
+              <div class="face left">AXL</div>
+              <div class="face top">AXL</div>
+              <div class="face bottom">AXL</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="stage-hint">Trascina · tocca un pezzo</div>
+    </main>
+
+    <section class="story">
+      <article class="panel" id="story" aria-live="polite">
+        <div class="tag"><i></i><span id="story-status">Il cuore</span></div>
+        <h2 id="story-title">Il disegno al centro</h2>
+        <p class="kid" id="story-kid">AXL è il disegno. Non è il martello, non è il robot: è la mappa che dice quali pezzi servono e come si collegano.</p>
+        <p class="truth" id="story-truth">Oggi AXL sa già descrivere tipi, flow, API HTTP, auth e middleware. Frontend, AI, IoT e agenti eseguibili sono pezzi del piano ancora da costruire.</p>
+        <div class="links">
+          <a href="presentation.html">Presentazione</a>
+          <a href="film.html">Film</a>
+          <a href="docs/index.html">Documenti</a>
+          <a href="docs/roadmap.md">Roadmap</a>
+        </div>
+      </article>
+      <aside class="panel legend">
+        <div class="tag"><i></i><span>Sempre la verità</span></div>
+        <div class="row"><span class="dot done"></span><div><b>Verde = già fatto</b><br>Si può compilare, testare e far girare.</div></div>
+        <div class="row"><span class="dot now"></span><div><b>Arancio = in cantiere</b><br>Abbiamo pezzi pronti, ma non tutta la casa.</div></div>
+        <div class="row"><span class="dot next"></span><div><b>Blu = ancora da fare</b><br>È scritto nel piano. Non fingiamo che esista.</div></div>
+      </aside>
+    </section>
+  </div>
+
+  <script>
+    const nodes = [
+      {
+        id: "language",
+        label: "Lingua",
+        status: "done",
+        statusLabel: "Già fatto",
+        title: "La lingua dei mattoncini",
+        kid: "Qui scriviamo le regole del gioco: nomi, tipi, passi. Come le istruzioni di un modello Lego.",
+        truth: "Parser, tipi, Graph IR e Packed IR sono eseguibili. I test compilano gli esempi documentati.",
+        angle: 0,
+        radius: 250,
+        y: -20
+      },
+      {
+        id: "backend",
+        label: "Backend",
+        status: "now",
+        statusLabel: "In cantiere",
+        title: "Il bancone dei messaggi",
+        kid: "Le richieste arrivano, AXL le controlla e chiama i flow. Auth e middleware sono guardie al cancello.",
+        truth: "Axum, body/path/query, bearer auth, middleware request e SQLite durevole funzionano. Eventi, job e response middleware no.",
+        angle: 45,
+        radius: 250,
+        y: 30
+      },
+      {
+        id: "data",
+        label: "Dati",
+        status: "now",
+        statusLabel: "In cantiere",
+        title: "I cassetti della memoria",
+        kid: "I dati vivono dietro una porta uguale. Puoi cambiare il cassetto (memoria o SQLite) senza riscrivere la storia.",
+        truth: "Memory e SQLite condividono la stessa capacity. Transazioni, migrazioni e altri database arrivano dopo.",
+        angle: 90,
+        radius: 250,
+        y: -10
+      },
+      {
+        id: "frontend",
+        label: "Schermo",
+        status: "next",
+        statusLabel: "Da fare",
+        title: "La faccia che tocchi",
+        kid: "Bottoni, tabelle e pagine devono nascere dal disegno AXL, non da una casa ricostruita a mano ogni volta.",
+        truth: "Esistono contratti React e slot. Il renderer UI eseguibile (Gate 4) non c’è ancora.",
+        angle: 135,
+        radius: 250,
+        y: 40
+      },
+      {
+        id: "ai",
+        label: "AI",
+        status: "next",
+        statusLabel: "Da fare",
+        title: "Il cervello in prestito",
+        kid: "L’AI è un motore sostituibile: embedding, ricerca e risposte restano pezzi staccabili.",
+        truth: "Gate 5: modelli, vector store e RAG sono nel piano. Nessun runtime AI eseguibile oggi.",
+        angle: 180,
+        radius: 250,
+        y: -25
+      },
+      {
+        id: "agents",
+        label: "Agenti",
+        status: "next",
+        statusLabel: "Da fare",
+        title: "Gli aiutanti con un piano",
+        kid: "Un agente sa cosa crede, cosa vuole e come procederà. Se manca un pezzo, alza la mano.",
+        truth: "Il grafo belief/goal/plan è nel linguaggio. Il runtime di esecuzione (Gate 6) manca.",
+        angle: 225,
+        radius: 250,
+        y: 35
+      },
+      {
+        id: "iot",
+        label: "Cose",
+        status: "next",
+        statusLabel: "Da fare",
+        title: "Le cose che parlano",
+        kid: "Sensori e comandi diventano pezzi del disegno: telemetria in ingresso, ordini in uscita.",
+        truth: "Gate 7: device, MQTT/HTTP/WebSocket e regole edge sono pianificati, non eseguiti.",
+        angle: 270,
+        radius: 250,
+        y: -15
+      },
+      {
+        id: "open",
+        label: "Aperto",
+        status: "done",
+        statusLabel: "Già fatto",
+        title: "Pezzi che si possono cambiare",
+        kid: "Ogni foro è una capacity. Ogni pezzo che entra è una skill. Se non entra, AXL lo dice chiaro.",
+        truth: "Protocollo open-block, capacity/skill, provider ABI e diagnostiche di riparazione sono attivi.",
+        angle: 315,
+        radius: 250,
+        y: 25
+      }
+    ];
+
+    const orbit = document.getElementById("orbit");
+    const storyStatus = document.getElementById("story-status");
+    const storyTitle = document.getElementById("story-title");
+    const storyKid = document.getElementById("story-kid");
+    const storyTruth = document.getElementById("story-truth");
+    const storyTag = document.querySelector("#story .tag i");
+
+    function place(node) {
+      const rad = (node.angle * Math.PI) / 180;
+      const x = Math.cos(rad) * node.radius;
+      const z = Math.sin(rad) * node.radius;
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `node ${node.status}`;
+      button.dataset.id = node.id;
+      button.setAttribute("aria-label", `${node.label}: ${node.statusLabel}`);
+      button.style.transform = `translate3d(${x}px, ${node.y}px, ${z}px)`;
+      button.innerHTML = `
+        <div class="brick">
+          <div class="side front"><strong>${node.label}</strong><small>${node.statusLabel}</small></div>
+          <div class="side back"><strong>${node.label}</strong><small>${node.statusLabel}</small></div>
+          <div class="side right"><strong>${node.label}</strong></div>
+          <div class="side left"><strong>${node.label}</strong></div>
+          <div class="side top"></div>
+          <div class="side bottom"></div>
+        </div>
+      `;
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        select(node.id);
+      });
+      orbit.appendChild(button);
+    }
+
+    nodes.forEach(place);
+
+    function select(id) {
+      const node = nodes.find((item) => item.id === id);
+      if (!node) return;
+      document.querySelectorAll(".node").forEach((el) => {
+        el.classList.toggle("active", el.dataset.id === id);
+      });
+      storyStatus.textContent = node.statusLabel;
+      storyTitle.textContent = node.title;
+      storyKid.textContent = node.kid;
+      storyTruth.textContent = node.truth;
+      const color = node.status === "done" ? "var(--done)" : node.status === "now" ? "var(--now)" : "var(--next)";
+      storyTag.style.background = color;
+      storyStatus.parentElement.style.color = color;
+    }
+
+    const stage = document.getElementById("stage");
+    let dragging = false;
+    let auto = true;
+    let lastX = 0;
+    let lastY = 0;
+    let ry = 22;
+    let rx = -18;
+
+    function applyTilt() {
+      orbit.classList.toggle("auto", auto);
+      orbit.style.setProperty("--ry", `${ry}deg`);
+      orbit.style.setProperty("--rx", `${rx}deg`);
+      if (!auto) {
+        orbit.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
+      }
+    }
+
+    function stopAuto() {
+      if (!auto) return;
+      auto = false;
+      applyTilt();
+    }
+
+    stage.addEventListener("pointerdown", (event) => {
+      dragging = true;
+      stopAuto();
+      lastX = event.clientX;
+      lastY = event.clientY;
+      stage.setPointerCapture(event.pointerId);
+    });
+    stage.addEventListener("pointermove", (event) => {
+      if (!dragging) return;
+      const dx = event.clientX - lastX;
+      const dy = event.clientY - lastY;
+      lastX = event.clientX;
+      lastY = event.clientY;
+      ry += dx * 0.35;
+      rx = Math.max(-40, Math.min(20, rx - dy * 0.25));
+      applyTilt();
+    });
+    stage.addEventListener("pointerup", () => { dragging = false; });
+    stage.addEventListener("pointercancel", () => { dragging = false; });
+
+    applyTilt();
+  </script>
+</body>
+</html>
