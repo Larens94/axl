@@ -780,12 +780,116 @@ fn documented_cashflow_core_executes() {
     assert_eq!(preview.status, 200);
     assert_eq!(preview.body["ok"]["id"], "movement-001");
 
+    let cache_entry = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/balance-cache.json"
+    ))
+    .unwrap();
+    let cached = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+        &graph,
+        "CacheBalanceSnapshot",
+        cache_entry,
+        &mut runtime,
+    )
+    .unwrap();
+    assert_eq!(cached, serde_json::json!({"ok": "80000"}));
+    let loaded = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/cache/balance/get",
+        serde_json::json!("ledger:demo"),
+    );
+    assert_eq!(loaded.status, 200);
+    assert_eq!(loaded.body, serde_json::json!({"ok": "80000"}));
+    let invalidated = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/cache/balance/invalidate",
+        serde_json::json!("ledger:demo"),
+    );
+    assert_eq!(invalidated.status, 200);
+    assert_eq!(invalidated.body, serde_json::json!({"ok": true}));
+    let miss = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/cache/balance/get",
+        serde_json::json!("ledger:demo"),
+    );
+    assert_eq!(miss.status, 422);
+    assert_eq!(miss.body, serde_json::json!({"error": "cache_miss"}));
+
+    let logged = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+        &graph,
+        "RecordTwoObservabilityLines",
+        serde_json::Value::Null,
+        &mut runtime,
+    )
+    .unwrap();
+    assert_eq!(
+        logged,
+        serde_json::json!({"ok": ["ledger.balance", "ledger.balance"]})
+    );
+    let metric = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+        &graph,
+        "ObserveMetricTwice",
+        serde_json::Value::Null,
+        &mut runtime,
+    )
+    .unwrap();
+    assert_eq!(metric, serde_json::json!({"ok": 2}));
+    let spans = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+        &graph,
+        "TraceObservabilitySpan",
+        serde_json::Value::Null,
+        &mut runtime,
+    )
+    .unwrap();
+    assert_eq!(spans, serde_json::json!({"ok": ["CalculateLedgerBalance"]}));
+    let first_log = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/observability/log",
+        serde_json::json!("http.write"),
+    );
+    assert_eq!(first_log.status, 200);
+    assert_eq!(first_log.body, serde_json::json!({"ok": null}));
+    let second_log = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/observability/log",
+        serde_json::json!("http.write"),
+    );
+    assert_eq!(second_log.status, 200);
+    let listed = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/observability/logs",
+        serde_json::Value::Null,
+    );
+    assert_eq!(listed.status, 200);
+    assert_eq!(
+        listed.body,
+        serde_json::json!({
+            "ok": [
+                "ledger.balance",
+                "ledger.balance",
+                "http.write",
+                "http.write"
+            ]
+        })
+    );
+
     let annotated = axl_compiler::next::http::dispatch_with_runtime(
         &graph,
         &mut runtime,
         "post",
         "/annotated/balance",
-        batch,
+        batch.clone(),
     );
     assert_eq!(annotated.status, 200);
     assert_eq!(annotated.body, 80000);
@@ -795,5 +899,73 @@ fn documented_cashflow_core_executes() {
             .get("x-axl-middleware")
             .map(String::as_str),
         Some("ok")
+    );
+
+    for _ in 0..5 {
+        let allowed = axl_compiler::next::http::dispatch_with_runtime(
+            &graph,
+            &mut runtime,
+            "post",
+            "/limited/balance",
+            batch.clone(),
+        );
+        assert_eq!(allowed.status, 200);
+        assert_eq!(allowed.body, 80000);
+    }
+    let limited = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/limited/balance",
+        batch.clone(),
+    );
+    assert_eq!(limited.status, 429);
+    assert_eq!(
+        limited.body,
+        serde_json::json!({ "error": "rate_limit_exceeded" })
+    );
+
+    let cors = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "post",
+        "/cors/balance",
+        batch.clone(),
+    );
+    assert_eq!(cors.status, 200);
+    assert_eq!(cors.body, 80000);
+    assert_eq!(
+        cors.headers
+            .get("access-control-allow-origin")
+            .map(String::as_str),
+        Some("*")
+    );
+    assert_eq!(
+        cors.headers
+            .get("access-control-allow-methods")
+            .map(String::as_str),
+        Some("GET,POST,OPTIONS")
+    );
+    let preflight = axl_compiler::next::http::dispatch_with_runtime(
+        &graph,
+        &mut runtime,
+        "options",
+        "/cors/balance",
+        serde_json::Value::Null,
+    );
+    assert_eq!(preflight.status, 204);
+    assert_eq!(
+        preflight
+            .headers
+            .get("access-control-allow-origin")
+            .map(String::as_str),
+        Some("*")
+    );
+    assert_eq!(
+        preflight
+            .headers
+            .get("access-control-allow-methods")
+            .map(String::as_str),
+        Some("GET,POST,OPTIONS")
     );
 }

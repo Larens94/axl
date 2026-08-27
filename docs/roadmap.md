@@ -37,10 +37,19 @@ Gate 2 has started without closing Gate 1: `api` declarations now compile to
 `axl-http/1` and execute through a generic Axum server. Exact JSON routes and
 status mapping work. One process-local provider runtime is shared across
 requests. A typed `auth bearer: Capacity = Provider` surface now protects whole
-APIs and the built-in fixture proves 401/403/200 behavior. Secret references,
-JWT/OAuth, cache and observability remain. Scalar and composite body/path/query/
-header/cookie assembly is executable; ordered request and response middleware are
-capacity-backed. Typed events and multi-subscriber `emit` are executable. Durable/
-scheduled jobs with retry, idempotency and replaceable JobStore providers are
-executable across runtime recreate. Gate 3 continues with transactions, migrations
-and additional database families.
+APIs and the built-in fixture proves 401/403/200 behavior. Scalar and composite
+body/path/query/header/cookie assembly is executable; ordered request and
+response middleware are capacity-backed. Typed events and multi-subscriber
+`emit` are executable. Durable/scheduled jobs with retry, idempotency and
+replaceable JobStore providers are executable across runtime recreate. Cache
+get/put/invalidate is executable through memory and durable SQLite skills.
+Logger write/list, Metrics increment/get and Tracer start/finish/list are
+executable through memory skills; cashflow proves two log lines and counters
+via eval and shared HTTP runtime. Capacity-backed rate-limit middleware proves N
+allowed requests then HTTP 429. Capacity-backed CORS adds `Access-Control-*`
+headers and OPTIONS preflight through replaceable middleware skills. Capacity-
+backed HS256 JWT auth validates `sub`/`iss` with demo HMAC config on the same
+open `HttpAuth` port. Demo secrets may appear in skill config; true secret
+references are Gate 8. OAuth remains. Gate 2 auth adapters are otherwise
+complete — next autoloop target is Gate 3 transactions. Gate 3 continues with
+transactions, migrations and additional database families.

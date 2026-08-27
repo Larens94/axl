@@ -127,6 +127,22 @@ cargo run -p axl-compiler -- \
 cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl FindDurableMovement \
   examples/apps/inputs/movement-id.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl CacheBalanceSnapshotDurable \
+  examples/apps/inputs/balance-cache.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl LoadCachedBalanceDurable \
+  examples/apps/inputs/balance-cache-key.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl InvalidateCachedBalanceDurable \
+  examples/apps/inputs/balance-cache-key.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl LoadCachedBalanceDurable \
+  examples/apps/inputs/balance-cache-key.json
 ```
 
 The first results must respectively contain an `ok` movement, the error
@@ -136,15 +152,40 @@ movement `movement-001`; the composed flow must validate before saving.
 `SaveAndAnnounce` saves then emits `MovementSaved` to two AXL listeners.
 `ScheduleDurableMovementPersist` enqueues a durable job; `tick` in a fresh
 process runs it through `SaveDurableMovement`, and the following
-`FindDurableMovement` must still find `movement-001`. No application-specific
-Rust function contains these rules. The final two commands run in independent
-processes and must still find `movement-001`, proving that the configured SQLite
-path survives a runtime restart.
+`FindDurableMovement` must still find `movement-001`. Durable cache put/get
+returns `"80000"` for key `ledger:demo` across processes; invalidate returns
+`true`, then get yields `cache_miss`. No application-specific Rust function
+contains these rules. The durable movement commands run in independent
+processes and must still find `movement-001`, proving that the configured
+SQLite path survives a runtime restart.
+
+Verify observability (memory skills; two writes listable in one eval):
+
+```sh
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl RecordTwoObservabilityLines \
+  examples/apps/inputs/unit.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl ObserveMetricTwice \
+  examples/apps/inputs/unit.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl TraceObservabilitySpan \
+  examples/apps/inputs/unit.json
+```
+
+`RecordTwoObservabilityLines` returns
+`{ "ok": ["ledger.balance", "ledger.balance"] }`. `ObserveMetricTwice` returns
+`{ "ok": 2 }`. `TraceObservabilitySpan` returns
+`{ "ok": ["CalculateLedgerBalance"] }`.
 
 Verify jobs (in-process memory enqueue is covered by `cargo test`; durable
 cross-process proof is the `ScheduleDurableMovementPersist` / `tick` /
 `FindDurableMovement` sequence above). Scheduled unit jobs use
-`schedule "every <n>ms|s|m"`.
+`schedule "every <n>ms|s|m"`. In-process memory cache put/get/invalidate is
+covered by `cargo test`; durable cache cross-process proof is the sequence
+above.
 
 ## 6. Verify the HTTP backend
 
@@ -193,6 +234,34 @@ The response is `80000`. Omitting the authorization header returns 401; using a
 different token returns 403. The token is deliberately a visible demo fixture,
 not a production secret.
 
+Verify the replaceable HS256 JWT guard (mint a demo token with the same secret
+and issuer as `CashflowDemoJwt`):
+
+```sh
+# Helper shape used by compiler tests (HS256, claims sub + iss):
+# encode_hs256_jwt("axl-cashflow-demo-jwt", {"sub":"alice","iss":"axl-cashflow"})
+# Or with Python:
+python3 - <<'PY'
+import base64, hashlib, hmac, json
+secret=b"axl-cashflow-demo-jwt"
+def b64(data): return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+header=b64(json.dumps({"alg":"HS256","typ":"JWT"},separators=(",",":")).encode())
+payload=b64(json.dumps({"sub":"alice","iss":"axl-cashflow"},separators=(",",":")).encode())
+sig=b64(hmac.new(secret,f"{header}.{payload}".encode(),hashlib.sha256).digest())
+print(f"{header}.{payload}.{sig}")
+PY
+
+curl -X POST http://127.0.0.1:8080/jwt/balance \
+  -H 'content-type: application/json' \
+  -H "authorization: Bearer $TOKEN" \
+  --data-binary @examples/apps/inputs/movement-batch.json
+```
+
+Missing bearer → 401; malformed / wrong-signature / wrong-`iss` / missing-`sub`
+→ 403; valid HS256 JWT → `80000`. The HMAC `secret` and `issuer` are demo
+skill config visible in the Graph/manifest — the same honesty rule as
+`CashflowDemoBearer`. True secret references (no plaintext in IR) are Gate 8.
+
 Verify the open request middleware gate:
 
 ```sh
@@ -215,6 +284,37 @@ curl -i -X POST http://127.0.0.1:8080/annotated/balance \
 
 The body is `80000` and the response includes `x-axl-middleware: ok`. The header
 comes from capacity-backed response middleware, not Axum-only CORS logic.
+
+Verify the open rate-limit middleware gate (limit 5 within 60s on this demo):
+
+```sh
+for i in 1 2 3 4 5; do
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST http://127.0.0.1:8080/limited/balance \
+    -H 'content-type: application/json' \
+    --data-binary @examples/apps/inputs/movement-batch.json
+done
+curl -i -X POST http://127.0.0.1:8080/limited/balance \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/movement-batch.json
+```
+
+The first five responses are HTTP 200 with body `80000`. The sixth is HTTP 429
+with `rate_limit_exceeded`. The limiter is the replaceable `MemoryRateLimit`
+skill behind capacity `RateLimit`.
+
+Verify the open CORS middleware gate:
+
+```sh
+curl -i -X POST http://127.0.0.1:8080/cors/balance \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/movement-batch.json
+
+curl -i -X OPTIONS http://127.0.0.1:8080/cors/balance
+```
+
+The POST body is `80000` and includes `access-control-allow-origin: *` plus
+allow-methods/headers from the replaceable `axl::middleware::cors` skill.
+OPTIONS returns HTTP 204 with the same CORS headers and does not run the flow.
 
 After saving the durable movement, verify both request bindings:
 
@@ -254,6 +354,43 @@ curl -X POST http://127.0.0.1:8080/client-preview \
 The first two responses are `"alice"` and `"session-42"`. The composite route
 returns the validated movement after assembling `{ user, sid, movement }` from
 header, cookie and body.
+
+Verify memory cache routes (same server process):
+
+```sh
+curl -X POST http://127.0.0.1:8080/cache/balance \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/balance-cache.json
+
+curl -X POST http://127.0.0.1:8080/cache/balance/get \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/balance-cache-key.json
+
+curl -X POST http://127.0.0.1:8080/cache/balance/invalidate \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/balance-cache-key.json
+```
+
+Put/get return `"80000"` inside `{ "ok": ... }`. Invalidate returns
+`{ "ok": true }`. A following get returns HTTP 422 with `cache_miss`.
+
+Verify observability routes (same server process):
+
+```sh
+curl -X POST http://127.0.0.1:8080/observability/log \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/observability-line.json
+
+curl -X POST http://127.0.0.1:8080/observability/log \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/observability-line.json
+
+curl -X POST http://127.0.0.1:8080/observability/logs \
+  -H 'content-type: application/json' \
+  --data-binary @examples/apps/inputs/unit.json
+```
+
+The list response contains two `"ledger.balance"` lines inside `{ "ok": ... }`.
 
 ## 7. Verify invalid programs
 
@@ -400,14 +537,22 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - configured SQLite data survives destruction and recreation of the runtime;
 - API auth is capacity-backed and proves missing, denied and accepted requests;
 - ordered request middleware is capacity-backed over typed envelopes;
+- rate-limit request middleware uses `RateLimit.allow` and returns HTTP 429;
 - ordered response middleware mutates response headers through typed envelopes;
+- CORS middleware adds `Access-Control-*` headers and serves OPTIONS preflight;
 - typed events reach multiple subscribers through `emit`;
 - capacity-backed jobs enqueue, tick, retry and survive SQLite runtime recreate;
+- Cache get/put/invalidate works through memory and durable SQLite skills;
+- Logger write/list, Metrics increment/get and Tracer start/finish/list are
+  executable through memory skills;
+- rate-limit request middleware returns HTTP 429 after the configured budget;
 - scalar path/query/header/cookie bindings are checked, decoded and exact-route-safe;
 - composite request entities are assembled from checked body/path/query/header/cookie nodes;
 - documentation examples remain coupled to compiler tests.
 
 It does not prove transaction/migration semantics or runtime UI rendering.
 HTTP execution, process-local memory, restart-durable configured SQLite,
-typed multi-subscriber events and durable jobs are proven. Generated target
-files are not yet a deployable app.
+typed multi-subscriber events, durable jobs, Cache get/put/invalidate and
+Logger/Metrics/Tracer observability are proven. Generated target files are not
+yet a deployable app. Capacity-backed rate-limit and CORS middleware are proven.
+Secret references and JWT/OAuth remain.

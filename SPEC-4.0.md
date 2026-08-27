@@ -391,15 +391,27 @@ skill DemoBearer provides HttpAuth
   native rust axl::auth::bearer
   config token: text = "demo-only"
 
+skill DemoJwt provides HttpAuth
+  native rust axl::auth::jwt
+  config secret: text = "demo-only"
+  config issuer: text = "axl-demo"
+
 api SecuredApi
   auth bearer: HttpAuth = DemoBearer
   post /secure/balance MovementBatch -> money = CalculateLedgerBalance
+
+api JwtSecuredApi
+  auth bearer: HttpAuth = DemoJwt
+  post /jwt/balance MovementBatch -> money = CalculateLedgerBalance
 ```
 
 The compiler requires the exact idempotent `authorize` contract and a compatible
 provider. The Axum adapter maps a missing bearer header to 401 and denial to 403.
-The static token adapter is an executable test fixture; production secret
-references and JWT/OAuth adapters are not implemented.
+A replaceable HS256 JWT skill (`native rust axl::auth::jwt`) validates bearer
+tokens against typed `secret` and `issuer` config and requires `sub`/`iss`
+claims. Demo secrets may appear as plaintext skill config (same honesty rule as
+the static bearer fixture). True secret references that never enter Graph or
+manifest plaintext are Gate 8. OAuth adapters are not implemented.
 
 An API can also attach an ordered open request middleware pipeline. Each entry is
 a capacity over a typed request envelope:
@@ -426,6 +438,27 @@ api GuardedApi
 Middleware runs in declaration order before auth. The built-in header gate is a
 replaceable fixture; rejection maps to HTTP 403.
 
+Request middleware may also bind a replaceable rate-limit capacity. The adapter
+calls `allow` with a stable `method path` key and maps exhaustion to HTTP 429:
+
+```axl
+capacity RateLimit
+  op allow text -> Result<bool> idempotent
+
+skill MemoryRateLimit provides RateLimit
+  native rust axl::middleware::rate_limit
+  config limit: int = 5
+  config window_ms: int = 60000
+
+api LimitedApi
+  middleware request: RateLimit = MemoryRateLimit
+  post /limited/balance MovementBatch -> money = CalculateLedgerBalance
+```
+
+The memory adapter is a process-local fixture. Providers remain replaceable;
+Redis or other backends can satisfy the same `allow` contract without changing
+routes.
+
 An API can also attach ordered response-phase middleware over a typed response
 envelope. Providers may set or mutate response headers after the flow runs:
 
@@ -451,6 +484,29 @@ api AnnotatedApi
 Response middleware runs after the flow result is produced. The built-in
 `response_headers` skill merges one configured header; any compatible provider
 can replace it. The response body travels as JSON text inside the envelope.
+
+CORS reuses the same request and response middleware phases behind a replaceable
+native skill. Response middleware merges `Access-Control-*` headers from config.
+Request middleware may reject a mismatched `Origin` when `origin` is not `*`.
+When an API binds `axl::middleware::cors`, `OPTIONS` preflight for a matching
+path returns 204 with those headers and does not run the route flow:
+
+```axl
+skill DemoCorsOrigin provides HttpMiddleware
+  native rust axl::middleware::cors
+  config origin: text = "*"
+
+skill DemoCorsHeaders provides HttpResponseMiddleware
+  native rust axl::middleware::cors
+  config origin: text = "*"
+  config methods: text = "GET,POST,OPTIONS"
+  config headers: text = "content-type,authorization"
+
+api CorsApi
+  middleware request: HttpMiddleware = DemoCorsOrigin
+  middleware response: HttpResponseMiddleware = DemoCorsHeaders
+  post /cors/balance MovementBatch -> money = CalculateLedgerBalance
+```
 
 ### Events
 
@@ -527,6 +583,82 @@ registrations, claims due work, executes the bound flow with retry/backoff, and
 requeues the next schedule after success. Memory and SQLite adapters share the
 same `JobStore` contract; a configured SQLite path survives runtime restart.
 Graph IR uses `job` (opcode 52) and `enqueue` (opcode 53).
+
+### Cache
+
+Applications cache typed text values through an open `Cache` capacity:
+
+```axl
+entity CacheEntry
+  key: text required
+  value: text required
+
+capacity Cache
+  op get text -> Result<text> idempotent
+  op put CacheEntry -> Result<unit>
+  op invalidate text -> Result<bool>
+
+skill MemoryCache provides Cache
+  native rust axl::cache::memory
+
+skill DurableCache provides Cache
+  native rust axl::cache::sqlite
+  config path: text = "./build/cashflow-cache.db"
+
+flow CacheBalanceSnapshot CacheEntry -> Result<text>
+  in cache: Cache = MemoryCache
+  call stored = cache.put(input)?
+  call loaded = cache.get(input.key)?
+  return loaded
+```
+
+`get` is idempotent and returns `cache_miss` when the key is absent.
+`invalidate` returns whether a key was removed. Memory and SQLite adapters share
+the same contract; a configured SQLite path survives runtime recreate. No new
+Graph IR opcodes are required: cache uses ordinary capacity calls.
+
+### Observability
+
+Applications record structured logs, counters and spans through open capacities:
+
+```axl
+capacity Logger
+  op write text -> Result<unit>
+  op list unit -> Result<List<text>>
+
+skill MemoryLogger provides Logger
+  native rust axl::telemetry::logger
+
+capacity Metrics
+  op increment text -> Result<int>
+  op get text -> Result<int> idempotent
+
+skill MemoryMetrics provides Metrics
+  native rust axl::telemetry::metrics
+
+capacity Tracer
+  op start text -> Result<text>
+  op finish text -> Result<unit>
+  op list unit -> Result<List<text>>
+
+skill MemoryTracer provides Tracer
+  native rust axl::telemetry::tracer
+
+flow RecordTwoObservabilityLines unit -> Result<List<text>>
+  in logger: Logger = MemoryLogger
+  call first = logger.write("ledger.balance")?
+  call second = logger.write("ledger.balance")?
+  call lines = logger.list(input)?
+  return lines
+```
+
+`write` appends a structured text line; `list` returns recorded lines for
+assertion. `increment`/`get` share a named counter (missing keys read as `0`).
+`start` returns a span id; `finish` records the span name; `list` returns
+finished span names. Memory adapters store events in-process for tests and
+shared HTTP runtimes. No new Graph IR opcodes: observability uses ordinary
+capacity calls. Production exporters remain replaceable skills behind the same
+ports.
 
 Route inputs use the JSON body by default. A scalar or enum input can instead
 come directly from a named path, query, header or cookie value:
@@ -711,7 +843,7 @@ generate a complete production application. `providers/providers.json` uses
 - branch statement blocks and mutable variables;
 - generated standalone Rust handlers and React components from Graph IR;
 - streaming HTTP bodies;
-- cache, CORS, rate-limit and observability capacities;
+- production auth adapters (secret references, OAuth);
 - SQL relationships, migrations and target-specific schema evolution;
 - native ABI verification;
 - transactions, migrations, queries and multi-database adapters;
@@ -726,8 +858,9 @@ generate a complete production application. `providers/providers.json` uses
 These are later gates. The current experiment validates the source language,
 open-port type model, agent diagnostics and deterministic IR pipeline. Flow
 Runtime 2 executes expressions and capacity calls through a replaceable runtime
-ABI. HTTP Runtime 1 dispatches exact JSON routes through Axum. Durable persistence for configured SQLite stores and jobs is proven for records
-and job envelopes; runtime UI behavior is not implemented yet.
+ABI. HTTP Runtime 1 dispatches exact JSON routes through Axum. Durable persistence for configured SQLite stores, jobs and cache entries is
+proven; Logger/Metrics/Tracer observability is proven through memory skills;
+runtime UI behavior is not implemented yet.
 
 ## 10. Verified examples and guides
 

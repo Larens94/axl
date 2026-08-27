@@ -6,6 +6,8 @@ entity HttpRequest
   headers: Map<text,text> required
 capacity BadMiddleware
   op process int -> bool
+capacity BadRateLimit
+  op allow int -> Result<bool> idempotent
 capacity Store
   op save text -> Result<text>
 skill StoreProvider provides Store
@@ -18,6 +20,9 @@ api WrongPhase
 api WrongContract
   middleware request: BadMiddleware = MissingProvider
   post /three text -> text = Identity
+api WrongRateLimit
+  middleware request: BadRateLimit = MissingProvider
+  post /rate text -> text = Identity
 api WrongCapacityAndProvider
   middleware request: MissingMiddleware = StoreProvider
   post /two text -> text = Identity

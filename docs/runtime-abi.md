@@ -72,9 +72,12 @@ configuration for external adapters. Transactions and migrations are not yet
 language primitives.
 
 The built-in `rust::axl::auth::bearer` adapter implements an idempotent
-`authorize text -> Result<bool>` capacity using a typed `token` config. It is a
-conformance fixture, not a production secret store; JWT/OAuth and secret
-reference providers must use the same open ABI.
+`authorize text -> Result<bool>` capacity using a typed `token` config. The
+built-in `rust::axl::auth::jwt` adapter implements the same contract with typed
+`secret` and `issuer` config, validating compact HS256 JWTs that carry `sub` and
+matching `iss` claims. Both are conformance fixtures whose config may appear in
+the Graph/manifest; Gate 8 secret references and OAuth providers must use the
+same open ABI without plaintext credentials in IR.
 
 ## Conformance gate for future adapters
 

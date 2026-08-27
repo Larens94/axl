@@ -2,9 +2,15 @@ use std::cmp::Ordering;
 use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use hmac::{Hmac, Mac};
 use rusqlite::{Connection, params};
 use serde_json::{Map, Value, json};
+use sha2::Sha256;
+
+type HmacSha256 = Hmac<Sha256>;
 
 use super::expression;
 use super::ir::{GraphIr, GraphNode};
@@ -42,8 +48,25 @@ pub struct BuiltinRuntime {
     memory: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     caches: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     event_logs: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
+    loggers: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
+    metrics: Arc<Mutex<BTreeMap<String, BTreeMap<String, i64>>>>,
+    tracers: Arc<Mutex<BTreeMap<String, TracerState>>>,
+    rate_limits: Arc<Mutex<BTreeMap<String, BTreeMap<String, RateWindow>>>>,
     job_stores: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     sqlite: Arc<Mutex<BTreeMap<String, Arc<Mutex<Connection>>>>>,
+}
+
+#[derive(Clone, Default)]
+struct TracerState {
+    next_id: u64,
+    open: BTreeMap<String, String>,
+    finished: Vec<Value>,
+}
+
+#[derive(Clone)]
+struct RateWindow {
+    started: Instant,
+    count: u64,
 }
 
 impl BuiltinRuntime {
@@ -52,6 +75,10 @@ impl BuiltinRuntime {
             memory: Arc::new(Mutex::new(BTreeMap::new())),
             caches: Arc::new(Mutex::new(BTreeMap::new())),
             event_logs: Arc::new(Mutex::new(BTreeMap::new())),
+            loggers: Arc::new(Mutex::new(BTreeMap::new())),
+            metrics: Arc::new(Mutex::new(BTreeMap::new())),
+            tracers: Arc::new(Mutex::new(BTreeMap::new())),
+            rate_limits: Arc::new(Mutex::new(BTreeMap::new())),
             job_stores: Arc::new(Mutex::new(BTreeMap::new())),
             sqlite: Arc::new(Mutex::new(BTreeMap::new())),
         })
@@ -107,8 +134,17 @@ impl ProviderRuntime for BuiltinRuntime {
                 sqlite_store_call(&sqlite, call)
             }
             "rust::axl::auth::bearer" => bearer_auth_call(call),
+            "rust::axl::auth::jwt" => jwt_auth_call(call),
             "rust::axl::middleware::header_gate" => header_gate_call(call),
             "rust::axl::middleware::response_headers" => response_headers_call(call),
+            "rust::axl::middleware::cors" => cors_call(call),
+            "rust::axl::middleware::rate_limit" => {
+                let mut rate_limits = self
+                    .rate_limits
+                    .lock()
+                    .map_err(|_| "rate limit provider state is unavailable".to_string())?;
+                rate_limit_call(&mut rate_limits, call)
+            }
             "rust::axl::event::log" => {
                 let mut logs = self
                     .event_logs
@@ -143,6 +179,27 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "SQLite provider state is unavailable".to_string())?;
                 sqlite_cache_call(&sqlite, call)
+            }
+            "rust::axl::telemetry::logger" => {
+                let mut loggers = self
+                    .loggers
+                    .lock()
+                    .map_err(|_| "logger provider state is unavailable".to_string())?;
+                memory_logger_call(&mut loggers, call)
+            }
+            "rust::axl::telemetry::metrics" => {
+                let mut metrics = self
+                    .metrics
+                    .lock()
+                    .map_err(|_| "metrics provider state is unavailable".to_string())?;
+                memory_metrics_call(&mut metrics, call)
+            }
+            "rust::axl::telemetry::tracer" => {
+                let mut tracers = self
+                    .tracers
+                    .lock()
+                    .map_err(|_| "tracer provider state is unavailable".to_string())?;
+                memory_tracer_call(&mut tracers, call)
             }
             implementation => Err(format!(
                 "unsupported provider implementation '{implementation}'"
@@ -1051,6 +1108,107 @@ fn bearer_auth_call(call: ProviderCall<'_>) -> Result<Value, String> {
     Ok(Value::Bool(supplied == expected))
 }
 
+/// Mint a compact HS256 JWT for tests and demo fixtures.
+///
+/// Demo config secrets belong in skill config (same honesty rule as static
+/// bearer). Gate 8 secret references are a separate primitive.
+pub fn encode_hs256_jwt(secret: &str, claims: &Value) -> Result<String, String> {
+    let header = json!({ "alg": "HS256", "typ": "JWT" });
+    let header_b64 = URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&header).map_err(|error| format!("jwt header encode: {error}"))?,
+    );
+    let payload_b64 = URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(claims).map_err(|error| format!("jwt payload encode: {error}"))?,
+    );
+    let signing_input = format!("{header_b64}.{payload_b64}");
+    let signature = hmac_sha256_b64(secret.as_bytes(), signing_input.as_bytes())?;
+    Ok(format!("{signing_input}.{signature}"))
+}
+
+fn jwt_auth_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    if call.operation != "authorize" {
+        return Err(format!(
+            "jwt auth does not implement operation '{}'",
+            call.operation
+        ));
+    }
+    let secret = call
+        .config
+        .get("secret")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "jwt_secret_not_configured".to_string())?;
+    let issuer = call
+        .config
+        .get("issuer")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "jwt_issuer_not_configured".to_string())?;
+    let token = call
+        .input
+        .as_str()
+        .ok_or_else(|| "jwt authorize requires a text token".to_string())?;
+    Ok(Value::Bool(verify_hs256_jwt(token, secret, issuer)))
+}
+
+fn verify_hs256_jwt(token: &str, secret: &str, expected_issuer: &str) -> bool {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return false;
+    }
+    let (header_b64, payload_b64, signature_b64) = (parts[0], parts[1], parts[2]);
+    let Ok(header_bytes) = URL_SAFE_NO_PAD.decode(header_b64) else {
+        return false;
+    };
+    let Ok(header) = serde_json::from_slice::<Value>(&header_bytes) else {
+        return false;
+    };
+    if header.get("alg").and_then(Value::as_str) != Some("HS256") {
+        return false;
+    }
+    let signing_input = format!("{header_b64}.{payload_b64}");
+    let Ok(expected_sig) = hmac_sha256_b64(secret.as_bytes(), signing_input.as_bytes()) else {
+        return false;
+    };
+    if !constant_time_eq(expected_sig.as_bytes(), signature_b64.as_bytes()) {
+        return false;
+    }
+    let Ok(payload_bytes) = URL_SAFE_NO_PAD.decode(payload_b64) else {
+        return false;
+    };
+    let Ok(claims) = serde_json::from_slice::<Value>(&payload_bytes) else {
+        return false;
+    };
+    let Some(sub) = claims.get("sub").and_then(Value::as_str) else {
+        return false;
+    };
+    if sub.is_empty() {
+        return false;
+    }
+    let Some(iss) = claims.get("iss").and_then(Value::as_str) else {
+        return false;
+    };
+    if iss != expected_issuer {
+        return false;
+    }
+    true
+}
+
+fn hmac_sha256_b64(secret: &[u8], message: &[u8]) -> Result<String, String> {
+    let mut mac =
+        HmacSha256::new_from_slice(secret).map_err(|error| format!("jwt hmac key: {error}"))?;
+    mac.update(message);
+    Ok(URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes()))
+}
+
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    left.iter()
+        .zip(right.iter())
+        .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+        == 0
+}
+
 fn header_gate_call(call: ProviderCall<'_>) -> Result<Value, String> {
     if call.operation != "process" {
         return Err(format!(
@@ -1127,6 +1285,127 @@ fn response_headers_call(call: ProviderCall<'_>) -> Result<Value, String> {
     }))
 }
 
+fn cors_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    if call.operation != "process" {
+        return Err(format!(
+            "cors middleware does not implement operation '{}'",
+            call.operation
+        ));
+    }
+    let allowed_origin = call
+        .config
+        .get("origin")
+        .and_then(Value::as_str)
+        .unwrap_or("*");
+    if call.input.get("status").is_some() {
+        let status = call
+            .input
+            .get("status")
+            .cloned()
+            .ok_or_else(|| "middleware_response_missing_status".to_string())?;
+        let body = call
+            .input
+            .get("body")
+            .cloned()
+            .ok_or_else(|| "middleware_response_missing_body".to_string())?;
+        let mut headers = call
+            .input
+            .get("headers")
+            .and_then(Value::as_object)
+            .cloned()
+            .unwrap_or_default();
+        let methods = call
+            .config
+            .get("methods")
+            .and_then(Value::as_str)
+            .unwrap_or("GET,POST,OPTIONS");
+        let allow_headers = call
+            .config
+            .get("headers")
+            .and_then(Value::as_str)
+            .unwrap_or("content-type,authorization");
+        headers.insert(
+            "access-control-allow-origin".into(),
+            Value::String(allowed_origin.into()),
+        );
+        headers.insert(
+            "access-control-allow-methods".into(),
+            Value::String(methods.into()),
+        );
+        headers.insert(
+            "access-control-allow-headers".into(),
+            Value::String(allow_headers.into()),
+        );
+        return Ok(json!({
+            "status": status,
+            "headers": headers,
+            "body": body,
+        }));
+    }
+    if call.input.get("method").is_some() {
+        if allowed_origin == "*" {
+            return Ok(call.input.clone());
+        }
+        let headers = call
+            .input
+            .get("headers")
+            .and_then(Value::as_object)
+            .ok_or_else(|| "middleware_request_missing_headers".to_string())?;
+        let request_origin = headers
+            .get("origin")
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        if request_origin.is_empty() || request_origin == allowed_origin {
+            return Ok(call.input.clone());
+        }
+        return Err("cors_origin_rejected".into());
+    }
+    Err("cors_middleware_invalid_envelope".into())
+}
+
+fn rate_limit_call(
+    stores: &mut BTreeMap<String, BTreeMap<String, RateWindow>>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    if call.operation != "allow" {
+        return Err(format!(
+            "rate limit does not implement operation '{}'",
+            call.operation
+        ));
+    }
+    let limit = call
+        .config
+        .get("limit")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| "rate_limit_not_configured".to_string())?;
+    let window_ms = call
+        .config
+        .get("window_ms")
+        .and_then(Value::as_i64)
+        .ok_or_else(|| "rate_limit_window_not_configured".to_string())?;
+    if limit < 0 || window_ms <= 0 {
+        return Err("rate_limit_invalid_config".into());
+    }
+    let key = string_input(&call.input, "allow")?;
+    let limit = limit as u64;
+    let window = Duration::from_millis(window_ms as u64);
+    let provider = stores.entry(call.provider.to_string()).or_default();
+    let now = Instant::now();
+    let entry = provider.entry(key.to_string()).or_insert(RateWindow {
+        started: now,
+        count: 0,
+    });
+    if now.duration_since(entry.started) >= window {
+        entry.started = now;
+        entry.count = 0;
+    }
+    if entry.count >= limit {
+        return Err("rate_limit_exceeded".into());
+    }
+    entry.count += 1;
+    Ok(Value::Bool(true))
+}
+
 fn event_log_call(
     logs: &mut BTreeMap<String, Vec<Value>>,
     call: ProviderCall<'_>,
@@ -1163,10 +1442,7 @@ fn memory_cache_call(
     match call.operation {
         "get" => {
             let key = string_input(&call.input, "get")?;
-            cache
-                .get(key)
-                .cloned()
-                .ok_or_else(|| "cache_miss".into())
+            cache.get(key).cloned().ok_or_else(|| "cache_miss".into())
         }
         "put" => {
             let (key, value) = cache_entry(&call.input)?;
@@ -1242,6 +1518,93 @@ fn cache_entry(value: &Value) -> Result<(String, String), String> {
         .ok_or_else(|| "cache put requires text field 'value'".to_string())?
         .to_string();
     Ok((key, entry_value))
+}
+
+fn memory_logger_call(
+    loggers: &mut BTreeMap<String, Vec<Value>>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let log = loggers.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "write" => {
+            let entry = call
+                .input
+                .as_str()
+                .ok_or_else(|| "logger write requires text".to_string())?
+                .to_string();
+            log.push(Value::String(entry));
+            Ok(Value::Null)
+        }
+        "list" => {
+            if !call.input.is_null() {
+                return Err("logger list requires unit".into());
+            }
+            Ok(Value::Array(log.clone()))
+        }
+        operation => Err(format!(
+            "logger does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn memory_metrics_call(
+    metrics: &mut BTreeMap<String, BTreeMap<String, i64>>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let counters = metrics.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "increment" => {
+            let key = string_input(&call.input, "increment")?;
+            let value = counters.entry(key.to_string()).or_insert(0);
+            *value += 1;
+            Ok(Value::Number((*value).into()))
+        }
+        "get" => {
+            let key = string_input(&call.input, "get")?;
+            let value = counters.get(key).copied().unwrap_or(0);
+            Ok(Value::Number(value.into()))
+        }
+        operation => Err(format!(
+            "metrics does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn memory_tracer_call(
+    tracers: &mut BTreeMap<String, TracerState>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let tracer = tracers.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "start" => {
+            let name = string_input(&call.input, "start")?.to_string();
+            tracer.next_id += 1;
+            let id = format!("span-{}", tracer.next_id);
+            tracer.open.insert(id.clone(), name);
+            Ok(Value::String(id))
+        }
+        "finish" => {
+            let id = string_input(&call.input, "finish")?.to_string();
+            let name = tracer
+                .open
+                .remove(&id)
+                .ok_or_else(|| "span_not_found".to_string())?;
+            tracer.finished.push(Value::String(name));
+            Ok(Value::Null)
+        }
+        "list" => {
+            if !call.input.is_null() {
+                return Err("tracer list requires unit".into());
+            }
+            Ok(Value::Array(tracer.finished.clone()))
+        }
+        operation => Err(format!(
+            "tracer does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
 }
 
 fn memory_job_store_call(
@@ -2402,5 +2765,207 @@ job TickJob
         assert_eq!(tags, json!({"ok": ["tick"]}));
         let second = run_due_jobs(&graph, &mut runtime).unwrap();
         assert_eq!(second, 0);
+    }
+
+    #[test]
+    fn memory_cache_put_get_and_invalidate() {
+        const SOURCE: &str = r#"axl 4
+app MemoryCacheDemo
+entity CacheEntry
+  key: text required
+  value: text required
+capacity Cache
+  op get text -> Result<text> idempotent
+  op put CacheEntry -> Result<unit>
+  op invalidate text -> Result<bool>
+skill MemoryCache provides Cache
+  native rust axl::cache::memory
+flow PutAndGet CacheEntry -> Result<text>
+  in cache: Cache = MemoryCache
+  call stored = cache.put(input)?
+  call loaded = cache.get(input.key)?
+  return loaded
+flow Get text -> Result<text>
+  in cache: Cache = MemoryCache
+  call loaded = cache.get(input)?
+  return loaded
+flow Invalidate text -> Result<bool>
+  in cache: Cache = MemoryCache
+  call removed = cache.invalidate(input)?
+  return removed
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let entry = json!({"key": "ledger:demo", "value": "80000"});
+        let loaded = evaluate_flow_with_runtime(&graph, "PutAndGet", entry, &mut runtime).unwrap();
+        assert_eq!(loaded, json!({"ok": "80000"}));
+        let hit =
+            evaluate_flow_with_runtime(&graph, "Get", json!("ledger:demo"), &mut runtime).unwrap();
+        assert_eq!(hit, json!({"ok": "80000"}));
+        let removed =
+            evaluate_flow_with_runtime(&graph, "Invalidate", json!("ledger:demo"), &mut runtime)
+                .unwrap();
+        assert_eq!(removed, json!({"ok": true}));
+        let miss =
+            evaluate_flow_with_runtime(&graph, "Get", json!("ledger:demo"), &mut runtime).unwrap();
+        assert_eq!(miss, json!({"error": "cache_miss"}));
+        let again =
+            evaluate_flow_with_runtime(&graph, "Invalidate", json!("ledger:demo"), &mut runtime)
+                .unwrap();
+        assert_eq!(again, json!({"ok": false}));
+    }
+
+    #[test]
+    fn durable_cache_survives_runtime_recreate() {
+        let cache_db = std::env::temp_dir().join(format!(
+            "axl-cache-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let cache_path = serde_json::to_string(cache_db.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app DurableCacheDemo
+entity CacheEntry
+  key: text required
+  value: text required
+capacity Cache
+  op get text -> Result<text> idempotent
+  op put CacheEntry -> Result<unit>
+  op invalidate text -> Result<bool>
+skill DurableCache provides Cache
+  native rust axl::cache::sqlite
+  config path: text = {cache_path}
+flow Put CacheEntry -> Result<unit>
+  in cache: Cache = DurableCache
+  call stored = cache.put(input)?
+  return stored
+flow Get text -> Result<text>
+  in cache: Cache = DurableCache
+  call loaded = cache.get(input)?
+  return loaded
+flow Invalidate text -> Result<bool>
+  in cache: Cache = DurableCache
+  call removed = cache.invalidate(input)?
+  return removed
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let entry = json!({"key": "ledger:demo", "value": "80000"});
+
+        {
+            let mut first = BuiltinRuntime::new().unwrap();
+            let stored =
+                evaluate_flow_with_runtime(&graph, "Put", entry.clone(), &mut first).unwrap();
+            assert_eq!(stored, json!({"ok": null}));
+        }
+
+        let mut second = BuiltinRuntime::new().unwrap();
+        let found =
+            evaluate_flow_with_runtime(&graph, "Get", json!("ledger:demo"), &mut second).unwrap();
+        assert_eq!(found, json!({"ok": "80000"}));
+        let removed =
+            evaluate_flow_with_runtime(&graph, "Invalidate", json!("ledger:demo"), &mut second)
+                .unwrap();
+        assert_eq!(removed, json!({"ok": true}));
+        let miss =
+            evaluate_flow_with_runtime(&graph, "Get", json!("ledger:demo"), &mut second).unwrap();
+        assert_eq!(miss, json!({"error": "cache_miss"}));
+        drop(second);
+        let _ = std::fs::remove_file(cache_db);
+    }
+
+    #[test]
+    fn memory_observability_logs_metrics_and_spans() {
+        const SOURCE: &str = r#"axl 4
+app ObservabilityDemo
+capacity Logger
+  op write text -> Result<unit>
+  op list unit -> Result<List<text>>
+skill MemoryLogger provides Logger
+  native rust axl::telemetry::logger
+capacity Metrics
+  op increment text -> Result<int>
+  op get text -> Result<int> idempotent
+skill MemoryMetrics provides Metrics
+  native rust axl::telemetry::metrics
+capacity Tracer
+  op start text -> Result<text>
+  op finish text -> Result<unit>
+  op list unit -> Result<List<text>>
+skill MemoryTracer provides Tracer
+  native rust axl::telemetry::tracer
+flow RecordTwo unit -> Result<List<text>>
+  in logger: Logger = MemoryLogger
+  call first = logger.write("ledger.balance")?
+  call second = logger.write("ledger.balance")?
+  call lines = logger.list(input)?
+  return lines
+flow ObserveTwice unit -> Result<int>
+  in metrics: Metrics = MemoryMetrics
+  call first = metrics.increment("ledger.balance")?
+  call second = metrics.increment("ledger.balance")?
+  call value = metrics.get("ledger.balance")?
+  return value
+flow TraceOnce unit -> Result<List<text>>
+  in tracer: Tracer = MemoryTracer
+  call span = tracer.start("CalculateLedgerBalance")?
+  call done = tracer.finish(span)?
+  call spans = tracer.list(input)?
+  return spans
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let lines =
+            evaluate_flow_with_runtime(&graph, "RecordTwo", Value::Null, &mut runtime).unwrap();
+        assert_eq!(lines, json!({"ok": ["ledger.balance", "ledger.balance"]}));
+        let metric =
+            evaluate_flow_with_runtime(&graph, "ObserveTwice", Value::Null, &mut runtime).unwrap();
+        assert_eq!(metric, json!({"ok": 2}));
+        let spans =
+            evaluate_flow_with_runtime(&graph, "TraceOnce", Value::Null, &mut runtime).unwrap();
+        assert_eq!(spans, json!({"ok": ["CalculateLedgerBalance"]}));
+    }
+
+    #[test]
+    fn jwt_auth_validates_hs256_sub_and_iss() {
+        let secret = "demo-only";
+        let issuer = "axl-demo";
+        let good = encode_hs256_jwt(secret, &json!({"sub": "alice", "iss": issuer})).unwrap();
+        let missing_sub = encode_hs256_jwt(secret, &json!({"iss": issuer})).unwrap();
+        let wrong_iss = encode_hs256_jwt(secret, &json!({"sub": "alice", "iss": "other"})).unwrap();
+
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let mut config = BTreeMap::new();
+        config.insert("secret".into(), Value::String(secret.into()));
+        config.insert("issuer".into(), Value::String(issuer.into()));
+        let authorize = |runtime: &mut BuiltinRuntime, token: &str| {
+            runtime.invoke(ProviderCall {
+                provider: "DemoJwt",
+                capacity: "HttpAuth",
+                implementation: "rust::axl::auth::jwt",
+                operation: "authorize",
+                config: config.clone(),
+                input: Value::String(token.into()),
+            })
+        };
+
+        assert_eq!(authorize(&mut runtime, &good).unwrap(), Value::Bool(true));
+        assert_eq!(
+            authorize(&mut runtime, &missing_sub).unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            authorize(&mut runtime, &wrong_iss).unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(
+            authorize(&mut runtime, "not.a.jwt").unwrap(),
+            Value::Bool(false)
+        );
+        assert_eq!(authorize(&mut runtime, "a.b.c").unwrap(), Value::Bool(false));
     }
 }

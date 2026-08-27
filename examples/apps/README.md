@@ -116,6 +116,16 @@ wrong. The header-gate skill is a replaceable capacity, not route-specific Rust.
 balance body and sets `x-axl-middleware: ok` through the replaceable
 `axl::middleware::response_headers` skill.
 
+`POST /limited/balance` uses capacity-backed rate-limit middleware
+(`RateLimit` / `MemoryRateLimit`, limit 5 per 60s). The first five requests
+return `80000`; the sixth returns HTTP 429 with `rate_limit_exceeded`.
+
+`POST /cors/balance` uses capacity-backed CORS middleware
+(`CashflowCorsOrigin` / `CashflowCorsHeaders` via `axl::middleware::cors`).
+Responses include `access-control-allow-origin: *` and configured allow-methods
+/ allow-headers. `OPTIONS /cors/balance` returns 204 with the same headers
+without running the balance flow.
+
 The durable lookup is also exposed as `GET /movements/{id}` and
 `GET /movements/find?id=...`. These routes bind a path or query string directly
 to the typed `uuid` flow input; exact `/movements/find` matching takes precedence
@@ -129,6 +139,18 @@ specific to this route.
 `GET /me` and `GET /session` bind `header.x-user` and `cookie.sid` into a typed
 `text` flow. `POST /client-preview` assembles `ClientSessionRequest` from
 `header.x-user`, `cookie.sid` and the JSON body through the same open bind model.
+
+`CacheBalanceSnapshot` stores a ledger balance key through the open `Cache`
+capacity (`MemoryCache` / `DurableCache`). `POST /cache/balance`,
+`/cache/balance/get` and `/cache/balance/invalidate` expose the memory skill;
+durable put/get/invalidate survives process recreate via the configured SQLite
+path. Values are typed text envelopes (`CacheEntry`), not cashflow-specific Rust.
+
+`RecordTwoObservabilityLines`, `ObserveMetricTwice` and `TraceObservabilitySpan`
+use open `Logger`, `Metrics` and `Tracer` capacities with memory skills. Two
+structured log lines are listable; a named counter reaches `2`; a finished span
+name is listable. HTTP routes under `/observability/*` share the process runtime.
+No application-specific Rust logging is required.
 
 This is not yet the complete cashflow application. There are no transaction or
 migration primitives, general store queries, state mutation or rendered UI.

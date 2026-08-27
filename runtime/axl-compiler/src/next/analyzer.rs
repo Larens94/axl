@@ -2413,7 +2413,9 @@ fn check_api_middleware(
     diagnostics: &mut Vec<Diagnostic>,
 ) {
     let expected_contract = match middleware.phase.as_str() {
-        "request" => Some("op process HttpRequest -> Result<HttpRequest> idempotent"),
+        "request" => Some(
+            "op process HttpRequest -> Result<HttpRequest> idempotent or op allow text -> Result<bool> idempotent",
+        ),
         "response" => Some("op process HttpResponse -> Result<HttpResponse> idempotent"),
         _ => {
             diagnostics.push(
@@ -2432,7 +2434,7 @@ fn check_api_middleware(
         Some(Declaration::Capacity(capacity)) => {
             if let Some(expected) = expected_contract {
                 let process = capacity.operations.iter().find(|op| op.name == "process");
-                let valid = process.is_some_and(|op| {
+                let valid_process = process.is_some_and(|op| {
                     op.idempotent
                         && generic_inner(&op.output, "Result") == Some(op.input.as_str())
                         && match middleware.phase.as_str() {
@@ -2441,7 +2443,14 @@ fn check_api_middleware(
                             _ => false,
                         }
                 });
-                if !valid {
+                let valid_allow = middleware.phase == "request"
+                    && capacity.operations.iter().any(|op| {
+                        op.name == "allow"
+                            && op.idempotent
+                            && op.input == "text"
+                            && op.output == "Result<bool>"
+                    });
+                if !valid_process && !valid_allow {
                     diagnostics.push(
                         Diagnostic::error(
                             "AXL-H919",

@@ -65,21 +65,32 @@ Goal: complete Gate 2 without handwritten controllers.
 
 Starting evidence: Axum routes, body/path/query/header/cookie composite binding,
 capacity-based bearer auth, ordered request and response middleware, typed
-events/subscriptions, durable/scheduled jobs with retry, and durable SQLite are
-executable.
+events/subscriptions, durable/scheduled jobs with retry, Cache get/put/invalidate
+(memory + durable SQLite), durable SQLite, capacity-backed rate-limit, and
+capacity-backed CORS (`Access-Control-*` + OPTIONS preflight) are executable.
 
 Next deliverables:
 
-- cache and invalidation capacities;
-- tracing, metrics and structured logs;
-- CORS, rate-limit and production auth adapters behind capacities.
+- OAuth adapters behind capacities (optional Gate 2 remainder);
+- true secret references are Gate 8 (WP-08), not a Gate 2 blocker for auth adapters.
 
-Exit evidence: a server restart preserves durable state/jobs, middleware can be
-replaced without changing routes, events reach two consumers, and all HTTP
-status/header/body behavior is tested on a real listener.
+HS256 JWT validation is executable through `rust::axl::auth::jwt` with typed
+`secret`/`issuer` demo config on the open `HttpAuth` capacity.
+
+Exit evidence: a server restart preserves durable state/jobs/cache, middleware can be
+replaced without changing routes, events reach two consumers, observability writes
+are listable through replaceable skills, and all HTTP status/header/body behavior
+is tested on a real listener.
 
 Header and cookie request bindings are executable through the same
 `request_binding` model as path/query/body (`header.<name>`, `cookie.<name>`).
+Cache get/put/invalidate is executable through replaceable memory and SQLite skills.
+Logger, Metrics and Tracer are executable through replaceable memory skills.
+Rate-limit is executable as request middleware over the open `RateLimit`
+capacity (`allow text -> Result<bool>`), with a memory skill and HTTP 429.
+CORS is executable as request/response middleware over `HttpMiddleware` /
+`HttpResponseMiddleware` with native `axl::middleware::cors`, including OPTIONS
+preflight when that skill is bound.
 
 ## WP-03 — Data and multi-database runtime
 

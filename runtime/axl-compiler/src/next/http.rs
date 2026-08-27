@@ -81,6 +81,10 @@ pub fn dispatch_with_headers(
 ) -> HttpResult {
     let method = method.to_ascii_lowercase();
     let (request_path, query) = path.split_once('?').unwrap_or((path, ""));
+    if method == "options" {
+        return dispatch_cors_preflight(graph, runtime, request_path, headers)
+            .unwrap_or_else(|| HttpResult::new(404, json!({ "error": "route_not_found" })));
+    }
     let mut candidates = graph
         .nodes
         .iter()
@@ -160,6 +164,75 @@ fn match_http_path(pattern: &str, request: &str) -> Option<BTreeMap<String, Stri
         }
     }
     Some(parameters)
+}
+
+fn dispatch_cors_preflight(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    request_path: &str,
+    headers: &BTreeMap<String, String>,
+) -> Option<HttpResult> {
+    let route = find_route_any_method(graph, request_path)?;
+    if !route_has_cors_middleware(graph, route) {
+        return None;
+    }
+    if let Some(result) =
+        apply_request_middleware(graph, runtime, route, "options", request_path, headers)
+    {
+        return Some(result);
+    }
+    let mut result = HttpResult::new(204, Value::Null);
+    apply_response_middleware(graph, runtime, route, &mut result);
+    Some(result)
+}
+
+fn find_route_any_method<'a>(
+    graph: &'a GraphIr,
+    request_path: &str,
+) -> Option<&'a super::ir::GraphNode> {
+    let mut candidates = graph.nodes.iter().filter(|node| node.kind == "route");
+    candidates
+        .clone()
+        .find(|node| {
+            node.metadata
+                .get("path")
+                .is_some_and(|value| value == request_path)
+        })
+        .or_else(|| {
+            candidates.find(|node| {
+                node.metadata
+                    .get("path")
+                    .and_then(|pattern| match_http_path(pattern, request_path))
+                    .is_some()
+            })
+        })
+}
+
+fn route_has_cors_middleware(graph: &GraphIr, route: &super::ir::GraphNode) -> bool {
+    let Some(api) = graph
+        .edges
+        .iter()
+        .find(|edge| edge.kind == "owns" && edge.to == route.id)
+        .map(|edge| edge.from.as_str())
+    else {
+        return false;
+    };
+    for phase in ["request", "response"] {
+        for middleware in api_middlewares(graph, api, phase) {
+            let provider_id = graph
+                .edges
+                .iter()
+                .find(|edge| edge.kind == "bind" && edge.from == middleware.id)
+                .map(|edge| edge.to.as_str());
+            let implementation = provider_id
+                .and_then(|id| graph.nodes.iter().find(|node| node.id == id))
+                .and_then(|node| node.implementation.as_deref());
+            if implementation == Some("rust::axl::middleware::cors") {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn bind_request_input(
@@ -412,9 +485,52 @@ fn apply_request_middleware(
                 return Some(HttpResult::new(500, json!({ "error": error.to_string() })));
             }
         };
+        let capacity = middleware.type_name.as_deref().unwrap_or("");
+        if capacity_has_allow(graph, capacity)
+            && !capacity_has_operation(graph, capacity, "process")
+        {
+            let key = format!("{method} {path}");
+            match runtime.invoke(ProviderCall {
+                provider: &provider.name,
+                capacity,
+                implementation,
+                operation: "allow",
+                config,
+                input: Value::String(key),
+            }) {
+                Ok(Value::Bool(true)) => {}
+                Ok(Value::Bool(false)) => {
+                    return Some(HttpResult::new(
+                        429,
+                        json!({ "error": "rate_limit_exceeded" }),
+                    ));
+                }
+                Ok(Value::Object(object)) if object.get("error").is_some() => {
+                    return Some(HttpResult::new(
+                        middleware_reject_status(
+                            object.get("error").and_then(Value::as_str).unwrap_or(""),
+                        ),
+                        Value::Object(object),
+                    ));
+                }
+                Ok(_) => {
+                    return Some(HttpResult::new(
+                        429,
+                        json!({ "error": "rate_limit_exceeded" }),
+                    ));
+                }
+                Err(error) => {
+                    return Some(HttpResult::new(
+                        middleware_reject_status(&error),
+                        json!({ "error": error }),
+                    ));
+                }
+            }
+            continue;
+        }
         match runtime.invoke(ProviderCall {
             provider: &provider.name,
-            capacity: middleware.type_name.as_deref().unwrap_or(""),
+            capacity,
             implementation,
             operation: "process",
             config,
@@ -424,7 +540,10 @@ fn apply_request_middleware(
                 envelope = Value::Object(object);
             }
             Ok(Value::Object(object)) if object.get("error").is_some() => {
-                return Some(HttpResult::new(403, Value::Object(object)));
+                let status = middleware_reject_status(
+                    object.get("error").and_then(Value::as_str).unwrap_or(""),
+                );
+                return Some(HttpResult::new(status, Value::Object(object)));
             }
             Ok(_) => {
                 return Some(HttpResult::new(
@@ -433,11 +552,36 @@ fn apply_request_middleware(
                 ));
             }
             Err(error) => {
-                return Some(HttpResult::new(403, json!({ "error": error })));
+                return Some(HttpResult::new(
+                    middleware_reject_status(&error),
+                    json!({ "error": error }),
+                ));
             }
         }
     }
     None
+}
+
+fn capacity_has_allow(graph: &GraphIr, capacity: &str) -> bool {
+    capacity_has_operation(graph, capacity, "allow")
+}
+
+fn capacity_has_operation(graph: &GraphIr, capacity: &str, operation: &str) -> bool {
+    let capacity_id = format!("capacity.{capacity}");
+    graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == capacity_id)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .any(|node| node.kind == "operation" && node.name == operation)
+}
+
+fn middleware_reject_status(error: &str) -> u16 {
+    if error == "rate_limit_exceeded" {
+        429
+    } else {
+        403
+    }
 }
 
 fn apply_response_middleware(
@@ -755,9 +899,15 @@ capacity HttpMiddleware
   op process HttpRequest -> Result<HttpRequest> idempotent
 capacity HttpResponseMiddleware
   op process HttpResponse -> Result<HttpResponse> idempotent
+capacity RateLimit
+  op allow text -> Result<bool> idempotent
 skill DemoBearer provides HttpAuth
   native rust axl::auth::bearer
   config token: text = "secret"
+skill DemoJwt provides HttpAuth
+  native rust axl::auth::jwt
+  config secret: text = "demo-only"
+  config issuer: text = "axl-demo"
 skill DemoClientGate provides HttpMiddleware
   native rust axl::middleware::header_gate
   config header: text = "x-axl-client"
@@ -766,6 +916,18 @@ skill DemoResponseHeaders provides HttpResponseMiddleware
   native rust axl::middleware::response_headers
   config header: text = "x-axl-middleware"
   config value: text = "ok"
+skill DemoRateLimit provides RateLimit
+  native rust axl::middleware::rate_limit
+  config limit: int = 2
+  config window_ms: int = 60000
+skill DemoCorsOrigin provides HttpMiddleware
+  native rust axl::middleware::cors
+  config origin: text = "https://app.example.com"
+skill DemoCorsHeaders provides HttpResponseMiddleware
+  native rust axl::middleware::cors
+  config origin: text = "*"
+  config methods: text = "GET,POST,OPTIONS"
+  config headers: text = "content-type,authorization"
 api DemoApi
   post /validate Input -> Result<Input> = Validate
   get /items/{id} text -> text = EchoText from path.id
@@ -782,12 +944,22 @@ api DemoApi
 api SecureApi
   auth bearer: HttpAuth = DemoBearer
   post /secure Input -> Result<Input> = Validate
+api JwtSecureApi
+  auth bearer: HttpAuth = DemoJwt
+  post /jwt Input -> Result<Input> = Validate
 api GuardedApi
   middleware request: HttpMiddleware = DemoClientGate
   post /guarded Input -> Result<Input> = Validate
 api AnnotatedApi
   middleware response: HttpResponseMiddleware = DemoResponseHeaders
   post /annotated Input -> Result<Input> = Validate
+api LimitedApi
+  middleware request: RateLimit = DemoRateLimit
+  post /limited Input -> Result<Input> = Validate
+api CorsApi
+  middleware request: HttpMiddleware = DemoCorsOrigin
+  middleware response: HttpResponseMiddleware = DemoCorsHeaders
+  post /cors Input -> Result<Input> = Validate
 "#;
 
     #[test]
@@ -890,6 +1062,53 @@ api AnnotatedApi
         );
         assert_eq!(authorized.status, 200);
 
+        let jwt_missing = dispatch_with_authorization(
+            &graph,
+            &mut runtime,
+            "post",
+            "/jwt",
+            json!({"amount": 10}),
+            None,
+        );
+        assert_eq!(jwt_missing.status, 401);
+        let bad_jwt = dispatch_with_authorization(
+            &graph,
+            &mut runtime,
+            "post",
+            "/jwt",
+            json!({"amount": 10}),
+            Some("Bearer not-a-jwt"),
+        );
+        assert_eq!(bad_jwt.status, 403);
+        let wrong_issuer = runtime::encode_hs256_jwt(
+            "demo-only",
+            &json!({"sub": "alice", "iss": "other"}),
+        )
+        .unwrap();
+        let denied_jwt = dispatch_with_authorization(
+            &graph,
+            &mut runtime,
+            "post",
+            "/jwt",
+            json!({"amount": 10}),
+            Some(&format!("Bearer {wrong_issuer}")),
+        );
+        assert_eq!(denied_jwt.status, 403);
+        let good_jwt = runtime::encode_hs256_jwt(
+            "demo-only",
+            &json!({"sub": "alice", "iss": "axl-demo"}),
+        )
+        .unwrap();
+        let accepted_jwt = dispatch_with_authorization(
+            &graph,
+            &mut runtime,
+            "post",
+            "/jwt",
+            json!({"amount": 10}),
+            Some(&format!("Bearer {good_jwt}")),
+        );
+        assert_eq!(accepted_jwt.status, 200);
+
         let mut headers = BTreeMap::new();
         let missing_client = dispatch_with_headers(
             &graph,
@@ -936,6 +1155,107 @@ api AnnotatedApi
                 .get("x-axl-middleware")
                 .map(String::as_str),
             Some("ok")
+        );
+
+        let first = dispatch_with_runtime(
+            &graph,
+            &mut runtime,
+            "post",
+            "/limited",
+            json!({"amount": 10}),
+        );
+        assert_eq!(first.status, 200);
+        let second = dispatch_with_runtime(
+            &graph,
+            &mut runtime,
+            "post",
+            "/limited",
+            json!({"amount": 10}),
+        );
+        assert_eq!(second.status, 200);
+        let limited = dispatch_with_runtime(
+            &graph,
+            &mut runtime,
+            "post",
+            "/limited",
+            json!({"amount": 10}),
+        );
+        assert_eq!(limited.status, 429);
+        assert_eq!(limited.body, json!({ "error": "rate_limit_exceeded" }));
+
+        let mut cors_headers = BTreeMap::new();
+        cors_headers.insert("origin".into(), "https://evil.example.com".into());
+        let rejected_origin = dispatch_with_headers(
+            &graph,
+            &mut runtime,
+            "post",
+            "/cors",
+            json!({"amount": 10}),
+            &cors_headers,
+        );
+        assert_eq!(rejected_origin.status, 403);
+        assert_eq!(
+            rejected_origin.body,
+            json!({ "error": "cors_origin_rejected" })
+        );
+        cors_headers.insert("origin".into(), "https://app.example.com".into());
+        let allowed_cors = dispatch_with_headers(
+            &graph,
+            &mut runtime,
+            "post",
+            "/cors",
+            json!({"amount": 10}),
+            &cors_headers,
+        );
+        assert_eq!(allowed_cors.status, 200);
+        assert_eq!(
+            allowed_cors
+                .headers
+                .get("access-control-allow-origin")
+                .map(String::as_str),
+            Some("*")
+        );
+        assert_eq!(
+            allowed_cors
+                .headers
+                .get("access-control-allow-methods")
+                .map(String::as_str),
+            Some("GET,POST,OPTIONS")
+        );
+        let preflight = dispatch_with_headers(
+            &graph,
+            &mut runtime,
+            "options",
+            "/cors",
+            Value::Null,
+            &cors_headers,
+        );
+        assert_eq!(preflight.status, 204);
+        assert_eq!(
+            preflight
+                .headers
+                .get("access-control-allow-origin")
+                .map(String::as_str),
+            Some("*")
+        );
+        assert_eq!(
+            preflight
+                .headers
+                .get("access-control-allow-methods")
+                .map(String::as_str),
+            Some("GET,POST,OPTIONS")
+        );
+        assert_eq!(
+            dispatch_with_headers(
+                &graph,
+                &mut runtime,
+                "options",
+                "/validate",
+                Value::Null,
+                &BTreeMap::new(),
+            )
+            .status,
+            404
         );
     }
 }

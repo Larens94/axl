@@ -39,6 +39,8 @@ skill SqliteCustomers provides CustomerStore
 
 skill JwtAuth provides AuthProvider
   native rust axl::auth::jwt
+  config secret: text = "demo-only"
+  config issuer: text = "axl-demo"
   effect memory.read
   capability auth.verify
 

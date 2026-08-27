@@ -89,6 +89,14 @@ skill CashflowDemoBearer provides HttpAuth
   config token: text = "axl-cashflow-demo"
   capability auth.verify
 
+// Demo-only HMAC secret and issuer in skill config (visible in Graph/manifest).
+// True secret references (no plaintext in IR) are Gate 8; OAuth remains open.
+skill CashflowDemoJwt provides HttpAuth
+  native rust axl::auth::jwt
+  config secret: text = "axl-cashflow-demo-jwt"
+  config issuer: text = "axl-cashflow"
+  capability auth.verify
+
 skill CashflowClientGate provides HttpMiddleware
   native rust axl::middleware::header_gate
   config header: text = "x-axl-client"
@@ -99,6 +107,27 @@ skill CashflowResponseHeaders provides HttpResponseMiddleware
   native rust axl::middleware::response_headers
   config header: text = "x-axl-middleware"
   config value: text = "ok"
+  capability net.filter
+
+capacity RateLimit
+  op allow text -> Result<bool> idempotent
+
+skill MemoryRateLimit provides RateLimit
+  native rust axl::middleware::rate_limit
+  config limit: int = 5
+  config window_ms: int = 60000
+  capability net.filter
+
+skill CashflowCorsOrigin provides HttpMiddleware
+  native rust axl::middleware::cors
+  config origin: text = "*"
+  capability net.filter
+
+skill CashflowCorsHeaders provides HttpResponseMiddleware
+  native rust axl::middleware::cors
+  config origin: text = "*"
+  config methods: text = "GET,POST,OPTIONS"
+  config headers: text = "content-type,authorization"
   capability net.filter
 
 skill MemoryEventLog provides EventLog
@@ -131,6 +160,28 @@ skill MemoryCache provides Cache
 skill DurableCache provides Cache
   native rust axl::cache::sqlite
   config path: text = "./build/cashflow-cache.db"
+
+capacity Logger
+  op write text -> Result<unit>
+  op list unit -> Result<List<text>>
+
+skill MemoryLogger provides Logger
+  native rust axl::telemetry::logger
+
+capacity Metrics
+  op increment text -> Result<int>
+  op get text -> Result<int> idempotent
+
+skill MemoryMetrics provides Metrics
+  native rust axl::telemetry::metrics
+
+capacity Tracer
+  op start text -> Result<text>
+  op finish text -> Result<unit>
+  op list unit -> Result<List<text>>
+
+skill MemoryTracer provides Tracer
+  native rust axl::telemetry::tracer
 
 event MovementSaved: Movement
 
@@ -300,10 +351,76 @@ flow CacheBalanceSnapshotDurable CacheEntry -> Result<text>
   call loaded = cache.get(input.key)?
   return loaded
 
+flow LoadCachedBalanceDurable text -> Result<text>
+  in cache: Cache = DurableCache
+  call loaded = cache.get(input)?
+  return loaded
+
 flow InvalidateCachedBalanceDurable text -> Result<bool>
   in cache: Cache = DurableCache
   call removed = cache.invalidate(input)?
   return removed
+
+flow WriteObservabilityLog text -> Result<unit>
+  in logger: Logger = MemoryLogger
+  call written = logger.write(input)?
+  return written
+
+flow ListObservabilityLogs unit -> Result<List<text>>
+  in logger: Logger = MemoryLogger
+  call lines = logger.list(input)?
+  return lines
+
+flow RecordTwoObservabilityLines unit -> Result<List<text>>
+  in logger: Logger = MemoryLogger
+  call first = logger.write("ledger.balance")?
+  call second = logger.write("ledger.balance")?
+  call lines = logger.list(input)?
+  return lines
+
+flow IncrementObservabilityMetric text -> Result<int>
+  in metrics: Metrics = MemoryMetrics
+  call value = metrics.increment(input)?
+  return value
+
+flow GetObservabilityMetric text -> Result<int>
+  in metrics: Metrics = MemoryMetrics
+  call value = metrics.get(input)?
+  return value
+
+flow ObserveMetricTwice unit -> Result<int>
+  in metrics: Metrics = MemoryMetrics
+  call first = metrics.increment("ledger.balance")?
+  call second = metrics.increment("ledger.balance")?
+  call value = metrics.get("ledger.balance")?
+  return value
+
+flow StartObservabilitySpan text -> Result<text>
+  in tracer: Tracer = MemoryTracer
+  call span = tracer.start(input)?
+  return span
+
+flow FinishObservabilitySpan text -> Result<unit>
+  in tracer: Tracer = MemoryTracer
+  call done = tracer.finish(input)?
+  return done
+
+flow ListObservabilitySpans unit -> Result<List<text>>
+  in tracer: Tracer = MemoryTracer
+  call spans = tracer.list(input)?
+  return spans
+
+flow TraceObservabilitySpan unit -> Result<List<text>>
+  in tracer: Tracer = MemoryTracer
+  call span = tracer.start("CalculateLedgerBalance")?
+  call done = tracer.finish(span)?
+  call spans = tracer.list(input)?
+  return spans
+
+flow ProbeRateLimit text -> Result<bool>
+  in limiter: RateLimit = MemoryRateLimit
+  call allowed = limiter.allow(input)?
+  return allowed
 
 flow FindMovement uuid -> Result<Movement>
   in store: MovementStore = MemoryMovements
@@ -349,6 +466,13 @@ api CashflowApi
   post /cache/balance CacheEntry -> Result<text> = CacheBalanceSnapshot
   post /cache/balance/get text -> Result<text> = LoadCachedBalance
   post /cache/balance/invalidate text -> Result<bool> = InvalidateCachedBalance
+  post /observability/log text -> Result<unit> = WriteObservabilityLog
+  post /observability/logs unit -> Result<List<text>> = ListObservabilityLogs
+  post /observability/metrics/increment text -> Result<int> = IncrementObservabilityMetric
+  post /observability/metrics/get text -> Result<int> = GetObservabilityMetric
+  post /observability/trace text -> Result<text> = StartObservabilitySpan
+  post /observability/trace/finish text -> Result<unit> = FinishObservabilitySpan
+  post /observability/spans unit -> Result<List<text>> = ListObservabilitySpans
   get /movements/{id} uuid -> Result<Movement> = FindDurableMovement from path.id
   get /movements/find uuid -> Result<Movement> = FindDurableMovement from query.id
   get /me text -> text = EchoText from header.x-user
@@ -366,6 +490,10 @@ api SecuredCashflowApi
   auth bearer: HttpAuth = CashflowDemoBearer
   post /secure/balance MovementBatch -> money = CalculateLedgerBalance
 
+api JwtSecuredCashflowApi
+  auth bearer: HttpAuth = CashflowDemoJwt
+  post /jwt/balance MovementBatch -> money = CalculateLedgerBalance
+
 api GuardedCashflowApi
   middleware request: HttpMiddleware = CashflowClientGate
   post /guarded/balance MovementBatch -> money = CalculateLedgerBalance
@@ -373,3 +501,12 @@ api GuardedCashflowApi
 api AnnotatedCashflowApi
   middleware response: HttpResponseMiddleware = CashflowResponseHeaders
   post /annotated/balance MovementBatch -> money = CalculateLedgerBalance
+
+api LimitedCashflowApi
+  middleware request: RateLimit = MemoryRateLimit
+  post /limited/balance MovementBatch -> money = CalculateLedgerBalance
+
+api CorsCashflowApi
+  middleware request: HttpMiddleware = CashflowCorsOrigin
+  middleware response: HttpResponseMiddleware = CashflowCorsHeaders
+  post /cors/balance MovementBatch -> money = CalculateLedgerBalance
