@@ -9,7 +9,7 @@
     "preventivo form listino righe + listini detail UI (m24)"
   ],
   "last_steward_summary": "M23 Listino entity+store; RisolviPrezzo fold lookup; CreaPreventivoConListino pricing hook",
-  "last_verification": "pending M23 verify-sales + verify-libro-cassa + cargo fmt/test/clippy",
+  "last_verification": "verify-sales + verify-libro-cassa OK; cargo fmt/test/clippy OK (61+10 tests)",
   "last_judge_summary": "M23 listini: Listino/RigaListino store, RisolviPrezzo with prodotto fallback, CreaPreventivoConListino righe priced from listino",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
   "autoloop": "cloud continuation — user PC off",
