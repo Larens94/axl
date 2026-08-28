@@ -423,14 +423,19 @@ pub fn format(program: &Program) -> String {
                     ));
                 }
                 for action in &ui.actions {
+                    let on = action
+                        .on
+                        .as_deref()
+                        .map(|path| format!(" on {path}"))
+                        .unwrap_or_default();
                     let redirect = action
                         .redirect
                         .as_deref()
                         .map(|path| format!(" redirect {path}"))
                         .unwrap_or_default();
                     output.push(format!(
-                        "  action {} {} {}{}",
-                        action.path, action.method, action.submit, redirect
+                        "  action {} {} {}{}{}",
+                        action.path, action.method, action.submit, on, redirect
                     ));
                 }
             }

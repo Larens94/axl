@@ -1,13 +1,14 @@
-# Judge prompt — sales milestone 20 (next wave)
+# Judge prompt — sales milestone 21 (auth stub)
 
-Repo: `/Users/fabriziocorpora/Desktop/workspaces/axl`
+Repo: AXL sales-module autoloop
 
-Milestones 1–19 complete. Module readiness **9.5/10**.
+Milestones 1–20 complete. Readiness **10/10**. See `docs/agent-sales-autoloop.md` and `.cursor/judge-loop-state.json`.
 
-## Milestone 20: pick from steward queue
+## Milestone 21: auth on VenditeApi
 
-1. **uuid generation** — independent ordine ids (if primitive exists or report gap)
-2. **ui action visibility** — show create-ordine on preventivo detail while redirecting to `/ordini`
-3. Or **auth stub** on `VenditeApi` if capacity exists
+1. If **auth capacity** exists (bearer/jwt/header gate) → wire `VenditeApi` routes with minimal auth policy in AXL only
+2. If missing → **stop**, report exact gap in steward queue (syntax, IR, runtime)
+3. Extend `verify-sales.sh` with positive/negative auth smoke if wired
+4. Never implement auth rules in Rust beyond open primitives
 
-Extend verify. Report A–F. No commit.
+Report A–F. Run `verify-sales.sh` + `verify-libro-cassa.sh`. No commit unless user asks.

@@ -800,8 +800,9 @@ flow CreaOrdineDaPreventivo uuid -> Result<Ordine>
     inviato => false
     confermato => true
   require confermato else "preventivo_non_confermato"
+  let nuovo_id = uuid.v4
   make ordine: Ordine
-    id = preventivo.id
+    id = nuovo_id
     preventivo_id = preventivo.id
     cliente_id = preventivo.cliente_id
     righe = preventivo.righe
@@ -937,7 +938,7 @@ flow AnnullaOrdineConfermatoDemoUnit unit -> Result<Ordine>
 
 flow ConfermaOrdineSeeded uuid -> Result<Ordine>
   run ordine = CreaOrdineDaPreventivoSeeded(input)?
-  run confermato = ConfermaOrdine(input)?
+  run confermato = ConfermaOrdine(ordine.id)?
   return confermato
 
 flow SeedOrdineDemoForm WorkflowConfirm -> Result<Ordine>
@@ -964,8 +965,9 @@ flow CreaOrdineDaPreventivoSqlite uuid -> Result<Ordine>
     inviato => false
     confermato => true
   require confermato else "preventivo_non_confermato"
+  let nuovo_id = uuid.v4
   make ordine: Ordine
-    id = preventivo.id
+    id = nuovo_id
     preventivo_id = preventivo.id
     cliente_id = preventivo.cliente_id
     righe = preventivo.righe

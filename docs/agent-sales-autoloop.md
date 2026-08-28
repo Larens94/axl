@@ -39,8 +39,11 @@ Evolves toward an Odoo-like **Vendite** slice: backend + frontend in AXL.
 | 17 | `Ordine` from confermato `Preventivo` (store, API, list UI, detail action) | done |
 | 18 | Ordine workflow (`bozza`→`confermato`/`annullato`) + `/ordini/{id}` detail | done |
 | 19 | Detail righe table on preventivo/ordine pages | done |
+| 20 | Independent ordine ids (`uuid.v4` + dynamic verify) | done |
 
-Milestones 1–19 complete for the **Odoo Vendite slice** demo. Readiness **9.5/10**. Next wave: independent ids (`uuid`), auth, PDF/listini — via open primitives.
+| 20 | Independent ordine ids (`uuid.v4`) | done |
+
+Milestones 1–20 complete for the **Odoo Vendite slice** demo. Readiness **10/10**. Next wave: auth, PDF/listini — via open primitives.
 
 ## Files
 

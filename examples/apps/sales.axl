@@ -59,7 +59,7 @@ ui VenditeUi
   form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivo submit /preventivi redirect /preventivi
   action /preventivi/invia POST /preventivi/{id}/invia redirect /preventivi/{id}
   action /preventivi/conferma POST /preventivi/{id}/conferma redirect /preventivi/{id}
-  action /preventivi/ordine POST /ordini/da-preventivo/{id} redirect /preventivi/{id}
+  action /preventivi/ordine POST /ordini/da-preventivo/{id} on /preventivi/{id} redirect /ordini/{id}
   page /ordini unit -> Result<OrdinePage> = PaginaOrdini
   page /ordini/demo unit -> Result<OrdinePage> = PaginaOrdiniDemoUnit
   page /ordini/{id} uuid -> Result<Ordine> = DettaglioOrdine from path.id

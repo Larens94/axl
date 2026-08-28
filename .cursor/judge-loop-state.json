@@ -1,17 +1,17 @@
 {
-  "iteration": 23,
+  "iteration": 26,
   "product": "sales-module",
-  "milestone": 19,
-  "milestone_label": "Detail righe table (steward shipped)",
-  "module_readiness": "9.5/10 Odoo Vendite slice",
-  "milestones_1_19": "complete",
+  "milestone": 21,
+  "milestone_label": "Auth stub on VenditeApi",
+  "module_readiness": "10/10 Odoo Vendite slice",
+  "milestones_1_20": "complete",
   "steward_queue": [
-    "uuid generation for independent ordine ids",
-    "ui action visibility when redirect differs from detail path"
+    "auth stub on VenditeApi (m21)",
+    "PDF/email on InviaPreventivo"
   ],
-  "last_steward_summary": "nested List<Entity> table on detail pages in ui.rs",
-  "last_judge_summary": "M19 blocked on nested table; steward unblocked",
-  "last_verification": "verify-sales + verify-libro-cassa OK; cargo test/clippy OK",
+  "last_steward_summary": "uuid.v4 + ui action on; M20 complete",
+  "last_verification": "verify-sales + verify-libro-cassa OK",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
-  "autoloop": "continuous PID 18014"
+  "autoloop": "cloud continuation — user PC off",
+  "handoff_branch": "axl/sales-autoloop-m21"
 }
