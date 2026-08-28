@@ -14,6 +14,12 @@ api VenditeApi
   get /prodotti unit -> Result<List<Prodotto>> = ElencaProdotti
   post /prodotti/query ProdottoQuery -> Result<ProdottoPage> = InterrogaProdotti
   post /prodotti/search ProdottoQuery -> Result<ProdottoPage> = CercaProdottiPerSku
+  post /listini Listino -> Result<Listino> = CreaListino
+  get /listini/{id} uuid -> Result<Listino> = CercaListino from path.id
+  get /listini unit -> Result<List<Listino>> = ElencaListini
+  post /listini/query ListinoQuery -> Result<ListinoPage> = InterrogaListini
+  post /listini/prezzo PrezzoListinoQuery -> Result<money> = RisolviPrezzo
+  post /preventivi/con-listino PreventivoConListinoInput -> Result<Preventivo> = CreaPreventivoConListino
   post /preventivi Preventivo -> Result<Preventivo> = CreaPreventivo
   get /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
   get /preventivi unit -> Result<List<Preventivo>> = ElencaPreventivi
@@ -28,6 +34,10 @@ api VenditeApi
   post /prodotti/durable Prodotto -> Result<Prodotto> = CreaProdottoSqlite
   get /prodotti/durable/{id} uuid -> Result<Prodotto> = CercaProdottoSqlite from path.id
   post /prodotti/durable/query ProdottoQuery -> Result<ProdottoPage> = InterrogaProdottiSqlite
+  post /listini/durable Listino -> Result<Listino> = CreaListinoSqlite
+  get /listini/durable/{id} uuid -> Result<Listino> = CercaListinoSqlite from path.id
+  post /listini/durable/query ListinoQuery -> Result<ListinoPage> = InterrogaListiniSqlite
+  post /listini/durable/prezzo PrezzoListinoQuery -> Result<money> = RisolviPrezzoSqlite
   post /preventivi/durable Preventivo -> Result<Preventivo> = CreaPreventivoSqlite
   get /preventivi/durable/{id} uuid -> Result<Preventivo> = CercaPreventivoSqlite from path.id
   post /preventivi/durable/query PreventivoQuery -> Result<PreventivoPage> = InterrogaPreventiviSqlite
@@ -63,6 +73,9 @@ ui VenditeUi
   page /prodotti unit -> Result<ProdottoPage> = PaginaProdotti
   page /prodotti/demo unit -> Result<ProdottoPage> = PaginaProdottiDemoUnit
   form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdotto submit /prodotti
+  page /listini unit -> Result<ListinoPage> = PaginaListini
+  page /listini/demo unit -> Result<ListinoPage> = PaginaListiniDemoUnit
+  form /listini/new Listino -> Result<Listino> = CreaListino submit /listini
   page /preventivi unit -> Result<PreventivoPage> = PaginaPreventivi
   page /preventivi/demo unit -> Result<PreventivoPage> = PaginaPreventiviDemoUnit
   page /preventivi/{id} uuid -> Result<Preventivo> = DettaglioPreventivo from path.id

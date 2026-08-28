@@ -47,6 +47,21 @@ echo "== eval CercaProdottiPerSkuDemoUnit (filter sku=LP-001 subset) =="
 echo "== eval CercaProdottiPerSku (filter via JSON input) =="
 "${BIN[@]}" eval examples/apps/sales.axl CercaProdottiPerSku examples/apps/inputs/sales-prodotto-query.json | jq -e '.ok.total == 0 or .ok.total >= 0'
 
+echo "== eval CreaListino =="
+"${BIN[@]}" eval examples/apps/sales.axl CreaListino examples/apps/inputs/sales-listino.json | jq -e '.ok.nome == "Promo estate" and (.ok.righe | length) == 2'
+
+echo "== eval PaginaListiniDemoUnit (seeded listino list) =="
+"${BIN[@]}" eval examples/apps/sales.axl PaginaListiniDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.total == 1 and .ok.items[0].id == "listino-001"'
+
+echo "== eval RisolviPrezzoDemoUnit (listino overrides prodotto base) =="
+"${BIN[@]}" eval examples/apps/sales.axl RisolviPrezzoDemoUnit examples/apps/inputs/unit.json | jq -e '.ok == 119900'
+
+echo "== eval RisolviPrezzoFallbackDemoUnit (prodotto not in listino righe) =="
+"${BIN[@]}" eval examples/apps/sales.axl RisolviPrezzoFallbackDemoUnit examples/apps/inputs/unit.json | jq -e '.ok == 8900'
+
+echo "== eval CreaPreventivoConListinoDemoUnit (righe priced from listino) =="
+"${BIN[@]}" eval examples/apps/sales.axl CreaPreventivoConListinoDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.totale == 247270 and .ok.righe[0].prezzo_unitario == 119900 and .ok.righe[1].prezzo_unitario == 2490'
+
 echo "== eval CercaProdotto =="
 "${BIN[@]}" eval examples/apps/sales.axl CercaProdotto examples/apps/inputs/sales-prodotto-id.json | jq -e '.ok.sku == "LP-001" or .error != null'
 
@@ -163,6 +178,10 @@ echo "== render clienti list (seeded demo) =="
 echo "== render prodotti list (seeded demo) =="
 "${BIN[@]}" render examples/apps/sales.axl /prodotti/demo examples/apps/inputs/unit.json | grep -q 'prodotto-001'
 
+echo "== render listini list (seeded demo) =="
+"${BIN[@]}" render examples/apps/sales.axl /listini/demo examples/apps/inputs/unit.json | grep -q 'listino-001'
+"${BIN[@]}" render examples/apps/sales.axl /listini/demo examples/apps/inputs/unit.json | grep -q 'Promo estate'
+
 echo "== render preventivi list (seeded demo) =="
 "${BIN[@]}" render examples/apps/sales.axl /preventivi/demo examples/apps/inputs/unit.json | grep -q 'preventivo-001'
 "${BIN[@]}" render examples/apps/sales.axl /preventivi/demo examples/apps/inputs/unit.json | grep -q '268770'
@@ -219,6 +238,10 @@ echo "== ui manifest (document) pages, forms and actions =="
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/prodotti")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/prodotti/demo")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].forms[].path] | index("/prodotti/new")'
+"${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/listini")'
+"${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/listini/demo")'
+"${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].forms[].path] | index("/listini/new")'
+"${BIN[@]}" ui examples/apps/sales.axl | jq -e '.uis[0].forms[] | select(.path=="/listini/new") | .submit == "/listini"'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/preventivi")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/preventivi/demo")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/preventivi/{id}")'
@@ -267,6 +290,26 @@ PORT=18082
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/clienti/demo" | grep -q 'cliente-001'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/prodotti/new" | grep -q '<form method="post" action="/prodotti">'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/prodotti/demo" | grep -q 'prodotto-001'
+  curl -sf --max-time 2 "http://127.0.0.1:${PORT}/listini/new" | grep -q '<form method="post" action="/listini">'
+  curl -sf --max-time 2 "http://127.0.0.1:${PORT}/listini/demo" | grep -q 'listino-001'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/prodotti" \
+    -H 'content-type: application/json' \
+    -d '{"id":"prodotto-001","nome":"Laptop Pro","prezzo":129900,"sku":"LP-001","attivo":true}'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/prodotti" \
+    -H 'content-type: application/json' \
+    -d '{"id":"prodotto-002","nome":"Mouse wireless","prezzo":2990,"sku":"MS-002","attivo":true}'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/listini" \
+    -H 'content-type: application/json' \
+    -d @examples/apps/inputs/sales-listino.json | jq -e '.ok.id == "listino-001"'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/listini/prezzo" \
+    -H 'content-type: application/json' \
+    -d @examples/apps/inputs/sales-prezzo-listino.json | jq -e '.ok == 119900'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/clienti" \
+    -H 'content-type: application/json' \
+    -d '{"id":"cliente-001","nome":"Alice Rossi","email":"alice@example.com","budget":250000,"stato":"attivo"}'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/con-listino" \
+    -H 'content-type: application/json' \
+    -d @examples/apps/inputs/sales-preventivo-listino.json | jq -e '.ok.totale == 247270 and .ok.righe[0].prezzo_unitario == 119900'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/preventivi/demo" | grep -q 'preventivo-001'
   curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'preventivo-001'
   curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q '268770'

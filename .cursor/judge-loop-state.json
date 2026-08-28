@@ -1,16 +1,16 @@
 {
-  "iteration": 28,
+  "iteration": 29,
   "product": "sales-module",
-  "milestone": 23,
-  "milestone_label": "Listini (price lists)",
+  "milestone": 24,
+  "milestone_label": "Listini UI integration",
   "module_readiness": "10/10 Odoo Vendite slice",
-  "milestones_1_22": "complete",
+  "milestones_1_23": "complete",
   "steward_queue": [
-    "listini entity + store + pricing hook on Prodotto/preventivo righe (m23)"
+    "preventivo form listino righe + listini detail UI (m24)"
   ],
-  "last_steward_summary": "M21 auth stub (VenditeSecureApi/JwtApi); M22 PdfRenderer+EmailSender on InviaPreventivo",
-  "last_verification": "verify-sales + verify-libro-cassa OK; cargo fmt/test/clippy OK",
-  "last_judge_summary": "M21–22 green; Vendite demo routes stay open for UI form POST; secured /secure/* and /jwt/* prove bearer+JWT",
+  "last_steward_summary": "M23 Listino entity+store; RisolviPrezzo fold lookup; CreaPreventivoConListino pricing hook",
+  "last_verification": "pending M23 verify-sales + verify-libro-cassa + cargo fmt/test/clippy",
+  "last_judge_summary": "M23 listini: Listino/RigaListino store, RisolviPrezzo with prodotto fallback, CreaPreventivoConListino righe priced from listino",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
   "autoloop": "cloud continuation — user PC off",
   "handoff_branch": "axl/sales-autoloop-m21"

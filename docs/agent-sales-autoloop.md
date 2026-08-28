@@ -42,8 +42,9 @@ Evolves toward an Odoo-like **Vendite** slice: backend + frontend in AXL.
 | 20 | Independent ordine ids (`uuid.v4` + dynamic verify) | done |
 | 21 | Auth stub: `VenditeSecureApi` bearer + `VenditeJwtApi` HS256 JWT | done |
 | 22 | PDF + email on `InviaPreventivo` (`PdfRenderer` + `EmailSender` capacities) | done |
+| 23 | `Listino` + righe store + `RisolviPrezzo` / `CreaPreventivoConListino` pricing hook | done |
 
-Milestones 1–22 complete for the **Odoo Vendite slice** demo. Readiness **10/10**. Next wave: listini (price lists).
+Milestones 1–23 complete for the **Odoo Vendite slice** demo. Readiness **10/10**. Next wave: preventivo form listino integration + listini UI polish.
 
 ## Files
 

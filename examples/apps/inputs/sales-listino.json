@@ -1,0 +1,15 @@
+{
+  "id": "listino-001",
+  "nome": "Promo estate",
+  "attivo": true,
+  "righe": [
+    {
+      "prodotto_id": "prodotto-001",
+      "prezzo": 119900
+    },
+    {
+      "prodotto_id": "prodotto-002",
+      "prezzo": 2490
+    }
+  ]
+}

@@ -304,6 +304,215 @@ flow PaginaProdottiDemoUnit unit -> Result<ProdottoPage>
   call pagina = store.query(query)?
   return pagina
 
+entity RigaListino
+  prodotto_id: uuid required
+  prezzo: money required
+
+entity Listino
+  id: uuid key
+  nome: text required
+  attivo: bool optional
+  righe: List<RigaListino> required
+
+entity ListinoQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity ListinoPage
+  items: List<Listino> required
+  total: int required
+  limit: int required
+  offset: int required
+
+entity PrezzoListinoQuery
+  listino_id: uuid required
+  prodotto_id: uuid required
+
+entity RigaPreventivoDaListino
+  listino_id: uuid required
+  prodotto_id: uuid required
+  quantita: int required
+
+entity PreventivoConListinoInput
+  id: uuid required
+  cliente_id: uuid required
+  righe: List<RigaPreventivoDaListino> required
+
+capacity ArchivioListini
+  op save Listino -> Result<Listino>
+  op find uuid -> Result<Listino> idempotent
+  op list unit -> Result<List<Listino>> idempotent
+  op query ListinoQuery -> Result<ListinoPage> idempotent
+
+skill MemoriaListini provides ArchivioListini
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteListini provides ArchivioListini
+  native rust axl::store::sqlite
+  config path: text = "./build/vendite.db"
+  effect db.read
+  effect db.write
+
+flow ValidaRigaListino RigaListino -> Result<RigaListino>
+  let prezzo_positivo = input.prezzo > 0
+  require prezzo_positivo else "prezzo_deve_essere_positivo"
+  return input
+
+flow ValidaListino Listino -> Result<Listino>
+  let nome_presente = input.nome != ""
+  require nome_presente else "nome_obbligatorio"
+  parallel righe_valide: List<RigaListino> = input.righe as riga
+    run = ValidaRigaListino(riga)?
+  make listino: Listino
+    id = input.id
+    nome = input.nome
+    attivo = input.attivo
+    righe = righe_valide
+  return listino
+
+flow CreaListino Listino -> Result<Listino>
+  in store: ArchivioListini = MemoriaListini
+  run valida = ValidaListino(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaListino uuid -> Result<Listino>
+  in store: ArchivioListini = MemoriaListini
+  call trovato = store.find(input)?
+  return trovato
+
+flow ElencaListini unit -> Result<List<Listino>>
+  in store: ArchivioListini = MemoriaListini
+  call listini = store.list(input)?
+  return listini
+
+flow InterrogaListini ListinoQuery -> Result<ListinoPage>
+  in store: ArchivioListini = MemoriaListini
+  call pagina = store.query(input)?
+  return pagina
+
+flow PaginaListini unit -> Result<ListinoPage>
+  in store: ArchivioListini = MemoriaListini
+  make query: ListinoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow RisolviPrezzo PrezzoListinoQuery -> Result<money>
+  in listini: ArchivioListini = MemoriaListini
+  in prodotti: ArchivioProdotti = MemoriaProdotti
+  call listino = listini.find(input.listino_id)?
+  call prodotto = prodotti.find(input.prodotto_id)?
+  fold prezzo_listino: money = listino.righe from 0 as riga
+    next = if riga.prodotto_id == input.prodotto_id then riga.prezzo else value
+  let in_listino = prezzo_listino > 0
+  let prezzo = if in_listino then prezzo_listino else prodotto.prezzo
+  return prezzo
+
+flow SeedListinoDemoUnit unit -> Result<Listino>
+  in store: ArchivioListini = MemoriaListini
+  in prodotti: ArchivioProdotti = MemoriaProdotti
+  make prodotto1: Prodotto
+    id = "prodotto-001"
+    nome = "Laptop Pro"
+    prezzo = 129900
+    sku = "LP-001"
+    attivo = true
+  make prodotto2: Prodotto
+    id = "prodotto-002"
+    nome = "Mouse wireless"
+    prezzo = 2990
+    sku = "MS-002"
+    attivo = true
+  make prodotto3: Prodotto
+    id = "prodotto-003"
+    nome = "Tastiera meccanica"
+    prezzo = 8900
+    sku = "KB-003"
+    attivo = true
+  run valida1 = ValidaProdotto(prodotto1)?
+  call p1 = prodotti.save(valida1)?
+  run valida2 = ValidaProdotto(prodotto2)?
+  call p2 = prodotti.save(valida2)?
+  run valida3 = ValidaProdotto(prodotto3)?
+  call p3 = prodotti.save(valida3)?
+  make riga1: RigaListino
+    prodotto_id = "prodotto-001"
+    prezzo = 119900
+  make riga2: RigaListino
+    prodotto_id = "prodotto-002"
+    prezzo = 2490
+  make listino: Listino
+    id = "listino-001"
+    nome = "Promo estate"
+    attivo = true
+    righe = [riga1, riga2]
+  run valida = ValidaListino(listino)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow RisolviPrezzoDemoUnit unit -> Result<money>
+  run seed = SeedListinoDemoUnit(input)?
+  make query: PrezzoListinoQuery
+    listino_id = seed.id
+    prodotto_id = "prodotto-001"
+  run prezzo = RisolviPrezzo(query)?
+  return prezzo
+
+flow RisolviPrezzoFallbackDemoUnit unit -> Result<money>
+  run seed = SeedListinoDemoUnit(input)?
+  make query: PrezzoListinoQuery
+    listino_id = seed.id
+    prodotto_id = "prodotto-003"
+  run prezzo = RisolviPrezzo(query)?
+  return prezzo
+
+flow PaginaListiniDemoUnit unit -> Result<ListinoPage>
+  in store: ArchivioListini = MemoriaListini
+  run seed = SeedListinoDemoUnit(input)?
+  make query: ListinoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow CreaListinoSqlite Listino -> Result<Listino>
+  in store: ArchivioListini = SqliteListini
+  run valida = ValidaListino(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaListinoSqlite uuid -> Result<Listino>
+  in store: ArchivioListini = SqliteListini
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaListiniSqlite ListinoQuery -> Result<ListinoPage>
+  in store: ArchivioListini = SqliteListini
+  call pagina = store.query(input)?
+  return pagina
+
+flow RisolviPrezzoSqlite PrezzoListinoQuery -> Result<money>
+  in listini: ArchivioListini = SqliteListini
+  in prodotti: ArchivioProdotti = SqliteProdotti
+  call listino = listini.find(input.listino_id)?
+  call prodotto = prodotti.find(input.prodotto_id)?
+  fold prezzo_listino: money = listino.righe from 0 as riga
+    next = if riga.prodotto_id == input.prodotto_id then riga.prezzo else value
+  let in_listino = prezzo_listino > 0
+  let prezzo = if in_listino then prezzo_listino else prodotto.prezzo
+  return prezzo
+
 enum StatoPreventivo
   bozza
   inviato
@@ -391,6 +600,60 @@ flow ValidaPreventivo Preventivo -> Result<Preventivo>
     stato = input.stato
     righe = righe_valide
     totale = totale
+  return preventivo
+
+flow CostruisciRigaDaListino RigaPreventivoDaListino -> Result<RigaPreventivo>
+  make query: PrezzoListinoQuery
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id
+  run prezzo = RisolviPrezzo(query)?
+  make riga: RigaPreventivo
+    prodotto_id = input.prodotto_id
+    quantita = input.quantita
+    prezzo_unitario = prezzo
+    importo = 0
+  run valida = ValidaRigaPreventivo(riga)?
+  return valida
+
+flow CreaPreventivoConListino PreventivoConListinoInput -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  parallel righe: List<RigaPreventivo> = input.righe as riga_input
+    run = CostruisciRigaDaListino(riga_input)?
+  make preventivo: Preventivo
+    id = input.id
+    cliente_id = input.cliente_id
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 0
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CreaPreventivoConListinoDemoUnit unit -> Result<Preventivo>
+  in clienti: ArchivioClienti = MemoriaClienti
+  run listino = SeedListinoDemoUnit(input)?
+  make cliente: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  run valida_cliente = ValidaCliente(cliente)?
+  call salvato_cliente = clienti.save(valida_cliente)?
+  make riga1: RigaPreventivoDaListino
+    listino_id = listino.id
+    prodotto_id = "prodotto-001"
+    quantita = 2
+  make riga2: RigaPreventivoDaListino
+    listino_id = listino.id
+    prodotto_id = "prodotto-002"
+    quantita = 3
+  make input_preventivo: PreventivoConListinoInput
+    id = "preventivo-listino-001"
+    cliente_id = "cliente-001"
+    righe = [riga1, riga2]
+  run preventivo = CreaPreventivoConListino(input_preventivo)?
   return preventivo
 
 flow CreaPreventivo Preventivo -> Result<Preventivo>
