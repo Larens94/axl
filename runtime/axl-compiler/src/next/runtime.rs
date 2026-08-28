@@ -2410,7 +2410,10 @@ fn memory_email_call(
             if !call.input.is_null() {
                 return Err("email latest requires unit".into());
             }
-            mailbox.last().cloned().ok_or_else(|| "email mailbox is empty".to_string())
+            mailbox
+                .last()
+                .cloned()
+                .ok_or_else(|| "email mailbox is empty".to_string())
         }
         operation => Err(format!(
             "email does not implement operation '{operation}' for {}",

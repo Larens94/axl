@@ -1,11 +1,10 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { axlDefaultApp, axlLayoutSlots } from "./generated/axl_layouts";
 import {
-  axlDefaultApp,
-  axlLayoutSlots,
+  axlProductionRoutes,
   type AxlLayout,
-} from "./generated/axl_layouts";
-import { axlProductionRoutes } from "./generated/axl_routes";
+} from "./generated/axl_routes";
 
 type Props = {
   layout: AxlLayout;
