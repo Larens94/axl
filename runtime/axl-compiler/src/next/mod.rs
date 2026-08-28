@@ -7,15 +7,17 @@ pub mod http;
 pub mod ir;
 pub mod packed;
 pub mod parser;
+pub mod resolver;
 pub mod runtime;
 pub mod targets;
+pub mod ui;
 
 use std::path::Path;
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use diagnostic::Diagnostic;
+use diagnostic::{Diagnostic, tag_diagnostics};
 use ir::GraphIr;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -27,44 +29,90 @@ pub struct Compilation {
 }
 
 pub fn compile_source(source: &str) -> std::result::Result<Compilation, Vec<Diagnostic>> {
-    let program = parser::parse(source)?;
-    let graph = analyzer::analyze(&program)?;
-    let packed = packed::encode(&graph).map_err(|error| {
-        vec![Diagnostic::error(
-            "AXL-C001",
-            "compact",
-            error.to_string(),
-            diagnostic::SourceSpan {
-                line: 1,
-                column: 1,
-                length: 1,
-            },
-        )]
-    })?;
-    let matrix = packed::matrix(&packed, 100).map_err(|error| {
-        vec![Diagnostic::error(
-            "AXL-C002",
-            "compact",
-            error.to_string(),
-            diagnostic::SourceSpan {
-                line: 1,
-                column: 1,
-                length: 1,
-            },
-        )]
-    })?;
-    Ok(Compilation {
-        source: formatter::format(&program),
-        graph,
-        packed,
-        matrix,
-    })
+    compile_source_at(source, None)
+}
+
+pub fn compile_source_at(
+    source: &str,
+    base_file: Option<&Path>,
+) -> std::result::Result<Compilation, Vec<Diagnostic>> {
+    let program = match parser::parse(source) {
+        Ok(program) => program,
+        Err(mut diagnostics) => {
+            tag_diagnostics(&mut diagnostics, base_file);
+            return Err(diagnostics);
+        }
+    };
+    compile_program(&program, base_file)
 }
 
 pub fn compile_file(path: &Path) -> Result<std::result::Result<Compilation, Vec<Diagnostic>>> {
     let source = std::fs::read_to_string(path)
         .with_context(|| format!("cannot read AXL source '{}'", path.display()))?;
-    Ok(compile_source(&source))
+    Ok(compile_source_at(&source, Some(path)))
+}
+
+fn compile_program(
+    program: &ast::Program,
+    base_file: Option<&Path>,
+) -> std::result::Result<Compilation, Vec<Diagnostic>> {
+    let merged = if program.imports.is_empty() {
+        program.clone()
+    } else {
+        let Some(base_file) = base_file else {
+            return Err(vec![resolver::imports_require_file_base(program).expect(
+                "imports present but imports_require_file_base returned None",
+            )]);
+        };
+        resolver::resolve_imports(program, base_file)?
+    };
+    let graph = match analyzer::analyze(&merged) {
+        Ok(graph) => graph,
+        Err(mut diagnostics) => {
+            tag_diagnostics(&mut diagnostics, base_file);
+            return Err(diagnostics);
+        }
+    };
+    let packed = match packed::encode(&graph) {
+        Ok(packed) => packed,
+        Err(error) => {
+            let mut diagnostics = vec![Diagnostic::error(
+                "AXL-C001",
+                "compact",
+                error.to_string(),
+                diagnostic::SourceSpan {
+                    line: 1,
+                    column: 1,
+                    length: 1,
+                },
+            )];
+            tag_diagnostics(&mut diagnostics, base_file);
+            return Err(diagnostics);
+        }
+    };
+    let matrix = match packed::matrix(&packed, 100) {
+        Ok(matrix) => matrix,
+        Err(error) => {
+            let mut diagnostics = vec![Diagnostic::error(
+                "AXL-C002",
+                "compact",
+                error.to_string(),
+                diagnostic::SourceSpan {
+                    line: 1,
+                    column: 1,
+                    length: 1,
+                },
+            )];
+            tag_diagnostics(&mut diagnostics, base_file);
+            return Err(diagnostics);
+        }
+    };
+    Ok(Compilation {
+        source: formatter::format(program),
+        graph,
+        packed,
+        matrix,
+    })
 }
 
 #[cfg(test)]

@@ -1,0 +1,9 @@
+{
+  "filter": {
+    "conto": "cassa"
+  },
+  "order_by": "registrato_il",
+  "direction": "desc",
+  "limit": 10,
+  "offset": 0
+}

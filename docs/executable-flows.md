@@ -187,13 +187,18 @@ Two general storage implementations exist today:
 
 | Native binding | Operations | Current lifetime |
 |---|---|---|
-| `rust::axl::store::memory` | `save`, `find`, `delete`, `list` | one runtime |
-| `rust::axl::store::sqlite` | `save`, `find`, `delete`, `list` | in-memory by default; durable with `config path` |
+| `rust::axl::store::memory` | `save`, `find`, `delete`, `list`, `query` | one runtime |
+| `rust::axl::store::sqlite` | `save`, `find`, `delete`, `list`, `query` | in-memory by default; durable with `config path` |
+| `rust::axl::store::document` | `save`, `find`, `delete`, `list`, `query` | in-memory by default; durable JSON file with `config path` |
 
 Skill configuration is a checked, first-class graph surface. `config path:
 text = "..."` reaches Graph IR, Packed IR, `axl-provider/1` and the runtime.
-Two separate `eval` processes can therefore reopen the same SQLite database.
-Migrations and transaction blocks are later data gates.
+Two separate `eval` processes can therefore reopen the same SQLite database or
+document JSON file. Transaction begin/commit/rollback is executable through
+`TransactionManager`. Migration up/down/status is executable through
+`MigrationRunner` (memory + SQLite schema history). Typed store `query`
+(filter/order/page → page entity) is executable on memory, SQLite and document
+adapters. PostgreSQL/MySQL and document tx/migrate remain later Gate 3 work.
 
 ## Expression semantics
 
@@ -225,5 +230,8 @@ source parser.
 ## Current boundary
 
 Flow Runtime 2 does not implement mutable variables, branch statement blocks,
-transactions, migrations, events, state mutation or UI bindings. The next
-backend slice is richer HTTP behavior.
+state mutation or UI bindings. Transactions are capacity-backed
+(`TransactionManager` begin/commit/rollback). Migrations are capacity-backed
+(`MigrationRunner` up/down/status with schema history). Typed store queries are
+capacity-backed (`query` QuerySpec → page with filter/order/limit/offset on
+memory and SQLite). The next data slice is additional database families.

@@ -1,0 +1,25 @@
+// Small income/expense book: HTTP API and UI over the ledger domain module.
+axl 4
+app LibroCassa
+import "./ledger-domain.axl"
+
+api LibroCassaApi
+  post /voci Voce -> Result<Voce> = RegistraVoce
+  get /voci/{id} uuid -> Result<Voce> = CercaVoce from path.id
+  get /voci unit -> Result<List<Voce>> = ElencaVoci
+  post /voci/query VoceQuery -> Result<VocePage> = InterrogaVoci
+  post /saldo SaldoInput -> money = CalcolaSaldo
+  get /saldo SaldoInput -> money = CalcolaSaldo
+    bind entrate = query.entrate
+    bind uscite = query.uscite
+  post /saldo/archivio VoceQuery -> Result<money> = SaldoArchivio
+  post /voci/elenco ElencoVoci -> money = CalcolaSaldoElenco
+  post /voci/entrate ElencoVoci -> List<Voce> = FiltraEntrate
+  post /voci/durable Voce -> Result<Voce> = RegistraVoceSqlite
+  get /voci/durable/{id} uuid -> Result<Voce> = CercaVoceSqlite from path.id
+  post /voci/durable/query VoceQuery -> Result<VocePage> = InterrogaVociSqlite
+
+ui LibroCassaUi
+  page /saldo SaldoInput -> money = CalcolaSaldo
+  page /voci PaginaVociDemoInput -> Result<VocePage> = PaginaVociDemo
+  page /voci/demo unit -> Result<VocePage> = PaginaVociDemoUnit

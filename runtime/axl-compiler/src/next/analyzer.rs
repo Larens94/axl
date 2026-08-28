@@ -56,11 +56,13 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
             Declaration::Subscription(_) => {}
             Declaration::Job(job) => check_job(job, &declarations, &mut diagnostics),
             Declaration::Api(api) => check_api(api, &declarations, &mut diagnostics),
+            Declaration::Ui(ui) => check_ui(ui, &declarations, &mut diagnostics),
             Declaration::Agent(agent) => check_agent(agent, &mut diagnostics),
         }
     }
     check_subscriptions(program, &declarations, &mut diagnostics);
     check_global_api_routes(program, &mut diagnostics);
+    check_global_ui_pages(program, &mut diagnostics);
 
     if !diagnostics.is_empty() {
         return Err(diagnostics);
@@ -253,6 +255,96 @@ fn check_skill(
     }
     check_grants(&skill.effects, "effect", &skill.span, diagnostics);
     check_grants(&skill.capabilities, "capability", &skill.span, diagnostics);
+    if let Some(native) = &skill.native
+        && native.target == "rust"
+        && matches!(
+            native.symbol.as_str(),
+            "axl::tx::memory" | "axl::tx::sqlite"
+        )
+    {
+        match declarations.get(skill.provides.as_str()) {
+            Some(Declaration::Capacity(capacity)) if !transaction_manager_contract(capacity) => {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-D901",
+                        "data",
+                        format!(
+                            "transaction skill '{}' requires begin/commit/rollback contracts",
+                            skill.name
+                        ),
+                        skill.span.clone(),
+                    )
+                    .expected(
+                        "op begin/commit/rollback text -> Result<text|unit>",
+                        "missing or incompatible operation",
+                    ),
+                );
+            }
+            _ => {}
+        }
+    }
+    if let Some(native) = &skill.native
+        && native.target == "rust"
+        && matches!(
+            native.symbol.as_str(),
+            "axl::migrate::memory" | "axl::migrate::sqlite"
+        )
+    {
+        match declarations.get(skill.provides.as_str()) {
+            Some(Declaration::Capacity(capacity)) if !migration_runner_contract(capacity) => {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-D902",
+                        "data",
+                        format!(
+                            "migration skill '{}' requires up/down/status contracts",
+                            skill.name
+                        ),
+                        skill.span.clone(),
+                    )
+                    .expected(
+                        "op up/down text -> Result<text>; op status unit -> Result<text>",
+                        "missing or incompatible operation",
+                    ),
+                );
+            }
+            _ => {}
+        }
+    }
+    if let Some(native) = &skill.native
+        && native.target == "rust"
+        && matches!(
+            native.symbol.as_str(),
+            "axl::store::memory" | "axl::store::sqlite" | "axl::store::document"
+        )
+    {
+        match declarations.get(skill.provides.as_str()) {
+            Some(Declaration::Capacity(capacity))
+                if capacity
+                    .operations
+                    .iter()
+                    .any(|operation| operation.name == "query")
+                    && !query_store_contract(capacity) =>
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-D903",
+                        "data",
+                        format!(
+                            "query skill '{}' requires an idempotent query Entity -> Result<Page> contract",
+                            skill.name
+                        ),
+                        skill.span.clone(),
+                    )
+                    .expected(
+                        "op query QuerySpec -> Result<Page> idempotent",
+                        "missing or incompatible operation",
+                    ),
+                );
+            }
+            _ => {}
+        }
+    }
 }
 
 fn check_blueprint(
@@ -1210,7 +1302,7 @@ fn check_flow(
                         &variables,
                         declarations,
                         diagnostics,
-                    ) && !same_type(&found, &entity_field.type_name)
+                    ) && !compatible_make_assignment(&found, &entity_field.type_name)
                     {
                         diagnostics.push(
                             Diagnostic::error(
@@ -2888,6 +2980,111 @@ fn check_global_api_routes(program: &Program, diagnostics: &mut Vec<Diagnostic>)
     }
 }
 
+fn check_global_ui_pages(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let mut pages = BTreeMap::new();
+    for ui in program
+        .declarations
+        .iter()
+        .filter_map(|declaration| match declaration {
+            Declaration::Ui(ui) => Some(ui),
+            _ => None,
+        })
+    {
+        for page in &ui.pages {
+            let key = normalized_http_path(&page.path);
+            if pages
+                .insert(key, ui.name.as_str())
+                .is_some_and(|owner| owner != ui.name)
+            {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-U906",
+                    "ui",
+                    format!("UI page '{}' conflicts across declarations", page.path),
+                    page.span.clone(),
+                ));
+            }
+        }
+    }
+}
+
+fn check_ui(
+    ui: &Ui,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if ui.pages.is_empty() {
+        diagnostics.push(Diagnostic::error(
+            "AXL-U901",
+            "ui",
+            format!("ui '{}' requires at least one page", ui.name),
+            ui.span.clone(),
+        ));
+    }
+    let mut pages = BTreeSet::new();
+    for page in &ui.pages {
+        if !valid_http_path(&page.path) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI path '{}'", page.path),
+                    page.span.clone(),
+                )
+                .expected("absolute path without query or fragment", &page.path),
+            );
+        }
+        if !pages.insert(normalized_http_path(&page.path)) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U903",
+                "ui",
+                format!(
+                    "ui '{}' declares page '{}' more than once",
+                    ui.name, page.path
+                ),
+                page.span.clone(),
+            ));
+        }
+        check_type(&page.input, &page.span, declarations, diagnostics);
+        check_type(&page.output, &page.span, declarations, diagnostics);
+        match declarations.get(page.flow.as_str()) {
+            Some(Declaration::Flow(flow)) => {
+                if flow.input != page.input || flow.output != page.output {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-U905",
+                            "ui",
+                            format!("page '{}' does not match flow '{}'", page.path, page.flow),
+                            page.span.clone(),
+                        )
+                        .expected(
+                            format!("{} -> {}", flow.input, flow.output),
+                            format!("{} -> {}", page.input, page.output),
+                        ),
+                    );
+                }
+            }
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U904",
+                    "ui",
+                    format!("page target '{}' is not a flow", page.flow),
+                    page.span.clone(),
+                )
+                .expected("flow", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U904",
+                    "ui",
+                    format!("page references unknown flow '{}'", page.flow),
+                    page.span.clone(),
+                )
+                .expected("declared flow", &page.flow),
+            ),
+        }
+    }
+}
+
 fn valid_http_path(path: &str) -> bool {
     path.starts_with('/')
         && !path.contains(['?', '#', ' '])
@@ -3194,6 +3391,18 @@ fn ordered_type(value: &str, declarations: &BTreeMap<&str, &Declaration>) -> boo
 
 fn same_type(left: &str, right: &str) -> bool {
     left == right
+}
+
+fn compatible_make_assignment(found: &str, expected: &str) -> bool {
+    if same_type(found, expected) {
+        return true;
+    }
+    match (found, expected) {
+        ("text" | "string", "uuid" | "datetime" | "email" | "duration") => true,
+        ("int", "money" | "float") => true,
+        ("float", "money") => true,
+        _ => false,
+    }
 }
 
 fn generic_inner<'a>(value: &'a str, name: &str) -> Option<&'a str> {
@@ -3518,6 +3727,49 @@ fn job_store_contract(capacity: &Capacity) -> bool {
         .is_some_and(|op| op.input == "text" && generic_inner(&op.output, "Result") == Some("text"))
 }
 
+fn transaction_manager_contract(capacity: &Capacity) -> bool {
+    let begin = capacity.operations.iter().find(|op| op.name == "begin");
+    let commit = capacity.operations.iter().find(|op| op.name == "commit");
+    let rollback = capacity.operations.iter().find(|op| op.name == "rollback");
+    begin
+        .is_some_and(|op| op.input == "text" && generic_inner(&op.output, "Result") == Some("text"))
+        && commit.is_some_and(|op| {
+            op.input == "text" && generic_inner(&op.output, "Result") == Some("unit")
+        })
+        && rollback.is_some_and(|op| {
+            op.input == "text" && generic_inner(&op.output, "Result") == Some("unit")
+        })
+}
+
+fn migration_runner_contract(capacity: &Capacity) -> bool {
+    let up = capacity.operations.iter().find(|op| op.name == "up");
+    let down = capacity.operations.iter().find(|op| op.name == "down");
+    let status = capacity.operations.iter().find(|op| op.name == "status");
+    up.is_some_and(|op| op.input == "text" && generic_inner(&op.output, "Result") == Some("text"))
+        && down.is_some_and(|op| {
+            op.input == "text" && generic_inner(&op.output, "Result") == Some("text")
+        })
+        && status.is_some_and(|op| {
+            op.input == "unit" && generic_inner(&op.output, "Result") == Some("text")
+        })
+}
+
+fn query_store_contract(capacity: &Capacity) -> bool {
+    capacity
+        .operations
+        .iter()
+        .find(|operation| operation.name == "query")
+        .is_some_and(|operation| {
+            operation.idempotent
+                && named_entity_type(&operation.input)
+                && generic_inner(&operation.output, "Result").is_some_and(named_entity_type)
+        })
+}
+
+fn named_entity_type(type_name: &str) -> bool {
+    !type_name.contains('<') && !builtin_type(type_name)
+}
+
 pub(crate) fn parse_schedule_millis(schedule: &str) -> Option<u64> {
     let rest = schedule.strip_prefix("every ")?.trim();
     let (number, unit) = rest.split_at(rest.find(|c: char| !c.is_ascii_digit())?);
@@ -3706,6 +3958,7 @@ fn declaration_kind(declaration: &Declaration) -> &'static str {
         Declaration::Subscription(_) => "subscription",
         Declaration::Job(_) => "job",
         Declaration::Api(_) => "api",
+        Declaration::Ui(_) => "ui",
         Declaration::Agent(_) => "agent",
     }
 }
@@ -3741,6 +3994,7 @@ fn lower(program: &Program) -> GraphIr {
             Declaration::Subscription(_) => {}
             Declaration::Job(job) => lower_job(job, &mut graph),
             Declaration::Api(api) => lower_api(api, &mut graph),
+            Declaration::Ui(ui) => lower_ui(ui, &mut graph),
             Declaration::Agent(agent) => lower_agent(agent, &mut graph),
         }
     }
@@ -4327,6 +4581,27 @@ fn lower_api(api: &Api, graph: &mut GraphIr) {
             &format!("flow.{}", route.flow),
             "dispatch",
             Some(&format!("{}->{}", route.input, route.output)),
+        ));
+    }
+}
+
+fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
+    let ui_id = format!("ui.{}", ui.name);
+    graph.nodes.push(node(&ui_id, "ui", &ui.name));
+    for (index, page) in ui.pages.iter().enumerate() {
+        let id = format!("{ui_id}.page.{index}");
+        let mut value = node(&id, "page", &page.path);
+        value.type_name = Some(format!("{}->{}", page.input, page.output));
+        value.metadata.insert("path".into(), page.path.clone());
+        value.metadata.insert("flow".into(), page.flow.clone());
+        value.metadata.insert("order".into(), index.to_string());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&ui_id, &id, "owns", None));
+        graph.edges.push(edge(
+            &id,
+            &format!("flow.{}", page.flow),
+            "dispatch",
+            Some(&format!("{}->{}", page.input, page.output)),
         ));
     }
 }

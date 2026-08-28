@@ -28,8 +28,8 @@ WP-01.
 | Agent | Package | Next primitive |
 |---|---|---|
 | Language steward | WP-01 | review opcodes/diagnostics from vertical slices |
-| Backend | WP-02 | secrets / JWT |
-| Data | WP-03 | transactions / migrations (after jobs or in parallel on separate ABI surface) |
+| Backend | WP-02 | OAuth (optional); secret refs → Gate 8 |
+| Data | WP-03 | PostgreSQL/MySQL; document tx/migrate |
 
 Later waves: WP-04 UI, WP-05 AI/vector, WP-06 agents, WP-07 IoT, WP-08 security, WP-09 QA.
 

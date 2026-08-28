@@ -7,17 +7,37 @@ entity Customer
   name: text required
   email: email required unique
 
+entity QuerySpec
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity CustomerPage
+  items: List<Customer> required
+  total: int required
+  limit: int required
+  offset: int required
+
 capacity DataStore
   op save Customer -> Result<Customer>
 
 capacity QueryEngine
-  op list unit -> Result<List<Customer>>
+  op query QuerySpec -> Result<CustomerPage> idempotent
 
 capacity CommandHandler
   op run Customer -> Result<Customer>
 
 capacity TransactionManager
-  op run Customer -> Result<Customer>
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
 
 capacity AccessPolicy
   op authorize text -> Result<bool>
@@ -72,6 +92,10 @@ skill DefaultCommand provides CommandHandler
 
 skill DefaultTransaction provides TransactionManager
   native rust axl::foundation::transaction
+  effect db.write
+
+skill DefaultMigration provides MigrationRunner
+  native rust axl::foundation::migrate
   effect db.write
 
 skill DefaultPolicy provides AccessPolicy
@@ -158,6 +182,14 @@ blueprint TransactionBlock
   hook before.commit: LifecycleHook = DefaultHook
   hook after.commit: LifecycleHook = DefaultHook
   use transaction = DefaultTransaction
+  effect db.write
+
+blueprint MigrationBlock
+  param target_version: text = "0"
+  event migrated: text
+  error migration.failed: text
+  in migrations: MigrationRunner
+  use migrations = DefaultMigration
   effect db.write
 
 blueprint ApiBlock

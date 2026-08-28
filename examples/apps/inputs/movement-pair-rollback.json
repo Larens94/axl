@@ -1,0 +1,18 @@
+{
+  "first": {
+    "id": "movement-tx-r01",
+    "kind": "income",
+    "amount": 9000,
+    "category": "consulting",
+    "occurred_at": "2026-08-28T12:00:00Z",
+    "note": "tx rollback first"
+  },
+  "second": {
+    "id": "movement-tx-r02",
+    "kind": "expense",
+    "amount": 3000,
+    "category": "software",
+    "occurred_at": "2026-08-28T13:00:00Z",
+    "note": "tx rollback second"
+  }
+}

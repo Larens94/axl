@@ -5,4 +5,5 @@
 
 pub mod next;
 
-pub use next::{Compilation, compile_file, compile_source};
+pub use next::diagnostic::{CheckReport, Diagnostic};
+pub use next::{Compilation, compile_file, compile_source, compile_source_at};

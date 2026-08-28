@@ -1,0 +1,8 @@
+axl 4
+app InvalidFlowTransactions
+capacity BrokenTx
+  op begin text -> Result<text>
+  op commit text -> Result<text>
+skill BrokenTransactions provides BrokenTx
+  native rust axl::tx::memory
+  effect db.write

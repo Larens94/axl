@@ -21,8 +21,9 @@ documentation and the presentation.
 ## Current position
 
 Gate 0 is implemented: capacity ports and calls are type checked, lowered to
-Graph/Packed IR and executed through a replaceable ABI. Memory and SQLite
-adapters prove two implementations behind the same `MovementStore` capacity.
+Graph/Packed IR and executed through a replaceable ABI. Memory, SQLite and
+document/JSON-file adapters prove three implementations behind the same
+`MovementStore` capacity.
 
 Gate 1 is complete for the executable foundation. Typed multiline records, lazy conditionals, functional `fold`
 loops, flow-to-flow `run` calls, enum `match`, `map`, `filter`, stable typed
@@ -51,5 +52,14 @@ headers and OPTIONS preflight through replaceable middleware skills. Capacity-
 backed HS256 JWT auth validates `sub`/`iss` with demo HMAC config on the same
 open `HttpAuth` port. Demo secrets may appear in skill config; true secret
 references are Gate 8. OAuth remains. Gate 2 auth adapters are otherwise
-complete — next autoloop target is Gate 3 transactions. Gate 3 continues with
-transactions, migrations and additional database families.
+complete. Gate 3 transactions are executable through open
+`TransactionManager` begin/commit/rollback (memory + SQLite; shared path with
+store skills). Gate 3 migrations are executable through open `MigrationRunner`
+up/down/status (memory + SQLite schema history). Gate 3 typed store queries are
+executable (filter/order/page → typed page; memory + SQLite + document; durable
+paths survive recreate). Gate 3 document/JSON-file store
+(`rust::axl::store::document`) shares save/find/query with memory and SQLite;
+cashflow switches providers by skill binding only. Gate 4 has started: `ui` pages
+bind flows, lower to Graph IR, emit `axl-ui/1` and render typed fields to HTML
+(`balance-ui.axl`). Next Gate 3 target: PostgreSQL/MySQL and document tx/migrate.
+Next Gate 4 target: routing shell, component registry and admin UI kit.

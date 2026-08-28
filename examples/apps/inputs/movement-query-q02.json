@@ -1,0 +1,8 @@
+{
+  "id": "movement-q02",
+  "kind": "expense",
+  "amount": 25000,
+  "category": "software",
+  "occurred_at": "2026-08-27T10:00:00Z",
+  "note": "Query fixture expense software"
+}

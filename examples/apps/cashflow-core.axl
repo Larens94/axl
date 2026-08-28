@@ -27,8 +27,25 @@ entity MovementView
 entity MovementBatch
   movements: List<Movement> required
 
+entity MovementPair
+  first: Movement required
+  second: Movement required
+
 entity MovementLookupBatch
   ids: List<uuid> required
+
+entity MovementQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity MovementPage
+  items: List<Movement> required
+  total: int required
+  limit: int required
+  offset: int required
 
 entity MovementPreviewRequest
   account: uuid required
@@ -43,6 +60,7 @@ entity ClientSessionRequest
 capacity MovementStore
   op save Movement -> Result<Movement>
   op find uuid -> Result<Movement> idempotent
+  op query MovementQuery -> Result<MovementPage> idempotent
 
 capacity HttpAuth
   op authorize text -> Result<bool> idempotent
@@ -81,6 +99,45 @@ skill DurableSqliteMovements provides MovementStore
   native rust axl::store::sqlite
   config path: text = "./build/cashflow-core.db"
   effect db.read
+  effect db.write
+
+skill DocumentMovements provides MovementStore
+  native rust axl::store::document
+  effect db.read
+  effect db.write
+
+skill DurableDocumentMovements provides MovementStore
+  native rust axl::store::document
+  config path: text = "./build/cashflow-core.document.json"
+  effect db.read
+  effect db.write
+
+capacity TransactionManager
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+
+skill MemoryTransactions provides TransactionManager
+  native rust axl::tx::memory
+  effect db.write
+
+skill DurableSqliteTransactions provides TransactionManager
+  native rust axl::tx::sqlite
+  config path: text = "./build/cashflow-core.db"
+  effect db.write
+
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
+
+skill MemoryMigrations provides MigrationRunner
+  native rust axl::migrate::memory
+  effect db.write
+
+skill DurableSqliteMigrations provides MigrationRunner
+  native rust axl::migrate::sqlite
+  config path: text = "./build/cashflow-core.db"
   effect db.write
 
 // Demo-only credential. Production secrets require the planned secret provider.
@@ -279,6 +336,12 @@ flow StoreAndLoadMovementSqlite Movement -> Result<Movement>
   call loaded = store.find(saved.id)?
   return loaded
 
+flow StoreAndLoadMovementDocument Movement -> Result<Movement>
+  in store: MovementStore = DocumentMovements
+  call saved = store.save(input)?
+  call loaded = store.find(saved.id)?
+  return loaded
+
 flow SaveDurableMovement Movement -> Result<Movement>
   in store: MovementStore = DurableSqliteMovements
   call saved = store.save(input)?
@@ -288,6 +351,102 @@ flow FindDurableMovement uuid -> Result<Movement>
   in store: MovementStore = DurableSqliteMovements
   call found = store.find(input)?
   return found
+
+flow SaveDurableDocumentMovement Movement -> Result<Movement>
+  in store: MovementStore = DurableDocumentMovements
+  call saved = store.save(input)?
+  return saved
+
+flow FindDurableDocumentMovement uuid -> Result<Movement>
+  in store: MovementStore = DurableDocumentMovements
+  call found = store.find(input)?
+  return found
+
+flow QueryDurableMovements MovementQuery -> Result<MovementPage>
+  in store: MovementStore = DurableSqliteMovements
+  call page = store.query(input)?
+  return page
+
+flow QueryMovements MovementQuery -> Result<MovementPage>
+  in store: MovementStore = MemoryMovements
+  call page = store.query(input)?
+  return page
+
+flow QueryDocumentMovements MovementQuery -> Result<MovementPage>
+  in store: MovementStore = DocumentMovements
+  call page = store.query(input)?
+  return page
+
+flow QueryDurableDocumentMovements MovementQuery -> Result<MovementPage>
+  in store: MovementStore = DurableDocumentMovements
+  call page = store.query(input)?
+  return page
+
+flow CommitTwoDurableMovements MovementPair -> Result<Movement>
+  in tx: TransactionManager = DurableSqliteTransactions
+  in store: MovementStore = DurableSqliteMovements
+  call tid = tx.begin("commit-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.commit(tid)?
+  return second
+
+flow RollbackTwoDurableMovements MovementPair -> Result<unit>
+  in tx: TransactionManager = DurableSqliteTransactions
+  in store: MovementStore = DurableSqliteMovements
+  call tid = tx.begin("rollback-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.rollback(tid)?
+  return done
+
+flow CommitTwoMovements MovementPair -> Result<Movement>
+  in tx: TransactionManager = MemoryTransactions
+  in store: MovementStore = MemoryMovements
+  call tid = tx.begin("commit-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.commit(tid)?
+  return second
+
+flow RollbackTwoMovements MovementPair -> Result<unit>
+  in tx: TransactionManager = MemoryTransactions
+  in store: MovementStore = MemoryMovements
+  call tid = tx.begin("rollback-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.rollback(tid)?
+  return done
+
+flow ApplyDurableMigration text -> Result<text>
+  in migrations: MigrationRunner = DurableSqliteMigrations
+  call version = migrations.up(input)?
+  return version
+
+flow RollbackDurableMigration text -> Result<text>
+  in migrations: MigrationRunner = DurableSqliteMigrations
+  call version = migrations.down(input)?
+  return version
+
+flow DurableMigrationStatus unit -> Result<text>
+  in migrations: MigrationRunner = DurableSqliteMigrations
+  call version = migrations.status(input)?
+  return version
+
+flow ApplyMigration text -> Result<text>
+  in migrations: MigrationRunner = MemoryMigrations
+  call version = migrations.up(input)?
+  return version
+
+flow RollbackMigration text -> Result<text>
+  in migrations: MigrationRunner = MemoryMigrations
+  call version = migrations.down(input)?
+  return version
+
+flow MigrationStatus unit -> Result<text>
+  in migrations: MigrationRunner = MemoryMigrations
+  call version = migrations.status(input)?
+  return version
 
 flow ValidateAndStoreMovement Movement -> Result<Movement>
   in store: MovementStore = MemoryMovements
@@ -463,6 +622,7 @@ api CashflowApi
   post /movement-first MovementLookupBatch -> Result<Movement> = FindFirstMovement
   post /movements/durable Movement -> Result<Movement> = SaveDurableMovement
   post /movement-by-id/durable uuid -> Result<Movement> = FindDurableMovement
+  post /movements/query MovementQuery -> Result<MovementPage> = QueryDurableMovements
   post /cache/balance CacheEntry -> Result<text> = CacheBalanceSnapshot
   post /cache/balance/get text -> Result<text> = LoadCachedBalance
   post /cache/balance/invalidate text -> Result<bool> = InvalidateCachedBalance

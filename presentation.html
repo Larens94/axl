@@ -253,10 +253,10 @@ instance CompactCustomerList of CustomerList
         <div class="eyebrow">Confine onesto</div>
         <h2>È un linguaggio sperimentale funzionante. Non ancora un generatore full-stack.</h2>
         <div class="grid two">
-          <article class="card"><h3 class="accent">Funziona oggi</h3><p>I flow trasformano dati, chiamano provider e sono esposti da route Axum dichiarate in AXL.</p></article>
-          <article class="card"><h3 class="violet">Prossimo gate</h3><p>Secret/JWT dietro capacity; Gate 3 data.</p></article>
+          <article class="card"><h3 class="accent">Funziona oggi</h3><p>I flow trasformano dati, chiamano provider, si compongono da più file `.axl` con `import` e sono esposti da route Axum dichiarate in AXL.</p></article>
+          <article class="card"><h3 class="violet">Prossimo gate</h3><p>Gate 3 PostgreSQL/MySQL e document tx/migrate; Gate 4 routing shell e admin kit; secret refs (Gate 8); OAuth opzionale.</p></article>
         </div>
-        <div class="callout">HTTP è eseguibile con binding body/path/query/header/cookie e middleware request/response. Eventi tipizzati, job durevoli/schedulati, Cache get/put/invalidate, rate-limit (429), CORS (Access-Control-* + OPTIONS) e osservabilità Logger/Metrics/Tracer (memory) sono provati. Un path SQLite dichiarato in AXL sopravvive al riavvio. Secret/JWT e UI runtime restano gate successivi.</div>
+        <div class="callout">HTTP è eseguibile con binding body/path/query/header/cookie e middleware request/response. Eventi tipizzati, job durevoli/schedulati, Cache get/put/invalidate, rate-limit (429), CORS (Access-Control-* + OPTIONS), osservabilità Logger/Metrics/Tracer (memory), auth bearer statico + JWT HS256 (demo config), transazioni begin/commit/rollback, migrazioni up/down/status e query tipizzate filter/order/page (memory + SQLite + document) sono provati. Gate 4 ha iniziato: <code>ui</code> / <code>page</code> nel grafo, manifest <code>axl-ui/1</code> e <code>render</code> HTML da flow (<code>balance-ui.axl</code>). Secret references vere (Gate 8), OAuth, routing shell e kit admin restano aperti.</div>
       </div>
     </section>
 
@@ -266,8 +266,8 @@ instance CompactCustomerList of CustomerList
         <h2>Gli esempi della presentazione sono test del compilatore.</h2>
         <div class="grid">
           <article class="card"><div class="metric">14</div><div class="metric-label">foundation block aperti</div></article>
-          <article class="card"><div class="metric">9</div><div class="metric-label">programmi validi nel round-trip</div></article>
-          <article class="card"><div class="metric">93</div><div class="metric-label">diagnostiche negative verificate</div></article>
+          <article class="card"><div class="metric">10</div><div class="metric-label">programmi validi nel round-trip</div></article>
+          <article class="card"><div class="metric">97</div><div class="metric-label">diagnostiche negative verificate</div></article>
         </div>
         <p class="lead">Gira <a href="mondo.html">il mondo 3D</a>, guarda <a href="film.html">il film del piano</a>, apri <a href="docs/index.html">docs/index.html</a>, prova <a href="examples/apps/cashflow-core.axl">cashflow-core.axl</a> oppure esegui <code>cargo test --workspace</code>.</p>
       </div>

@@ -14,6 +14,7 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
     let lines = source_lines(source, &mut diagnostics);
     let mut version = None;
     let mut app_name = None;
+    let mut imports = Vec::new();
     let mut declarations = Vec::new();
     let mut cursor = 0;
 
@@ -66,6 +67,8 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             if !body.is_empty() {
                 diagnostics.push(unexpected_body(line, "app header"));
             }
+        } else if line.text.starts_with("import ") {
+            parse_import(line, body, &mut imports, &mut diagnostics);
         } else if line.text.starts_with("enum ") {
             parse_enum(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("entity ") {
@@ -88,6 +91,8 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             parse_job(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("api ") {
             parse_api(line, body, &mut declarations, &mut diagnostics);
+        } else if line.text.starts_with("ui ") {
+            parse_ui(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("agent ") {
             parse_agent(line, body, &mut declarations, &mut diagnostics);
         } else {
@@ -134,11 +139,64 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
         Ok(Program {
             version: version.unwrap_or(4),
             name: app_name.unwrap_or_default(),
+            imports,
             declarations,
         })
     } else {
         Err(diagnostics)
     }
+}
+
+fn parse_import(
+    header: &SourceLine,
+    body: &[SourceLine],
+    imports: &mut Vec<Import>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if !body.is_empty() {
+        diagnostics.push(unexpected_body(header, "import"));
+    }
+    let rest = header.text.strip_prefix("import ").unwrap().trim();
+    match parse_quoted_path(rest) {
+        Some(path) => imports.push(Import {
+            path,
+            span: span(header),
+        }),
+        None => diagnostics.push(
+            Diagnostic::error(
+                "AXL-P930",
+                "parse",
+                "import path must be a quoted relative path",
+                span(header),
+            )
+            .expected(r#""./module.axl""#, rest),
+        ),
+    }
+}
+
+fn parse_quoted_path(source: &str) -> Option<String> {
+    let source = source.trim();
+    let quote = source.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let mut value = String::new();
+    let mut chars = source.chars().peekable();
+    chars.next();
+    while let Some(character) = chars.next() {
+        if character == quote {
+            if chars.peek().is_some() {
+                return None;
+            }
+            return Some(value);
+        }
+        if character == '\\' {
+            value.push(chars.next()?);
+        } else {
+            value.push(character);
+        }
+    }
+    None
 }
 
 fn parse_enum(
@@ -2397,6 +2455,85 @@ fn parse_api(
         middlewares,
         auth,
         routes,
+        span: span(header),
+    }));
+}
+
+fn parse_ui(
+    header: &SourceLine,
+    body: &[SourceLine],
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let name = header.text["ui ".len()..].trim();
+    if name.is_empty() {
+        diagnostics.push(missing_name(header, "ui"));
+        return;
+    }
+    let mut pages = Vec::new();
+    for line in body {
+        if !line.text.starts_with("page ") {
+            diagnostics.push(Diagnostic::error(
+                "AXL-P950",
+                "parse",
+                format!("unknown ui declaration '{}'", line.text),
+                span(line),
+            ));
+            continue;
+        }
+        let remainder = line.text["page ".len()..].trim();
+        let Some((signature, flow)) = remainder.rsplit_once('=') else {
+            diagnostics.push(
+                Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
+                    .expected("page /path Input -> Output = Flow", &line.text),
+            );
+            continue;
+        };
+        let Some((request, output)) = signature.split_once("->") else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P952",
+                    "parse",
+                    "a UI page requires an output type",
+                    span(line),
+                )
+                .expected("page /path Input -> Output = Flow", &line.text),
+            );
+            continue;
+        };
+        let mut request = request.split_whitespace();
+        let (Some(path), Some(input), None) = (request.next(), request.next(), request.next())
+        else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P953",
+                    "parse",
+                    "a UI page requires one path and input type",
+                    span(line),
+                )
+                .expected("page /path Input -> Output = Flow", &line.text),
+            );
+            continue;
+        };
+        let flow = flow.trim();
+        if flow.is_empty() {
+            diagnostics.push(
+                Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
+                    .expected("page /path Input -> Output = Flow", &line.text),
+            );
+            continue;
+        }
+        pages.push(UiPage {
+            path: path.into(),
+            input: input.into(),
+            output: output.trim().into(),
+            flow: flow.into(),
+            span: span(line),
+        });
+    }
+    declarations.push(Declaration::Ui(Ui {
+        name: name.into(),
+        pages,
         span: span(header),
     }));
 }

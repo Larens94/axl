@@ -7,13 +7,23 @@ Operational notes for the experimentation phase. Pairs with `AGENTS.md` and
 
 Gate 2 remainder → Gate 3 data → Gate 4 UI → Gates 5–9.
 
-Immediate next executable slice: **secrets / JWT** (WP-02 Gate 2 remainder), then Gate 3 data.
+Immediate next executable slice: **Gate 3 PostgreSQL/MySQL or document tx/migrate**
+(WP-03). Document/JSON-file store (`rust::axl::store::document`) shares
+save/find/query with memory and SQLite. Gate 3 typed queries, transactions and
+migrations are executable. Gate 2 auth adapters (static bearer + HS256 JWT) are
+complete; true secret references are Gate 8; OAuth remains optional WP-02
+remainder.
 
 ## Autoloop
 
-A local session loop wakes about every **5 minutes** to advance the next failing
-example → open primitive → proofs → docs. Prefer one ABI-touching package at a
-time (serial on `ast`/`parser`/`analyzer`/`packed`).
+Two loops may run locally:
+
+1. **Gate autoloop** — failing example → open primitive → proofs (see checklist below).
+2. **Judge autoloop** — steward improves language → judge agent builds libro-cassa in AXL →
+   steward verifies (`scripts/verify-libro-cassa.sh`). See `docs/agent-judge-loop.md`.
+
+A local session loop wakes about every **5 minutes** to advance the active loop.
+Prefer one ABI-touching package at a time (serial on `ast`/`parser`/`analyzer`/`packed`).
 
 ## Agent roster
 
@@ -40,3 +50,8 @@ propose syntax; the steward assigns opcodes and diagnostic ranges.
 4. Negative diagnostics + IR round-trip + e2e proof.
 5. Update SPEC, status, testing, presentation, film/mondo.
 6. Leave an ABI note for WP-01 when kinds/opcodes change.
+
+Protocol steps **1–5** are satisfied for the agent authoring base: failing
+examples, open primitives, typed capacities, stable `axl-check/1` diagnostics
+(parse/analyze/import/UI) and IR round-trip proofs through
+`documented_examples.rs`.

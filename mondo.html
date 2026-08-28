@@ -458,7 +458,7 @@
         statusLabel: "Già fatto",
         title: "La lingua dei mattoncini",
         kid: "Qui scriviamo le regole del gioco: nomi, tipi, passi. Come le istruzioni di un modello Lego.",
-        truth: "Parser, tipi, Graph IR e Packed IR sono eseguibili. I test compilano gli esempi documentati.",
+        truth: "Parser, tipi, Graph IR, Packed IR e import relativi tra file `.axl` sono eseguibili. I test compilano gli esempi documentati.",
         angle: 0,
         radius: 250,
         y: -20
@@ -470,7 +470,7 @@
         statusLabel: "In cantiere",
         title: "Il bancone dei messaggi",
         kid: "Le richieste arrivano, AXL le controlla e chiama i flow. Auth e middleware sono guardie al cancello.",
-        truth: "Axum, body/path/query/header/cookie, bearer auth, middleware request/response, rate-limit (429), CORS (Access-Control-* + OPTIONS), eventi, job (enqueue/tick), Cache get/put/invalidate, Logger/Metrics/Tracer e SQLite durevole funzionano. Secret/JWT no.",
+        truth: "Axum, body/path/query/header/cookie, bearer auth statico + JWT HS256 (demo config), middleware request/response, rate-limit (429), CORS (Access-Control-* + OPTIONS), eventi, job (enqueue/tick), Cache get/put/invalidate, Logger/Metrics/Tracer, SQLite durevole, document/JSON-file, transazioni, migrazioni e query filter/order/page funzionano. Secret references vere (Gate 8) e OAuth no.",
         angle: 45,
         radius: 250,
         y: 30
@@ -481,8 +481,8 @@
         status: "now",
         statusLabel: "In cantiere",
         title: "I cassetti della memoria",
-        kid: "I dati vivono dietro una porta uguale. Puoi cambiare il cassetto (memoria o SQLite) senza riscrivere la storia.",
-        truth: "Memory e SQLite condividono la stessa capacity. Transazioni, migrazioni e altri database arrivano dopo.",
+        kid: "I dati vivono dietro una porta uguale. Puoi cambiare il cassetto (memoria, SQLite o document/JSON) senza riscrivere la storia.",
+        truth: "Memory, SQLite e document condividono la stessa capacity. Transazioni e migrazioni su memory/SQLite; query filter/order/page su tutte e tre. PostgreSQL/MySQL e document tx/migrate arrivano dopo.",
         angle: 90,
         radius: 250,
         y: -10
@@ -490,11 +490,11 @@
       {
         id: "frontend",
         label: "Schermo",
-        status: "next",
-        statusLabel: "Da fare",
+        status: "partial",
+        statusLabel: "Iniziato",
         title: "La faccia che tocchi",
         kid: "Bottoni, tabelle e pagine devono nascere dal disegno AXL, non da una casa ricostruita a mano ogni volta.",
-        truth: "Esistono contratti React e slot. Il renderer UI eseguibile (Gate 4) non c’è ancora.",
+        truth: "Esistono contratti React e slot. Gate 4 ha iniziato: ui/page nel grafo, manifest axl-ui/1 e render HTML da flow (balance-ui.axl). Routing shell e kit admin restano aperti.",
         angle: 135,
         radius: 250,
         y: 40

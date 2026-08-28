@@ -1,0 +1,8 @@
+axl 4
+app InvalidFlowMigrations
+capacity BrokenMigrate
+  op up text -> Result<text>
+  op status unit -> Result<text>
+skill BrokenMigrations provides BrokenMigrate
+  native rust axl::migrate::memory
+  effect db.write

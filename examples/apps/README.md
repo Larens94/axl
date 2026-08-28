@@ -1,5 +1,9 @@
 # Cashflow executable core
 
+`balance-ui.axl` is the minimal Gate 4 slice: one `ui` page bound to
+`CalculateBalance`, lowered to Graph IR, emitted as `axl-ui/1` and rendered to
+HTML through `axl-compiler render`.
+
 `cashflow-core.axl` is the first AXL example that executes application behavior
 instead of stopping at contracts. It implements eight deliberately narrow flows:
 
@@ -8,8 +12,10 @@ instead of stopping at contracts. It implements eight deliberately narrow flows:
 - `BuildMovementView` constructs a typed record with conditional and exhaustive match values;
 - `CalculateLedgerBalance` folds a list of movements into one balance;
 - `StoreAndLoadMovement` calls a generic in-memory store provider;
-- `StoreAndLoadMovementSqlite` runs the same calls through SQLite.
+- `StoreAndLoadMovementSqlite` runs the same calls through SQLite;
+- `StoreAndLoadMovementDocument` runs the same calls through the document/JSON store.
 - `SaveDurableMovement` and `FindDurableMovement` reopen a configured SQLite file.
+- `SaveDurableDocumentMovement` and `FindDurableDocumentMovement` reopen a configured JSON file.
 - `ValidateAndStoreMovement` composes validation and storage flows.
 - `IncomeAmounts` filters and maps the movement collection.
 
@@ -52,6 +58,10 @@ cargo run -p axl-compiler -- \
   examples/apps/inputs/movement-valid.json
 
 cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl StoreAndLoadMovementDocument \
+  examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl ValidateAndStoreMovement \
   examples/apps/inputs/movement-valid.json
 
@@ -61,6 +71,14 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl FindDurableMovement \
+  examples/apps/inputs/movement-id.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl SaveDurableDocumentMovement \
+  examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl FindDurableDocumentMovement \
   examples/apps/inputs/movement-id.json
 ```
 
@@ -105,8 +123,14 @@ process-local. The durable routes use the path declared on
 
 `POST /secure/balance` belongs to a separate guarded API. It requires
 `Authorization: Bearer axl-cashflow-demo`; missing and invalid credentials return
-401 and 403. The credential is intentionally visible test data until AXL gains
-secret references and production auth adapters.
+401 and 403. The credential is intentionally visible test data.
+
+`POST /jwt/balance` uses the replaceable `CashflowDemoJwt` skill
+(`axl::auth::jwt`). It validates an HS256 JWT with claims `sub` and
+`iss=axl-cashflow` signed with demo secret `axl-cashflow-demo-jwt`. Missing
+bearer → 401; bad token → 403; valid JWT → `80000`. Demo `secret`/`issuer` are
+plaintext skill config (same honesty rule as the static bearer). True secret
+references are Gate 8; OAuth is not implemented.
 
 `POST /guarded/balance` uses ordered request middleware. It requires
 `x-axl-client: cashflow-demo` and returns 403 when the header is missing or
@@ -152,7 +176,66 @@ structured log lines are listable; a named counter reaches `2`; a finished span
 name is listable. HTTP routes under `/observability/*` share the process runtime.
 No application-specific Rust logging is required.
 
-This is not yet the complete cashflow application. There are no transaction or
-migration primitives, general store queries, state mutation or rendered UI.
+`CommitTwoDurableMovements` / `RollbackTwoDurableMovements` use open
+`TransactionManager` begin/commit/rollback with the same SQLite path as
+`DurableSqliteMovements`. Commit survives a new runtime; rollback leaves both
+ids `not_found`. Memory skills prove the same contract in-process.
+
+`ApplyDurableMigration` / `RollbackDurableMigration` / `DurableMigrationStatus`
+use open `MigrationRunner` up/down/status with the same SQLite path. Applying
+`v1` then `v2` advances history; status survives runtime recreate; rolling back
+`v2` returns head to `v1`. Memory skills prove the same contract in-process.
+
+`QueryDurableMovements` / `QueryMovements` use store `query` with a typed
+`MovementQuery` (filter map, order_by, direction, limit, offset) returning
+`MovementPage`. Save N movements, filter by kind/category, order and page; the
+durable SQLite path survives runtime recreate. Memory skills prove the same
+contract in-process.
+
+This is not yet the complete cashflow application. There are no
+multi-database providers, state mutation or rendered UI.
 Those missing capabilities must be added to AXL rather than implemented inside
 this application with handwritten Rust or React.
+
+## Libro cassa (`ledger.axl`)
+
+Small income/expense book: domain module (`ledger-domain.axl`), HTTP API and UI.
+Memory and durable SQLite routes share the same `ArchivioVoci` capacity.
+
+`PaginaVociDemoUnit` seeds two demo voci with inline `make` (typed text→uuid,
+int→money, text→datetime) and queries them in one `unit`-input flow — no JSON
+pair payload:
+
+```sh
+cargo run -p axl-compiler -- \
+  render examples/apps/ledger.axl /voci/demo examples/apps/inputs/unit.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/ledger.axl PaginaVociDemoUnit examples/apps/inputs/unit.json
+
+cargo run -p axl-compiler -- \
+  render examples/apps/ledger.axl /saldo examples/apps/inputs/ledger-saldo.json
+
+./scripts/verify-libro-cassa.sh
+```
+
+The JSON pair variant (`PaginaVociDemo` on `/voci`) remains for comparison:
+
+```sh
+cargo run -p axl-compiler -- \
+  render examples/apps/ledger.axl /voci examples/apps/inputs/ledger-voci-demo.json
+```
+
+Expected results:
+
+- `/voci/demo` render includes a `<table>` with `voce-001` (entrata 150000) and
+  `voce-002` (uscita 42000), ordered by `registrato_il desc`, with `null` unit
+  input only;
+- `PaginaVociDemoUnit` eval returns `{ "ok": { "total": 2, "items": [...] } }`;
+- `/saldo` render shows `108000`;
+- verify script passes check, eval, render and UI manifest gates.
+
+Durable SQLite routes (`/voci/durable`, `/voci/durable/query`) persist across
+process restarts via `./build/libro-cassa.db`. The UI demo uses in-memory
+`MemoriaVoci` only; each eval/render starts a fresh store unless the seed flow
+registers voci in the same evaluation (as `PaginaVociDemo` does).

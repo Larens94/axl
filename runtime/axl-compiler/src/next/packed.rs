@@ -318,6 +318,7 @@ fn reconstruct_id(
                 | "event"
                 | "job"
                 | "api"
+                | "ui"
                 | "agent"
         ) =>
         {
@@ -375,6 +376,12 @@ fn reconstruct_id(
                 PackedError(format!("route node '{name}' is missing order metadata"))
             })?;
             Ok(format!("{parent}.route.{order}"))
+        }
+        Some(parent) if kind == "page" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("page node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.page.{order}"))
         }
         Some(parent)
             if matches!(
@@ -461,6 +468,8 @@ fn node_kind_code(kind: &str) -> &str {
         "emit" => "51",
         "job" => "52",
         "enqueue" => "53",
+        "ui" => "54",
+        "page" => "55",
         other => other,
     }
 }
@@ -521,6 +530,8 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "51" => "emit",
         "52" => "job",
         "53" => "enqueue",
+        "54" => "ui",
+        "55" => "page",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

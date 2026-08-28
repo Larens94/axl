@@ -1,0 +1,20 @@
+{
+  "voci": [
+    {
+      "id": "voce-001",
+      "importo": 150000,
+      "tipo": "entrata",
+      "conto": "cassa",
+      "nota": "parcella agosto",
+      "registrato_il": "2026-08-28T08:00:00Z"
+    },
+    {
+      "id": "voce-002",
+      "importo": 42000,
+      "tipo": "uscita",
+      "conto": "cassa",
+      "nota": "cancelleria",
+      "registrato_il": "2026-08-28T09:30:00Z"
+    }
+  ]
+}

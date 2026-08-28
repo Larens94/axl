@@ -10,8 +10,8 @@ fn main() -> Result<()> {
     }
 
     match args[1].as_str() {
-        "check" | "ir" | "pack" | "fmt" | "blocks" | "eval" | "tick" | "serve" | "experiment"
-        | "unpack" => run(&args[1..]),
+        "check" | "diagnose" | "ir" | "pack" | "fmt" | "blocks" | "eval" | "tick" | "serve"
+        | "ui" | "render" | "experiment" | "unpack" => run(&args[1..]),
         _ => {
             usage();
             bail!("invalid command")
@@ -19,12 +19,31 @@ fn main() -> Result<()> {
     }
 }
 
+fn positional_args(args: &[String]) -> Vec<&String> {
+    args.iter()
+        .skip(1)
+        .filter(|argument| !argument.starts_with('-'))
+        .collect()
+}
+
+fn read_json_input(token: &str) -> Result<serde_json::Value> {
+    if token == "null" {
+        return Ok(serde_json::Value::Null);
+    }
+    let input = std::fs::read_to_string(token)
+        .with_context(|| format!("cannot read JSON input '{token}'"))?;
+    serde_json::from_str(&input).with_context(|| format!("invalid JSON input '{token}'"))
+}
+
 fn run(args: &[String]) -> Result<()> {
     let command = args.first().map(String::as_str).unwrap_or_default();
-    let Some(input) = args.get(1) else {
+    let json_output = args.iter().any(|argument| argument == "--json");
+    let positional = positional_args(args);
+    let Some(input) = positional.first() else {
         usage();
         bail!("{command} requires an input file")
     };
+    let input_path = Path::new(input.as_str());
     if command == "unpack" {
         let packed = std::fs::read_to_string(input)
             .with_context(|| format!("cannot read packed IR '{input}'"))?;
@@ -33,10 +52,20 @@ fn run(args: &[String]) -> Result<()> {
         return Ok(());
     }
 
-    let compilation = match next::compile_file(Path::new(input))? {
+    let compilation = match next::compile_file(input_path)? {
         Ok(compilation) => compilation,
         Err(diagnostics) => {
-            if args.iter().any(|argument| argument == "--json") {
+            if command == "check" || command == "diagnose" {
+                if json_output {
+                    let report =
+                        next::diagnostic::CheckReport::failure(Some(input_path), diagnostics);
+                    println!("{}", serde_json::to_string_pretty(&report)?);
+                } else {
+                    for diagnostic in diagnostics {
+                        eprintln!("{}", diagnostic.human());
+                    }
+                }
+            } else if json_output {
                 eprintln!("{}", serde_json::to_string_pretty(&diagnostics)?);
             } else {
                 for diagnostic in diagnostics {
@@ -48,18 +77,16 @@ fn run(args: &[String]) -> Result<()> {
     };
 
     match command {
-        "check" => {
-            if args.iter().any(|argument| argument == "--json") {
-                println!(
-                    "{}",
-                    serde_json::json!({
-                        "ok": true,
-                        "schema": compilation.graph.schema,
-                        "app": compilation.graph.app,
-                        "nodes": compilation.graph.nodes.len(),
-                        "edges": compilation.graph.edges.len(),
-                    })
+        "check" | "diagnose" => {
+            if json_output {
+                let report = next::diagnostic::CheckReport::success(
+                    Some(input_path),
+                    &compilation.graph.app,
+                    &compilation.graph.schema,
+                    compilation.graph.nodes.len(),
+                    compilation.graph.edges.len(),
                 );
+                println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 println!(
                     "AXL 4 OK: {} ({} nodes, {} edges)",
@@ -82,17 +109,18 @@ fn run(args: &[String]) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&next::targets::open_block_manifest(&compilation.graph))?
         ),
+        "ui" => println!(
+            "{}",
+            serde_json::to_string_pretty(&next::ui::ui_manifest(&compilation.graph))?
+        ),
         "eval" => {
-            let flow = args
-                .get(2)
+            let flow = positional
+                .get(1)
                 .ok_or_else(|| anyhow::anyhow!("eval requires a flow name"))?;
-            let input_path = args
-                .get(3)
-                .ok_or_else(|| anyhow::anyhow!("eval requires a JSON input file"))?;
-            let input = std::fs::read_to_string(input_path)
-                .with_context(|| format!("cannot read eval input '{input_path}'"))?;
-            let input: serde_json::Value = serde_json::from_str(&input)
-                .with_context(|| format!("invalid JSON input '{input_path}'"))?;
+            let input_path = positional
+                .get(2)
+                .ok_or_else(|| anyhow::anyhow!("eval requires a JSON input file or null"))?;
+            let input = read_json_input(input_path)?;
             let result = next::runtime::evaluate_flow(&compilation.graph, flow, input)?;
             println!("{}", serde_json::to_string_pretty(&result)?);
         }
@@ -108,14 +136,42 @@ fn run(args: &[String]) -> Result<()> {
             );
         }
         "serve" => {
-            let address = args.get(2).map(String::as_str).unwrap_or("127.0.0.1:8080");
+            let address = positional
+                .get(1)
+                .map(|address| address.as_str())
+                .unwrap_or("127.0.0.1:8080");
             let runtime = tokio::runtime::Builder::new_multi_thread()
                 .enable_all()
                 .build()?;
             runtime.block_on(next::http::serve(compilation.graph, address))?;
         }
+        "render" => {
+            let page = positional
+                .get(1)
+                .ok_or_else(|| anyhow::anyhow!("render requires a page path"))?;
+            let input_path = positional
+                .get(2)
+                .ok_or_else(|| anyhow::anyhow!("render requires a JSON input file or null"))?;
+            let input = read_json_input(input_path)?;
+            let rendered = next::ui::render_page(&compilation.graph, page, input)
+                .map_err(|error| anyhow::anyhow!(error))?;
+            if args.iter().any(|argument| argument == "--json") {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": true,
+                        "path": rendered.path,
+                        "flow": rendered.flow,
+                        "output": rendered.output_type,
+                        "data": rendered.data,
+                    })
+                );
+            } else {
+                print!("{}", rendered.html);
+            }
+        }
         "experiment" => {
-            let Some(output) = args.get(2) else {
+            let Some(output) = positional.get(1) else {
                 bail!("experiment requires an output directory")
             };
             let output = Path::new(output);
@@ -136,6 +192,6 @@ fn run(args: &[String]) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "Usage:\n  axl-compiler check <input.axl> [--json]\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler eval <input.axl> <flow> <input.json>\n  axl-compiler tick <input.axl>\n  axl-compiler serve <input.axl> [address]\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>"
+        "Usage:\n  axl-compiler check|diagnose <input.axl> [--json]\n  axl-compiler check|diagnose [--json] <input.axl>\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler ui <input.axl>\n  axl-compiler eval <input.axl> <flow> <input.json|null>\n  axl-compiler render <input.axl> <page-path> <input.json|null> [--json]\n  axl-compiler tick <input.axl>\n  axl-compiler serve <input.axl> [address]\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>\n\nFlags such as --json may appear before or after positional arguments."
     );
 }

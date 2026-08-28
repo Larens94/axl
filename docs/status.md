@@ -6,23 +6,24 @@ This table is the short source of truth for the current experiment.
 |---|---|---|
 | Source | multiline AXL, typed list literals, transforms, flows, enum match, `parallel`, idempotent `attempt` and `race` | mutable statement blocks intentionally deferred |
 | Types | built-ins, entities, enums, capacities, recursive generics | tuples and record operation parameters |
-| Blocks | open protocol, typed instances/overrides and fourteen foundation contracts | package imports, cross-package overlays and registry |
+| Blocks | open protocol, typed instances/overrides, foundation contracts (incl. transactions and migrations), relative file imports | cross-package overlays, package registry and lockfile |
 | Contracts | `requires`, `ensures`, `invariant` stored in IR | expression type checking and execution |
-| Safety | diagnostics, repair candidates, safety levels | automatic application of risky repairs |
+| Safety | diagnostics (`axl-check/1` JSON envelope, file paths, repair candidates, safety levels) | automatic application of risky repairs |
 | Policies | effects and capabilities validated and stored | runtime budgets and enforcement |
 | Agents | belief/goal/plan graph model | planning and execution runtime |
-| Runtime | records, transforms, `parallel`, `race`, retry/timeout, flow/capacity calls, typed `emit`/subscriptions, jobs (`enqueue`/`tick`), `Result` propagation, forkable configured provider ABI and HTTP | state and UI |
-| Storage | generic memory and SQLite providers; typed durable SQLite paths | transactions, migrations, queries and other databases |
+| Runtime | records, transforms, `parallel`, `race`, retry/timeout, flow/capacity calls, typed `emit`/subscriptions, jobs (`enqueue`/`tick`), `Result` propagation, forkable configured provider ABI and HTTP | state; full Gate 4 UI kit |
+| Storage | generic memory, SQLite and document/JSON-file providers behind the same capacities; typed durable paths; capacity-backed transactions (begin/commit/rollback); capacity-backed migrations (`MigrationRunner` up/down/status + schema history); typed store `query` (filter/order/page → page entity) | PostgreSQL/MySQL; document tx/migrate |
 | Backend | scalar and composite body/path/query/header/cookie binding, Axum, typed bearer auth (static + HS256 JWT skills), ordered request and response middleware, capacity-backed rate-limit (`allow` → 429), capacity-backed CORS (`Access-Control-*` + OPTIONS preflight), typed events/subscriptions, capacity-backed jobs, Cache get/put/invalidate (memory + durable SQLite), Logger/Metrics/Tracer observability (memory) and durable SQLite | secret references (Gate 8) and OAuth |
-| Targets | Rust/React/SQL contracts plus agent, block, flow, HTTP and provider manifests | executable full-stack application generation |
+| Targets | Rust/React/SQL contracts plus agent, block, flow, HTTP, UI and provider manifests | executable full-stack application generation |
 | IR | canonical JSON graph, packed opcode round-trip | stable compatibility guarantee |
 
 ## Evidence
 
 - The compiler unit and integration tests validate parsing, semantics,
-  diagnostics, IR determinism, packing and target adapters.
-- Every sample in `examples/blocks`, the CRM graph and the executable cashflow
-  core is compiled by
+  diagnostics (`axl-check/1` envelope with stable codes and spans), IR
+  determinism, packing and target adapters.
+- Every sample in `examples/blocks`, the CRM graph, the executable cashflow
+  core and `examples/apps/import-demo.axl` (multi-file import) is compiled by
   `documented_examples.rs`.
 - `cargo clippy --workspace --all-targets -- -D warnings` is the lint gate.
 
@@ -41,4 +42,19 @@ demo route. Capacity-backed CORS middleware proves `Access-Control-Allow-Origin`
 on `/cors/balance` and OPTIONS preflight 204. Capacity-backed HS256 JWT auth
 (`axl::auth::jwt`) proves 401/403/200 on `/jwt/balance` with demo `secret`/
 `issuer` config. True secret references (no plaintext in IR) remain Gate 8;
-OAuth remains open. Gate 2 auth-adapter slice is otherwise complete.
+OAuth remains open. Gate 2 auth-adapter slice is otherwise complete. Gate 3
+transactions are executable: `TransactionManager` begin/commit/rollback with
+memory and SQLite skills; SQLite commit survives runtime recreate and rollback
+hides both writes. Gate 3 migrations are executable: `MigrationRunner`
+up/down/status with memory and SQLite skills; SQLite history and version marker
+tables survive runtime recreate; `down` rolls back one head version. Gate 3 typed
+queries are executable: store `query` with filter/order/page over memory and
+SQLite; durable SQLite pages survive runtime recreate. Gate 3 document/JSON-file
+store is executable: the same `MovementStore` save/find/query contract runs
+through `rust::axl::store::document` with durable `config path`; cashflow and
+conformance tests switch Memory, Sqlite and Document by skill binding only.
+Next Gate 3 target: PostgreSQL/MySQL and document tx/migrate behind the same
+capacities. Gate 4 has started: `ui` / `page` nodes lower to Graph IR, emit
+`axl-ui/1`, and `render` evaluates a bound flow into HTML that displays typed
+fields (`examples/apps/balance-ui.axl`). Routing shell, component registry,
+forms, tables and responsive admin UI remain open.

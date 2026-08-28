@@ -1,0 +1,14 @@
+// Minimal Gate 4 slice: one UI page bound to a flow.
+axl 4
+app BalanceUI
+
+entity BalanceInput
+  income: money required
+  expense: money required
+
+flow CalculateBalance BalanceInput -> money
+  let balance = input.income - input.expense
+  return balance
+
+ui BalanceScreen
+  page /balance BalanceInput -> money = CalculateBalance

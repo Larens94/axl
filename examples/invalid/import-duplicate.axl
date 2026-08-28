@@ -1,0 +1,8 @@
+// Expected diagnostic: AXL-N002.
+axl 4
+app DuplicateImport
+import "../modules/math-lib.axl"
+
+entity BalanceInput
+  income: money required
+  expense: money required

@@ -53,23 +53,56 @@ Flow Runtime 2 recognizes these implementation identifiers:
 ```text
 rust::axl::store::memory
 rust::axl::store::sqlite
+rust::axl::store::document
 ```
 
-Both implement generic `save`, `find`, `delete` and `list` operation names.
-Saved records require a string `id`. Storage is namespaced by provider skill.
-SQLite is in-memory when the skill has no `path`. A typed path makes it durable:
+All three implement generic `save`, `find`, `delete`, `list` and `query` operation
+names. Saved records require a string `id`. Storage is namespaced by provider
+skill. `query` accepts a single object with optional `filter`
+(`Map<text,text>` or JSON object text), `order_by`, `direction` (`asc`/`desc`),
+`limit` and `offset`, and returns `{ items, total, limit, offset }`. SQLite and
+document stores are in-memory when the skill has no `path`. A typed path makes
+them durable (SQLite database file or JSON object file):
 
 ```axl
 skill DurableMovements provides MovementStore
   native rust axl::store::sqlite
   config path: text = "./build/movements.db"
+
+skill DurableDocumentMovements provides MovementStore
+  native rust axl::store::document
+  config path: text = "./build/movements.document.json"
 ```
 
-Connections are selected lazily from AXL configuration. Concurrent forks share
+Connections/files are selected lazily from AXL configuration. Concurrent forks share
 the connection registry, while two independent runtimes reopening the same path
 observe the same records. The generated `axl-provider/1` manifest exposes the
-configuration for external adapters. Transactions and migrations are not yet
-language primitives.
+configuration for external adapters.
+
+Transaction adapters share that path model:
+
+```text
+rust::axl::tx::memory
+rust::axl::tx::sqlite
+```
+
+They implement `begin`, `commit` and `rollback`. SQLite store writes join an
+open transaction when the store skill uses the same `path` config. Memory
+transactions snapshot all in-process store maps and support nested savepoints.
+
+Migration adapters share that path model:
+
+```text
+rust::axl::migrate::memory
+rust::axl::migrate::sqlite
+```
+
+They implement `up`, `down` and `status`. SQLite skills persist ordered rows in
+`axl_schema_history` and create/drop `axl_schema_<version>` marker tables.
+Memory skills keep ordered version lists in-process. Typed store `query`
+(filter/order/page) is executable on the same memory and SQLite store adapters.
+Additional database families and declared migration SQL scripts remain later
+Gate 3 work.
 
 The built-in `rust::axl::auth::bearer` adapter implements an idempotent
 `authorize text -> Result<bool>` capacity using a typed `token` config. The

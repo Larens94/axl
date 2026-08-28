@@ -33,6 +33,30 @@ app SalesCRM
 
 Both declarations are required. The compiler rejects other language versions.
 
+### File import
+
+Multi-file composition merges declarations from other AXL modules into one
+compilation unit. Imports are resolved relative to the importing source file.
+
+```axl
+axl 4
+app ImportDemo
+import "../modules/math-lib.axl"
+```
+
+Rules:
+
+- import path must be a quoted relative path (`"./lib.axl"` or `"../modules/lib.axl"`);
+- imported modules are ordinary AXL files with their own `axl`/`app` headers;
+- imported declarations merge before local declarations in import order;
+- duplicate declaration names across merged modules are rejected (`AXL-N002`);
+- missing paths report `AXL-P931`; circular imports report `AXL-P932`;
+- `compile_source` without a base file rejects programs that contain imports
+  (`AXL-P933`); use `compile_file` or `compile_source_at`.
+
+Imported modules do not yet carry package names, semantic versions, overlays or
+registry metadata. Those remain Gate 8.
+
 ### Entity
 
 ```axl
@@ -245,11 +269,13 @@ compiler checks every expression, call argument and return type.
 The public Rust `ProviderRuntime` ABI receives provider, capacity,
 implementation, typed configuration, operation and JSON input. The built-in experiment implements
 generic `save`, `find`, `delete` and `list` operations for
-`rust::axl::store::memory` and `rust::axl::store::sqlite`. They are not tied to
+`rust::axl::store::memory`, `rust::axl::store::sqlite` and
+`rust::axl::store::document`. They are not tied to
 `Movement` or to the cashflow application. SQLite uses an in-memory connection
 when no path is configured and opens a durable file when the skill declares a
-`path` config. Independent runtimes configured with the same file observe the
-same records.
+`path` config. Document skills use the same path model: process-local JSON when
+unconfigured, a durable JSON object file when `path` is set. Independent
+runtimes configured with the same file observe the same records.
 
 Flows compose other flows with the same explicit `Result` propagation:
 
@@ -660,6 +686,115 @@ shared HTTP runtimes. No new Graph IR opcodes: observability uses ordinary
 capacity calls. Production exporters remain replaceable skills behind the same
 ports.
 
+### Transactions
+
+Applications coordinate multi-write durability through an open
+`TransactionManager` capacity. Store skills keep their existing `save`/`find`
+contract; SQLite transactions join when the transaction skill and store skill
+share the same configured path. Memory transactions snapshot provider state and
+support nested begin/commit/rollback.
+
+```axl
+capacity TransactionManager
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+
+skill DurableSqliteTransactions provides TransactionManager
+  native rust axl::tx::sqlite
+  config path: text = "./build/cashflow-core.db"
+  effect db.write
+
+flow CommitTwoDurableMovements MovementPair -> Result<Movement>
+  in tx: TransactionManager = DurableSqliteTransactions
+  in store: MovementStore = DurableSqliteMovements
+  call tid = tx.begin("commit-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.commit(tid)?
+  return second
+```
+
+`begin` returns the transaction id (the label argument). `commit` makes writes
+visible to a new runtime on the same SQLite path. `rollback` discards writes so
+subsequent `find` calls return `not_found`. Skills bound to
+`rust::axl::tx::memory` or `rust::axl::tx::sqlite` must expose the begin/commit/
+rollback contract (`AXL-D901`). No new Graph IR opcodes: transactions use
+ordinary capacity calls. A dedicated `transaction { ... }` statement block is
+not required for this slice.
+
+### Migrations and schema history
+
+Applications advance and inspect schema versions through an open
+`MigrationRunner` capacity. Skills record ordered version history; SQLite skills
+also create and drop version marker tables so schema change is durable.
+
+```axl
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
+
+skill DurableSqliteMigrations provides MigrationRunner
+  native rust axl::migrate::sqlite
+  config path: text = "./build/cashflow-core.db"
+  effect db.write
+
+flow ApplyDurableMigration text -> Result<text>
+  in migrations: MigrationRunner = DurableSqliteMigrations
+  call version = migrations.up(input)?
+  return version
+```
+
+`up` applies a version id and returns it. `down` rolls back only the current
+head version. `status` returns the head version or `"0"` when history is empty.
+Skills bound to `rust::axl::migrate::memory` or `rust::axl::migrate::sqlite`
+must expose the up/down/status contract (`AXL-D902`). No new Graph IR opcodes:
+migrations use ordinary capacity calls. Declared SQL migration scripts,
+PostgreSQL/MySQL providers and document tx/migrate remain later Gate 3 work.
+
+### Typed repository queries
+
+Store capacities may declare an idempotent `query` operation over a single
+typed request entity and a typed page entity. Because AXL operations take one
+input type and one output type (record/tuple parameters remain deferred), filter,
+order and page live on one `QuerySpec`-shaped entity:
+
+```axl
+entity MovementQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity MovementPage
+  items: List<Movement> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity MovementStore
+  op save Movement -> Result<Movement>
+  op find uuid -> Result<Movement> idempotent
+  op query MovementQuery -> Result<MovementPage> idempotent
+
+flow QueryDurableMovements MovementQuery -> Result<MovementPage>
+  in store: MovementStore = DurableSqliteMovements
+  call page = store.query(input)?
+  return page
+```
+
+Runtime `rust::axl::store::memory`, `rust::axl::store::sqlite` and
+`rust::axl::store::document` interpret conventional fields: `filter` is equality
+on stored JSON fields (map values are text; numbers and booleans coerce),
+`order_by`/`direction` sort stably, `offset`/`limit` page after filtering.
+`total` is the filtered count before paging. Skills that declare `query` must
+use an idempotent entity → `Result<PageEntity>` contract (`AXL-D903`). No new
+Graph IR opcodes. Document skills persist a JSON object file when `config path`
+is set (same path model as SQLite). SQL pushdown and PostgreSQL/MySQL remain
+later Gate 3 work.
+
 Route inputs use the JSON body by default. A scalar or enum input can instead
 come directly from a named path, query, header or cookie value:
 
@@ -708,6 +843,39 @@ an unknown route returns 404. One built-in provider runtime is shared by all
 requests for the lifetime of the server process. Memory and unconfigured SQLite
 state survive consecutive requests only; a configured SQLite file also survives
 server and CLI restarts.
+
+### UI pages
+
+UI declarations compile to `axl-ui/1` and lower to `ui` / `page` nodes in Graph
+IR. A page binds an absolute path to a flow with an exact input/output signature:
+
+```axl
+ui BalanceScreen
+  page /balance BalanceInput -> money = CalculateBalance
+```
+
+`axl-compiler ui` emits the manifest. `axl-compiler render` evaluates the bound
+flow with JSON input and emits HTML that displays typed scalar or entity fields
+from the eval result. Application logic stays in AXL; the renderer only reads
+Graph IR and manifest metadata. Duplicate paths inside one `ui` block and
+conflicts across `ui` blocks are rejected.
+
+Implemented UI diagnostics:
+
+| Code | Meaning |
+|---|---|
+| `AXL-P950` | unknown line inside `ui` |
+| `AXL-P951` | page missing flow binding |
+| `AXL-P952` | page missing output type |
+| `AXL-P953` | page missing path and input type |
+| `AXL-U901` | `ui` requires at least one page |
+| `AXL-U902` | invalid page path |
+| `AXL-U903` | duplicate page path in one `ui` |
+| `AXL-U904` | unknown or non-flow page target |
+| `AXL-U905` | page signature does not match flow |
+| `AXL-U906` | page path conflicts across `ui` blocks |
+
+Packed IR opcodes: `ui` = `54`, `page` = `55`.
 
 ## 3. Type system
 
@@ -788,7 +956,7 @@ formatting and do not change semantics.
 ## 7. CLI
 
 ```text
-axl-compiler check <input.axl> [--json]
+axl-compiler check|diagnose <input.axl> [--json]
 axl-compiler ir <input.axl>
 axl-compiler pack <input.axl> [--matrix]
 axl-compiler fmt <input.axl>
@@ -798,6 +966,14 @@ axl-compiler unpack <packed.axl>
 axl-compiler eval <input.axl> <flow> <input.json>
 axl-compiler serve <input.axl> [address]
 ```
+
+`check` and `diagnose` are aliases. With `--json` they emit protocol
+`axl-check/1` (schema `schema/axl-check-1.schema.json`) on stdout for both
+success and failure. A success report contains `ok`, `path`, `app`, `schema`,
+`nodes` and `edges`. A failure report contains `ok: false`, `path` and a
+`diagnostics` array. Each diagnostic includes stable `code`, `phase`, `severity`,
+`message`, optional `path`, 1-based `span`, optional `expected`/`found`,
+optional `hint`, `fix_safety` and `repairs`.
 
 `experiment` writes:
 
@@ -844,11 +1020,13 @@ generate a complete production application. `providers/providers.json` uses
 - generated standalone Rust handlers and React components from Graph IR;
 - streaming HTTP bodies;
 - production auth adapters (secret references, OAuth);
-- SQL relationships, migrations and target-specific schema evolution;
+- SQL relationships and target-specific schema evolution beyond versioned
+  history markers;
 - native ABI verification;
-- transactions, migrations, queries and multi-database adapters;
+- declared migration SQL scripts, queries and multi-database adapters
+  (PostgreSQL, MySQL, document/KV);
 - blueprint package registry;
-- package imports and cross-package blueprint overlays;
+- cross-package blueprint overlays and package lockfiles;
 - runtime behavior for state, actions, errors and policies;
 - effect budgets and capability policy enforcement;
 - source maps from generated target code;
@@ -860,18 +1038,25 @@ open-port type model, agent diagnostics and deterministic IR pipeline. Flow
 Runtime 2 executes expressions and capacity calls through a replaceable runtime
 ABI. HTTP Runtime 1 dispatches exact JSON routes through Axum. Durable persistence for configured SQLite stores, jobs and cache entries is
 proven; Logger/Metrics/Tracer observability is proven through memory skills;
-runtime UI behavior is not implemented yet.
+capacity-backed transactions prove commit durability and rollback across memory
+and SQLite; capacity-backed migrations prove versioned schema history (up/down/
+status) with SQLite persistence across runtime recreate; the minimal Gate 4 UI
+page slice (`ui` / `page`, `axl-ui/1`, `render`) is executable; full routing
+shell, component registry and admin UI kit are not implemented yet.
 
 ## 10. Verified examples and guides
 
+- `examples/apps/balance-ui.axl` — minimal UI page bound to a flow (`axl-ui/1`).
 - `examples/blocks/01-store.axl` — capacity, Rust skill and explicit binding.
 - `examples/blocks/02-ui-slot.axl` — typed React slot with a default provider.
 - `examples/blocks/03-hook.axl` — typed lifecycle hook and recorded contracts.
 - `examples/blocks/04-agent.axl` — belief/goal/plan graph model.
 - `examples/blocks/05-open-dataview.axl` — all implemented open-block surfaces.
 - `examples/blocks/06-instance-override.axl` — typed parameter and provider overrides.
-- `examples/catalog/software-foundation.axl` — fourteen primary open block contracts.
-- `examples/apps/cashflow-core.axl` — executable validation and balance flows.
+- `examples/catalog/software-foundation.axl` — primary open block contracts
+  including transactions and migrations.
+- `examples/apps/import-demo.axl` — multi-file import of a shared module.
+- `examples/modules/math-lib.axl` — imported balance helpers.
 - `examples/next/crm.axl` — composed CRM graph.
 - `docs/blocks.md` — construction guide and current limitations.
 - `docs/executable-flows.md` — executable syntax, commands and current boundary.

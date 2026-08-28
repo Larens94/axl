@@ -1,0 +1,8 @@
+{
+  "id": "movement-q01",
+  "kind": "income",
+  "amount": 100000,
+  "category": "query-demo",
+  "occurred_at": "2026-08-27T09:00:00Z",
+  "note": "Query fixture income"
+}

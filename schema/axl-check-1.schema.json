@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://axl-lang.dev/schema/axl-check-1.schema.json",
+  "title": "AXL Check Report 1",
+  "type": "object",
+  "required": ["protocol", "ok"],
+  "additionalProperties": false,
+  "properties": {
+    "protocol": { "const": "axl-check/1" },
+    "ok": { "type": "boolean" },
+    "path": { "type": "string", "minLength": 1 },
+    "app": { "type": "string", "minLength": 1 },
+    "schema": { "type": "string", "minLength": 1 },
+    "nodes": { "type": "integer", "minimum": 0 },
+    "edges": { "type": "integer", "minimum": 0 },
+    "diagnostics": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/diagnostic" }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "ok": { "const": true } } },
+      "then": {
+        "required": ["app", "schema", "nodes", "edges"],
+        "properties": { "diagnostics": { "maxItems": 0 } }
+      }
+    },
+    {
+      "if": { "properties": { "ok": { "const": false } } },
+      "then": {
+        "required": ["diagnostics"],
+        "properties": {
+          "diagnostics": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "diagnostic": {
+      "type": "object",
+      "required": ["code", "phase", "severity", "message", "span", "fix_safety"],
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string",
+          "pattern": "^AXL-[A-Z][0-9]{3}$"
+        },
+        "phase": {
+          "type": "string",
+          "enum": [
+            "parse",
+            "imports",
+            "names",
+            "types",
+            "ports",
+            "execution",
+            "http",
+            "ui",
+            "compact"
+          ]
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["error", "warning"]
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "span": { "$ref": "#/$defs/span" },
+        "expected": { "type": "string" },
+        "found": { "type": "string" },
+        "hint": { "type": "string" },
+        "fix_safety": {
+          "type": "string",
+          "enum": ["safe", "likely", "risky", "manual"]
+        },
+        "repairs": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/repair" }
+        }
+      }
+    },
+    "span": {
+      "type": "object",
+      "required": ["line", "column", "length"],
+      "additionalProperties": false,
+      "properties": {
+        "line": { "type": "integer", "minimum": 1 },
+        "column": { "type": "integer", "minimum": 1 },
+        "length": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "repair": {
+      "type": "object",
+      "required": ["kind", "target"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": { "type": "string", "minLength": 1 },
+        "target": { "type": "string", "minLength": 1 },
+        "replacement": { "type": "string" },
+        "candidates": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "query": {
+    "filter": {
+      "conto": "cassa"
+    },
+    "order_by": "registrato_il",
+    "direction": "desc",
+    "limit": 10,
+    "offset": 0
+  },
+  "pair": {
+    "first": {
+      "id": "voce-001",
+      "importo": 150000,
+      "tipo": "entrata",
+      "conto": "cassa",
+      "nota": "parcella agosto",
+      "registrato_il": "2026-08-28T08:00:00Z"
+    },
+    "second": {
+      "id": "voce-002",
+      "importo": 42000,
+      "tipo": "uscita",
+      "conto": "cassa",
+      "nota": "cancelleria",
+      "registrato_il": "2026-08-28T09:30:00Z"
+    }
+  }
+}

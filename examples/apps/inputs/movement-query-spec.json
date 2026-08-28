@@ -1,0 +1,10 @@
+{
+  "filter": {
+    "kind": "income",
+    "category": "query-demo"
+  },
+  "order_by": "occurred_at",
+  "direction": "desc",
+  "limit": 1,
+  "offset": 0
+}

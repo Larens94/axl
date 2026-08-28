@@ -1,0 +1,14 @@
+{
+  "iteration": 5,
+  "product": "libro-cassa",
+  "milestone": 6,
+  "milestone_label": "Product polish: HTTP-only durable demo path or UI navigation",
+  "steward_queue": [],
+  "last_verification": "verify-libro-cassa OK; PaginaVociDemoUnit + /voci/demo; eval/render accept null token",
+  "last_judge_summary": "Judge b154c15d: unit seed flow 5/5; CLI null gap reported",
+  "steward_done": [
+    "compatible_make_assignment",
+    "CLI null literal for eval/render"
+  ],
+  "judge_prompt_file": "docs/agent-judge-prompt.md"
+}

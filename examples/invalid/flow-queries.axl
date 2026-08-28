@@ -1,0 +1,8 @@
+axl 4
+app InvalidFlowQueries
+capacity BrokenQuery
+  op query text -> Result<text>
+skill BrokenQueries provides BrokenQuery
+  native rust axl::store::document
+  effect db.read
+  effect db.write

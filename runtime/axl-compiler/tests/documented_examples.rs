@@ -1,6 +1,6 @@
 use axl_compiler::compile_source;
 
-const EXAMPLES: [(&str, &str); 9] = [
+const EXAMPLES: [(&str, &str); 10] = [
     (
         "store",
         include_str!("../../../examples/blocks/01-store.axl"),
@@ -31,6 +31,10 @@ const EXAMPLES: [(&str, &str); 9] = [
         include_str!("../../../examples/apps/cashflow-core.axl"),
     ),
     ("crm", include_str!("../../../examples/next/crm.axl")),
+    (
+        "balance-ui",
+        include_str!("../../../examples/apps/balance-ui.axl"),
+    ),
 ];
 
 #[test]
@@ -212,6 +216,18 @@ fn documented_invalid_examples_report_stable_codes() {
         (
             "AXL-J908",
             include_str!("../../../examples/invalid/flow-jobs.axl"),
+        ),
+        (
+            "AXL-D901",
+            include_str!("../../../examples/invalid/flow-transactions.axl"),
+        ),
+        (
+            "AXL-D902",
+            include_str!("../../../examples/invalid/flow-migrations.axl"),
+        ),
+        (
+            "AXL-D903",
+            include_str!("../../../examples/invalid/flow-queries.axl"),
         ),
         (
             "AXL-P314",
@@ -512,6 +528,18 @@ fn documented_invalid_examples_report_stable_codes() {
         (
             "AXL-H907",
             include_str!("../../../examples/invalid/http-routes.axl"),
+        ),
+        (
+            "AXL-P951",
+            include_str!("../../../examples/invalid/ui-syntax.axl"),
+        ),
+        (
+            "AXL-U904",
+            include_str!("../../../examples/invalid/ui-unknown-flow.axl"),
+        ),
+        (
+            "AXL-U905",
+            include_str!("../../../examples/invalid/ui-flow-mismatch.axl"),
         ),
     ];
 
@@ -968,4 +996,460 @@ fn documented_cashflow_core_executes() {
             .map(String::as_str),
         Some("GET,POST,OPTIONS")
     );
+
+    let jwt_missing = axl_compiler::next::http::dispatch_with_authorization(
+        &graph,
+        &mut runtime,
+        "post",
+        "/jwt/balance",
+        batch.clone(),
+        None,
+    );
+    assert_eq!(jwt_missing.status, 401);
+    let jwt_denied = axl_compiler::next::http::dispatch_with_authorization(
+        &graph,
+        &mut runtime,
+        "post",
+        "/jwt/balance",
+        batch.clone(),
+        Some("Bearer not-a-jwt"),
+    );
+    assert_eq!(jwt_denied.status, 403);
+    let token = axl_compiler::next::runtime::encode_hs256_jwt(
+        "axl-cashflow-demo-jwt",
+        &serde_json::json!({"sub": "alice", "iss": "axl-cashflow"}),
+    )
+    .expect("demo jwt");
+    let jwt_ok = axl_compiler::next::http::dispatch_with_authorization(
+        &graph,
+        &mut runtime,
+        "post",
+        "/jwt/balance",
+        batch,
+        Some(&format!("Bearer {token}")),
+    );
+    assert_eq!(jwt_ok.status, 200);
+    assert_eq!(jwt_ok.body, 80000);
+
+    let commit_pair = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-pair-commit.json"
+    ))
+    .unwrap();
+    {
+        let mut tx_runtime = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        let committed = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "CommitTwoDurableMovements",
+            commit_pair,
+            &mut tx_runtime,
+        )
+        .unwrap();
+        assert_eq!(committed["ok"]["id"], "movement-tx-c02");
+    }
+    {
+        let mut fresh = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        let first = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "FindDurableMovement",
+            serde_json::json!("movement-tx-c01"),
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(first["ok"]["id"], "movement-tx-c01");
+        let second = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "FindDurableMovement",
+            serde_json::json!("movement-tx-c02"),
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(second["ok"]["id"], "movement-tx-c02");
+    }
+
+    let rollback_pair = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-pair-rollback.json"
+    ))
+    .unwrap();
+    {
+        let mut tx_runtime = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        let rolled = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "RollbackTwoDurableMovements",
+            rollback_pair,
+            &mut tx_runtime,
+        )
+        .unwrap();
+        assert_eq!(rolled, serde_json::json!({"ok": null}));
+    }
+    {
+        let mut fresh = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        let missing = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "FindDurableMovement",
+            serde_json::json!("movement-tx-r01"),
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(missing["error"], "not_found");
+        let missing = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "FindDurableMovement",
+            serde_json::json!("movement-tx-r02"),
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(missing["error"], "not_found");
+    }
+
+    let migration_v1 = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/migration-v1.json"
+    ))
+    .unwrap();
+    let migration_v2 = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/migration-v2.json"
+    ))
+    .unwrap();
+    {
+        let mut mig_runtime = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        loop {
+            let status = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+                &graph,
+                "DurableMigrationStatus",
+                serde_json::Value::Null,
+                &mut mig_runtime,
+            )
+            .unwrap();
+            let head = status["ok"].as_str().unwrap().to_string();
+            if head == "0" {
+                break;
+            }
+            let rolled = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+                &graph,
+                "RollbackDurableMigration",
+                serde_json::json!(head),
+                &mut mig_runtime,
+            )
+            .unwrap();
+            assert_eq!(rolled["ok"], head);
+        }
+        let applied = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "ApplyDurableMigration",
+            migration_v1,
+            &mut mig_runtime,
+        )
+        .unwrap();
+        assert_eq!(applied, serde_json::json!({"ok": "v1"}));
+        let applied = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "ApplyDurableMigration",
+            migration_v2,
+            &mut mig_runtime,
+        )
+        .unwrap();
+        assert_eq!(applied, serde_json::json!({"ok": "v2"}));
+        let status = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "DurableMigrationStatus",
+            serde_json::Value::Null,
+            &mut mig_runtime,
+        )
+        .unwrap();
+        assert_eq!(status, serde_json::json!({"ok": "v2"}));
+    }
+    {
+        let mut fresh = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        let status = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "DurableMigrationStatus",
+            serde_json::Value::Null,
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(status, serde_json::json!({"ok": "v2"}));
+        let rolled = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "RollbackDurableMigration",
+            serde_json::json!("v2"),
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(rolled, serde_json::json!({"ok": "v2"}));
+        let status = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "DurableMigrationStatus",
+            serde_json::Value::Null,
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(status, serde_json::json!({"ok": "v1"}));
+    }
+    {
+        let mut fresh = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        let status = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "DurableMigrationStatus",
+            serde_json::Value::Null,
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(status, serde_json::json!({"ok": "v1"}));
+        let rolled = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "RollbackDurableMigration",
+            serde_json::json!("v1"),
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(rolled, serde_json::json!({"ok": "v1"}));
+        let status = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "DurableMigrationStatus",
+            serde_json::Value::Null,
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(status, serde_json::json!({"ok": "0"}));
+    }
+
+    let query_movements: [serde_json::Value; 3] = [
+        serde_json::from_str(include_str!(
+            "../../../examples/apps/inputs/movement-query-q01.json"
+        ))
+        .unwrap(),
+        serde_json::from_str(include_str!(
+            "../../../examples/apps/inputs/movement-query-q02.json"
+        ))
+        .unwrap(),
+        serde_json::from_str(include_str!(
+            "../../../examples/apps/inputs/movement-query-q03.json"
+        ))
+        .unwrap(),
+    ];
+    let query_spec: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/movement-query-spec.json"
+    ))
+    .unwrap();
+    {
+        let mut query_runtime = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        for movement in &query_movements {
+            let saved = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+                &graph,
+                "SaveDurableMovement",
+                movement.clone(),
+                &mut query_runtime,
+            )
+            .unwrap();
+            assert_eq!(saved["ok"]["id"], movement["id"]);
+        }
+        let page = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "QueryDurableMovements",
+            query_spec.clone(),
+            &mut query_runtime,
+        )
+        .unwrap();
+        assert_eq!(page["ok"]["total"], 2);
+        assert_eq!(page["ok"]["limit"], 1);
+        assert_eq!(page["ok"]["offset"], 0);
+        assert_eq!(page["ok"]["items"].as_array().unwrap().len(), 1);
+        assert_eq!(page["ok"]["items"][0]["id"], "movement-q03");
+    }
+    {
+        let mut fresh = axl_compiler::next::runtime::BuiltinRuntime::new().unwrap();
+        let page = axl_compiler::next::runtime::evaluate_flow_with_runtime(
+            &graph,
+            "QueryDurableMovements",
+            query_spec,
+            &mut fresh,
+        )
+        .unwrap();
+        assert_eq!(page["ok"]["total"], 2);
+        assert_eq!(page["ok"]["items"][0]["id"], "movement-q03");
+    }
+}
+
+#[test]
+fn import_demo_compiles_from_file_and_round_trips() {
+    use std::path::Path;
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/apps/import-demo.axl");
+    let compiled = axl_compiler::compile_file(&path)
+        .unwrap()
+        .unwrap_or_else(|diagnostics| panic!("import-demo failed: {diagnostics:#?}"));
+
+    assert_eq!(compiled.graph.schema, "ax-ir/4.0");
+    assert_eq!(compiled.graph.app, "ImportDemo");
+    let decoded = axl_compiler::next::packed::decode(&compiled.matrix)
+        .unwrap_or_else(|error| panic!("import-demo packed IR failed: {error}"));
+    assert_eq!(decoded, compiled.graph);
+
+    let formatted = axl_compiler::compile_source_at(&compiled.source, Some(&path)).unwrap_or_else(
+        |diagnostics| panic!("import-demo formatted source failed: {diagnostics:#?}"),
+    );
+    assert_eq!(formatted.graph, compiled.graph);
+
+    let balance = serde_json::json!({
+        "income": 125000,
+        "expense": 45000
+    });
+    let calculated = axl_compiler::next::runtime::evaluate_flow(
+        &compiled.graph,
+        "CalculateBalance",
+        balance.clone(),
+    )
+    .unwrap();
+    assert_eq!(calculated, 80000);
+
+    let demo = axl_compiler::next::runtime::evaluate_flow(&compiled.graph, "DemoBalance", balance)
+        .unwrap();
+    assert_eq!(demo, 80000);
+}
+
+#[test]
+fn import_invalid_examples_report_stable_codes() {
+    use std::path::Path;
+
+    let cases = [
+        (
+            "AXL-P931",
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/invalid/import-missing.axl"),
+        ),
+        (
+            "AXL-N002",
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/invalid/import-duplicate.axl"),
+        ),
+    ];
+
+    for (code, path) in cases {
+        let diagnostics = axl_compiler::compile_file(&path)
+            .unwrap()
+            .expect_err("example must be rejected");
+        assert!(
+            diagnostics.iter().any(|diagnostic| diagnostic.code == code),
+            "missing {code} for {}: {diagnostics:#?}",
+            path.display()
+        );
+    }
+}
+
+#[test]
+fn balance_ui_manifest_and_render_are_executable() {
+    let compiled = compile_source(include_str!("../../../examples/apps/balance-ui.axl"))
+        .unwrap_or_else(|diagnostics| panic!("balance-ui failed: {diagnostics:#?}"));
+    let manifest = axl_compiler::next::ui::ui_manifest(&compiled.graph);
+    assert_eq!(manifest["protocol"], "axl-ui/1");
+    assert_eq!(manifest["uis"][0]["pages"][0]["flow"], "CalculateBalance");
+
+    let balance =
+        serde_json::from_str(include_str!("../../../examples/apps/inputs/balance.json")).unwrap();
+    let rendered =
+        axl_compiler::next::ui::render_page(&compiled.graph, "/balance", balance).unwrap();
+    assert_eq!(rendered.data, serde_json::json!(80000));
+    assert!(rendered.html.contains("80000"));
+    assert!(rendered.html.contains("axl-ui/1"));
+}
+
+#[test]
+fn check_json_success_envelope_is_stable() {
+    use axl_compiler::next::diagnostic::CheckReport;
+    use std::path::Path;
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/apps/cashflow-core.axl");
+    let compiled = axl_compiler::compile_file(&path)
+        .unwrap()
+        .unwrap_or_else(|diagnostics| panic!("cashflow-core failed: {diagnostics:#?}"));
+    let report = CheckReport::success(
+        Some(&path),
+        &compiled.graph.app,
+        &compiled.graph.schema,
+        compiled.graph.nodes.len(),
+        compiled.graph.edges.len(),
+    );
+    let json = serde_json::to_value(&report).unwrap();
+    assert_eq!(json["protocol"], "axl-check/1");
+    assert_eq!(json["ok"], true);
+    assert!(
+        json["path"]
+            .as_str()
+            .unwrap()
+            .ends_with("cashflow-core.axl")
+    );
+    assert_eq!(json["app"], "CashflowCore");
+    assert_eq!(json["schema"], "ax-ir/4.0");
+    assert!(json["nodes"].as_u64().unwrap() > 0);
+    assert!(json["edges"].as_u64().unwrap() > 0);
+    assert!(
+        json.get("diagnostics").is_none() || json["diagnostics"].as_array().unwrap().is_empty()
+    );
+}
+
+#[test]
+fn check_json_failure_envelope_reports_stable_codes() {
+    use axl_compiler::next::diagnostic::CheckReport;
+    use std::path::Path;
+
+    let cases = [
+        (
+            "AXL-X817",
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/invalid/flow-calls.axl"),
+        ),
+        (
+            "AXL-P951",
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/invalid/ui-syntax.axl"),
+        ),
+        (
+            "AXL-P931",
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/invalid/import-missing.axl"),
+        ),
+    ];
+
+    for (code, path) in cases {
+        let diagnostics = axl_compiler::compile_file(&path)
+            .unwrap()
+            .expect_err("example must be rejected");
+        let report = CheckReport::failure(Some(&path), diagnostics);
+        let json = serde_json::to_value(&report).unwrap();
+        assert_eq!(json["protocol"], "axl-check/1");
+        assert_eq!(json["ok"], false);
+        assert!(
+            json["path"]
+                .as_str()
+                .unwrap()
+                .ends_with(path.file_name().unwrap().to_str().expect("path file name"))
+        );
+        let items = json["diagnostics"].as_array().expect("diagnostics array");
+        assert!(
+            items.iter().any(|item| item["code"] == code),
+            "missing {code} in {items:#?}"
+        );
+        let matched = items
+            .iter()
+            .find(|item| item["code"] == code)
+            .expect("matched diagnostic");
+        assert!(!matched["message"].as_str().unwrap().is_empty());
+        assert!(matched["span"]["line"].as_u64().unwrap() >= 1);
+        assert_eq!(matched["severity"], "error");
+        if path.ends_with("import-missing.axl") {
+            assert_eq!(matched["phase"], "imports");
+        }
+    }
+}
+
+#[test]
+fn agent_authored_ledger_compiles_and_renders_saldo() {
+    use axl_compiler::next::ui;
+    use std::path::Path;
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../examples/apps/ledger.axl");
+    let compilation = axl_compiler::compile_file(&path).unwrap().unwrap();
+    assert_eq!(compilation.graph.app, "LibroCassa");
+    let saldo_input: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../examples/apps/inputs/ledger-saldo.json"
+    ))
+    .unwrap();
+    let rendered = ui::render_page(&compilation.graph, "/saldo", saldo_input).unwrap();
+    assert_eq!(rendered.data, serde_json::json!(108000));
+    assert!(rendered.html.contains("108000"));
 }

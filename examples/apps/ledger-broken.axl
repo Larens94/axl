@@ -1,0 +1,17 @@
+// Intentionally broken copy for judge repair drill (milestone 4).
+// Fix using axl-check/1 diagnostics only; do not rewrite from cashflow-core.axl.
+axl 4
+app LibroCassaBroken
+import "./ledger-domain.axl"
+
+api LibroCassaApiBroken
+  post /voci Voce -> Result<Voce> = RegistraVoce
+  post /saldo SaldoInput -> money = CalcolaSaldoRotto
+
+flow CalcolaSaldoRotto SaldoInput -> money
+  let saldo = input.entrate - input.uscite
+  return saldo
+
+ui LibroCassaUiBroken
+  page /saldo SaldoInput -> money = CalcolaSaldoRotto
+  page /voci VoceQuery -> Result<VocePage> = PaginaVoci

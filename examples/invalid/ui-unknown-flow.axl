@@ -1,0 +1,9 @@
+axl 4
+app BadUI
+
+entity BalanceInput
+  income: money required
+  expense: money required
+
+ui BrokenScreen
+  page /balance BalanceInput -> money = MissingFlow

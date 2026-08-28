@@ -109,6 +109,8 @@ commands, API, UI, events, jobs, observability, agent tools and scenarios.
 ```
 
 Status: experiment. Typed flows, replaceable configured providers, durable
-SQLite paths, composite body/path/query/header/cookie routes and capacity-backed bearer auth execute.
-Production secrets/JWT, transactions, richer backend services and React runtime
-generation are not implemented yet.
+SQLite paths, composite body/path/query/header/cookie routes, capacity-backed
+bearer auth (static token + HS256 JWT), capacity-backed transactions
+(begin/commit/rollback), migrations and typed store queries (filter/order/page)
+execute. True secret references (Gate 8), OAuth, multi-database adapters, richer
+backend services and React runtime generation are not implemented yet.

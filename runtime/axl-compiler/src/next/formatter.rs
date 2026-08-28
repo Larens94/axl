@@ -5,6 +5,10 @@ pub fn format(program: &Program) -> String {
         format!("axl {}", program.version),
         format!("app {}", program.name),
     ];
+    for import in &program.imports {
+        output.push(String::new());
+        output.push(format!("import \"{}\"", import.path));
+    }
     for declaration in &program.declarations {
         output.push(String::new());
         match declaration {
@@ -387,6 +391,15 @@ pub fn format(program: &Program) -> String {
                             output.push(format!("    bind {target} = {source}"));
                         }
                     }
+                }
+            }
+            Declaration::Ui(ui) => {
+                output.push(format!("ui {}", ui.name));
+                for page in &ui.pages {
+                    output.push(format!(
+                        "  page {} {} -> {} = {}",
+                        page.path, page.input, page.output, page.flow
+                    ));
                 }
             }
             Declaration::Agent(agent) => {

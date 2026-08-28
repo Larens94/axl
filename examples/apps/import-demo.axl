@@ -1,0 +1,8 @@
+// Multi-file composition: imports declarations from another AXL module.
+axl 4
+app ImportDemo
+import "../modules/math-lib.axl"
+
+flow DemoBalance BalanceInput -> money
+  let balance = input.income - input.expense
+  return balance

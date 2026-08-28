@@ -6,7 +6,15 @@ use super::diagnostic::SourceSpan;
 pub struct Program {
     pub version: u16,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imports: Vec<Import>,
     pub declarations: Vec<Declaration>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Import {
+    pub path: String,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,6 +31,7 @@ pub enum Declaration {
     Subscription(Subscription),
     Job(JobDecl),
     Api(Api),
+    Ui(Ui),
     Agent(Agent),
 }
 
@@ -40,6 +49,7 @@ impl Declaration {
             Self::Subscription(value) => &value.flow,
             Self::Job(value) => &value.name,
             Self::Api(value) => &value.name,
+            Self::Ui(value) => &value.name,
             Self::Agent(value) => &value.name,
         }
     }
@@ -57,6 +67,7 @@ impl Declaration {
             Self::Subscription(value) => &value.span,
             Self::Job(value) => &value.span,
             Self::Api(value) => &value.span,
+            Self::Ui(value) => &value.span,
             Self::Agent(value) => &value.span,
         }
     }
@@ -484,6 +495,22 @@ pub struct ApiRoute {
     pub input_source: String,
     pub input_name: Option<String>,
     pub bindings: Vec<HttpRequestBinding>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ui {
+    pub name: String,
+    pub pages: Vec<UiPage>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiPage {
+    pub path: String,
+    pub input: String,
+    pub output: String,
+    pub flow: String,
     pub span: SourceSpan,
 }
 

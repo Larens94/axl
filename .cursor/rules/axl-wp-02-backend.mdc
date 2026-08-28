@@ -8,12 +8,13 @@ alwaysApply: false
 
 Complete Gate 2 without handwritten controllers.
 
-Already executable: Axum routes, body/path/query/header/cookie binding, bearer auth,
-request and response middleware, capacity-backed rate-limit (429), capacity-backed
-CORS (`Access-Control-*` + OPTIONS preflight), typed events, durable SQLite,
-Cache get/put/invalidate (memory + durable SQLite),
+Already executable: Axum routes, body/path/query/header/cookie binding, bearer auth
+(static + HS256 JWT skills), request and response middleware, capacity-backed
+rate-limit (429), capacity-backed CORS (`Access-Control-*` + OPTIONS preflight),
+typed events, durable SQLite, Cache get/put/invalidate (memory + durable SQLite),
 Logger/Metrics/Tracer observability (memory).
 
-Next: production auth adapters (secrets, JWT/OAuth) behind capacities.
+Next (optional WP-02): OAuth adapters. True secret references are Gate 8 (WP-08).
+Gate 2 auth-adapter slice is otherwise complete — prefer Gate 3 transactions.
 
 Use the prompt template in `docs/agent-work-packages.md`. Stop at the AXL boundary when a primitive is missing.

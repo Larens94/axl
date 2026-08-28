@@ -1,0 +1,170 @@
+// Domain types, store capacity and ledger flows for a small income/expense book.
+axl 4
+app LedgerDomain
+
+enum SegnoContabile
+  entrata
+  uscita
+
+entity Voce
+  id: uuid key
+  importo: money required
+  tipo: SegnoContabile required
+  conto: text required
+  nota: text optional
+  registrato_il: datetime optional
+
+entity SaldoInput
+  entrate: money required
+  uscite: money required
+
+entity ElencoVoci
+  voci: List<Voce> required
+
+entity VoceQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity VocePage
+  items: List<Voce> required
+  total: int required
+  limit: int required
+  offset: int required
+
+entity VocePair
+  first: Voce required
+  second: Voce required
+
+entity PaginaVociDemoInput
+  query: VoceQuery required
+  pair: VocePair required
+
+capacity ArchivioVoci
+  op save Voce -> Result<Voce>
+  op find uuid -> Result<Voce> idempotent
+  op list unit -> Result<List<Voce>> idempotent
+  op query VoceQuery -> Result<VocePage> idempotent
+
+skill MemoriaVoci provides ArchivioVoci
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteVoci provides ArchivioVoci
+  native rust axl::store::sqlite
+  config path: text = "./build/libro-cassa.db"
+  effect db.read
+  effect db.write
+
+flow ValidaVoce Voce -> Result<Voce>
+  let importo_positivo = input.importo > 0
+  require importo_positivo else "importo_deve_essere_positivo"
+  let conto_presente = input.conto != ""
+  require conto_presente else "conto_obbligatorio"
+  return input
+
+flow CalcolaSaldo SaldoInput -> money
+  let saldo = input.entrate - input.uscite
+  return saldo
+
+flow CalcolaSaldoElenco ElencoVoci -> money
+  fold saldo: money = input.voci from 0 as voce
+    next = if voce.tipo == SegnoContabile.entrata
+      then value + voce.importo
+      else value - voce.importo
+  return saldo
+
+flow FiltraEntrate ElencoVoci -> List<Voce>
+  filter entrate: List<Voce> = input.voci as voce
+    where = voce.tipo == SegnoContabile.entrata
+  return entrate
+
+flow RegistraVoce Voce -> Result<Voce>
+  in store: ArchivioVoci = MemoriaVoci
+  run valida = ValidaVoce(input)?
+  call salvata = store.save(valida)?
+  return salvata
+
+flow CercaVoce uuid -> Result<Voce>
+  in store: ArchivioVoci = MemoriaVoci
+  call trovata = store.find(input)?
+  return trovata
+
+flow ElencaVoci unit -> Result<List<Voce>>
+  in store: ArchivioVoci = MemoriaVoci
+  call voci = store.list(input)?
+  return voci
+
+flow InterrogaVoci VoceQuery -> Result<VocePage>
+  in store: ArchivioVoci = MemoriaVoci
+  call pagina = store.query(input)?
+  return pagina
+
+flow PaginaVoci VoceQuery -> Result<VocePage>
+  run pagina = InterrogaVoci(input)?
+  return pagina
+
+flow PaginaVociDemo PaginaVociDemoInput -> Result<VocePage>
+  in store: ArchivioVoci = MemoriaVoci
+  run valida1 = ValidaVoce(input.pair.first)?
+  call v1 = store.save(valida1)?
+  run valida2 = ValidaVoce(input.pair.second)?
+  call v2 = store.save(valida2)?
+  call pagina = store.query(input.query)?
+  return pagina
+
+flow PaginaVociDemoUnit unit -> Result<VocePage>
+  in store: ArchivioVoci = MemoriaVoci
+  make voce1: Voce
+    id = "voce-001"
+    importo = 150000
+    tipo = SegnoContabile.entrata
+    conto = "cassa"
+    nota = "parcella agosto"
+    registrato_il = "2026-08-28T08:00:00Z"
+  make voce2: Voce
+    id = "voce-002"
+    importo = 42000
+    tipo = SegnoContabile.uscita
+    conto = "cassa"
+    nota = "cancelleria"
+    registrato_il = "2026-08-28T09:30:00Z"
+  run valida1 = ValidaVoce(voce1)?
+  call v1 = store.save(valida1)?
+  run valida2 = ValidaVoce(voce2)?
+  call v2 = store.save(valida2)?
+  make query: VoceQuery
+    order_by = "registrato_il"
+    direction = "desc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow SaldoArchivio VoceQuery -> Result<money>
+  in store: ArchivioVoci = MemoriaVoci
+  call pagina = store.query(input)?
+  fold saldo: money = pagina.items from 0 as voce
+    next = if voce.tipo == SegnoContabile.entrata
+      then value + voce.importo
+      else value - voce.importo
+  return saldo
+
+flow RegistraVoceSqlite Voce -> Result<Voce>
+  in store: ArchivioVoci = SqliteVoci
+  run valida = ValidaVoce(input)?
+  call salvata = store.save(valida)?
+  return salvata
+
+flow CercaVoceSqlite uuid -> Result<Voce>
+  in store: ArchivioVoci = SqliteVoci
+  call trovata = store.find(input)?
+  return trovata
+
+flow InterrogaVociSqlite VoceQuery -> Result<VocePage>
+  in store: ArchivioVoci = SqliteVoci
+  call pagina = store.query(input)?
+  return pagina

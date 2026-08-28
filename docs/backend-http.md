@@ -302,8 +302,13 @@ and cookie sources. Ordered request and response middleware with typed envelopes
 are executable. Typed events and durable/scheduled jobs with replaceable JobStore
 providers are executable. Nested target paths beyond a single field name are
 not yet request sources. Memory and unconfigured SQLite remain process-local;
-configured SQLite paths are durable for records and jobs. Transactions and
-migrations remain data gates. The built-in static bearer, HS256 JWT, header-gate,
+configured SQLite paths are durable for records and jobs. Capacity-backed
+transactions (`TransactionManager` begin/commit/rollback) are executable when
+the transaction skill shares the store path. Capacity-backed migrations
+(`MigrationRunner` up/down/status) persist schema history on the same path.
+Typed store `query` (filter/order/page) is executable on memory and durable
+SQLite store skills. Additional databases remain later data gates. The
+built-in static bearer, HS256 JWT, header-gate,
 response-headers, memory rate-limit and CORS providers are demo fixtures and their
 config is visible in the manifest. JWT validates HMAC-SHA256 `sub`/`iss` claims
 through `rust::axl::auth::jwt`. True secret references (no plaintext in IR) are

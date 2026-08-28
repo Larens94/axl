@@ -1,0 +1,12 @@
+axl 4
+app BadUI
+
+entity BalanceInput
+  income: money required
+  expense: money required
+
+flow CalculateBalance BalanceInput -> money
+  return input.income - input.expense
+
+ui BrokenScreen
+  page /balance BalanceInput -> text = CalculateBalance

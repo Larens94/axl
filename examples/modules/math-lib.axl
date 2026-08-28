@@ -1,0 +1,11 @@
+// Shared balance helpers imported by multi-file apps.
+axl 4
+app MathLib
+
+entity BalanceInput
+  income: money required
+  expense: money required
+
+flow CalculateBalance BalanceInput -> money
+  let balance = input.income - input.expense
+  return balance

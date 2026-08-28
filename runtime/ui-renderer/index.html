@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AXL UI Renderer</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 2rem auto; max-width: 42rem; line-height: 1.5; }
+    h1 { font-size: 1.5rem; }
+    dl { display: grid; grid-template-columns: minmax(8rem, 30%) 1fr; gap: 0.5rem 1rem; }
+    dt { font-weight: 600; }
+    dd { margin: 0; }
+    .meta { color: #666; font-size: 0.875rem; }
+    pre { background: #1111; padding: 1rem; overflow: auto; border-radius: 0.5rem; }
+  </style>
+</head>
+<body>
+  <h1 id="title">AXL UI Renderer</h1>
+  <p class="meta">Reads <code>axl-ui/1</code> manifest + eval payload from <code>?manifest=</code> and <code>?data=</code>.</p>
+  <dl id="fields"></dl>
+  <pre id="raw"></pre>
+  <script>
+    function displayValue(value) {
+      if (value === null || value === undefined) return "null";
+      if (typeof value === "object") return JSON.stringify(value);
+      return String(value);
+    }
+
+    function collectFields(outputType, data) {
+      if (data && typeof data === "object" && "error" in data) {
+        return [["error", displayValue(data.error)]];
+      }
+      if (data && typeof data === "object" && "ok" in data) {
+        return collectFields(outputType.replace(/^Result<(.+)>$/, "$1"), data.ok);
+      }
+      if (["text", "string", "email", "uuid", "datetime", "duration", "int", "float", "money", "bool", "unit"].includes(outputType)) {
+        return [[outputType, displayValue(data)]];
+      }
+      if (data && typeof data === "object" && !Array.isArray(data)) {
+        return Object.entries(data).map(([key, value]) => [key, displayValue(value)]);
+      }
+      return [["value", displayValue(data)]];
+    }
+
+    async function boot() {
+      const params = new URLSearchParams(location.search);
+      const manifestUrl = params.get("manifest");
+      const dataUrl = params.get("data");
+      if (!manifestUrl || !dataUrl) {
+        document.getElementById("title").textContent = "Provide ?manifest=pages.json&data=result.json";
+        return;
+      }
+      const [manifest, payload] = await Promise.all([
+        fetch(manifestUrl).then((response) => response.json()),
+        fetch(dataUrl).then((response) => response.json()),
+      ]);
+      const pagePath = params.get("path") || manifest.uis?.[0]?.pages?.[0]?.path || "/";
+      const page = manifest.uis.flatMap((ui) => ui.pages).find((entry) => entry.path === pagePath);
+      if (!page) {
+        document.getElementById("title").textContent = `Page not found: ${pagePath}`;
+        return;
+      }
+      document.getElementById("title").textContent = `${manifest.app}${page.path}`;
+      const fields = document.getElementById("fields");
+      for (const [label, value] of collectFields(page.output, payload.data ?? payload)) {
+        const dt = document.createElement("dt");
+        dt.textContent = label;
+        const dd = document.createElement("dd");
+        dd.textContent = value;
+        fields.append(dt, dd);
+      }
+      document.getElementById("raw").textContent = JSON.stringify({ manifest: page, data: payload }, null, 2);
+    }
+
+    boot().catch((error) => {
+      document.getElementById("title").textContent = String(error);
+    });
+  </script>
+</body>
+</html>

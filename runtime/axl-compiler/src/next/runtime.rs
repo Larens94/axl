@@ -11,6 +11,10 @@ use serde_json::{Map, Value, json};
 use sha2::Sha256;
 
 type HmacSha256 = Hmac<Sha256>;
+type MemoryStoreMap = BTreeMap<String, BTreeMap<String, Value>>;
+type MemoryTxStack = Vec<(String, MemoryStoreMap)>;
+type MemoryMigrationMap = BTreeMap<String, Vec<String>>;
+type DocumentStoreMap = BTreeMap<String, BTreeMap<String, Value>>;
 
 use super::expression;
 use super::ir::{GraphIr, GraphNode};
@@ -45,7 +49,9 @@ pub trait ProviderRuntime: Send {
 
 #[derive(Clone)]
 pub struct BuiltinRuntime {
-    memory: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
+    memory: Arc<Mutex<MemoryStoreMap>>,
+    memory_tx: Arc<Mutex<MemoryTxStack>>,
+    migrations: Arc<Mutex<MemoryMigrationMap>>,
     caches: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     event_logs: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
     loggers: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
@@ -54,6 +60,8 @@ pub struct BuiltinRuntime {
     rate_limits: Arc<Mutex<BTreeMap<String, BTreeMap<String, RateWindow>>>>,
     job_stores: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     sqlite: Arc<Mutex<BTreeMap<String, Arc<Mutex<Connection>>>>>,
+    sqlite_tx: Arc<Mutex<BTreeMap<String, Vec<String>>>>,
+    documents: Arc<Mutex<BTreeMap<String, Arc<Mutex<DocumentStoreMap>>>>>,
 }
 
 #[derive(Clone, Default)]
@@ -73,6 +81,8 @@ impl BuiltinRuntime {
     pub fn new() -> Result<Self, RuntimeError> {
         Ok(Self {
             memory: Arc::new(Mutex::new(BTreeMap::new())),
+            memory_tx: Arc::new(Mutex::new(Vec::new())),
+            migrations: Arc::new(Mutex::new(BTreeMap::new())),
             caches: Arc::new(Mutex::new(BTreeMap::new())),
             event_logs: Arc::new(Mutex::new(BTreeMap::new())),
             loggers: Arc::new(Mutex::new(BTreeMap::new())),
@@ -81,14 +91,48 @@ impl BuiltinRuntime {
             rate_limits: Arc::new(Mutex::new(BTreeMap::new())),
             job_stores: Arc::new(Mutex::new(BTreeMap::new())),
             sqlite: Arc::new(Mutex::new(BTreeMap::new())),
+            sqlite_tx: Arc::new(Mutex::new(BTreeMap::new())),
+            documents: Arc::new(Mutex::new(BTreeMap::new())),
         })
+    }
+
+    fn sqlite_connection_key(call: &ProviderCall<'_>) -> String {
+        call.config
+            .get("path")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .unwrap_or_else(|| format!(":memory:{}", call.provider))
+    }
+
+    fn document_store_key(call: &ProviderCall<'_>) -> String {
+        Self::sqlite_connection_key(call)
+    }
+
+    fn document_store(
+        &self,
+        call: &ProviderCall<'_>,
+    ) -> Result<Arc<Mutex<DocumentStoreMap>>, String> {
+        let configured_path = call.config.get("path").and_then(Value::as_str);
+        let key = Self::document_store_key(call);
+        let mut stores = self
+            .documents
+            .lock()
+            .map_err(|_| "document store registry is unavailable".to_string())?;
+        if let Some(store) = stores.get(&key) {
+            return Ok(store.clone());
+        }
+        let loaded = match configured_path {
+            Some(":memory:") | None => DocumentStoreMap::new(),
+            Some(path) => load_document_file(path)?,
+        };
+        let store = Arc::new(Mutex::new(loaded));
+        stores.insert(key, store.clone());
+        Ok(store)
     }
 
     fn sqlite_connection(&self, call: &ProviderCall<'_>) -> Result<Arc<Mutex<Connection>>, String> {
         let configured_path = call.config.get("path").and_then(Value::as_str);
-        let key = configured_path
-            .map(str::to_string)
-            .unwrap_or_else(|| format!(":memory:{}", call.provider));
+        let key = Self::sqlite_connection_key(call);
         let mut connections = self
             .sqlite
             .lock()
@@ -132,6 +176,56 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "SQLite provider state is unavailable".to_string())?;
                 sqlite_store_call(&sqlite, call)
+            }
+            "rust::axl::store::document" => {
+                let store = self.document_store(&call)?;
+                let mut documents = store
+                    .lock()
+                    .map_err(|_| "document provider state is unavailable".to_string())?;
+                let flush_path = call
+                    .config
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .filter(|path| *path != ":memory:")
+                    .map(str::to_string);
+                document_store_call(&mut documents, call, flush_path.as_deref())
+            }
+            "rust::axl::tx::memory" => {
+                let mut memory = self
+                    .memory
+                    .lock()
+                    .map_err(|_| "memory provider state is unavailable".to_string())?;
+                let mut stack = self
+                    .memory_tx
+                    .lock()
+                    .map_err(|_| "memory transaction state is unavailable".to_string())?;
+                memory_tx_call(&mut memory, &mut stack, call)
+            }
+            "rust::axl::tx::sqlite" => {
+                let key = Self::sqlite_connection_key(&call);
+                let connection = self.sqlite_connection(&call)?;
+                let sqlite = connection
+                    .lock()
+                    .map_err(|_| "SQLite provider state is unavailable".to_string())?;
+                let mut stack = self
+                    .sqlite_tx
+                    .lock()
+                    .map_err(|_| "SQLite transaction state is unavailable".to_string())?;
+                sqlite_tx_call(&sqlite, &mut stack, &key, call)
+            }
+            "rust::axl::migrate::memory" => {
+                let mut migrations = self
+                    .migrations
+                    .lock()
+                    .map_err(|_| "memory migration state is unavailable".to_string())?;
+                memory_migrate_call(&mut migrations, call)
+            }
+            "rust::axl::migrate::sqlite" => {
+                let connection = self.sqlite_connection(&call)?;
+                let sqlite = connection
+                    .lock()
+                    .map_err(|_| "SQLite provider state is unavailable".to_string())?;
+                sqlite_migrate_call(&sqlite, call)
             }
             "rust::axl::auth::bearer" => bearer_auth_call(call),
             "rust::axl::auth::jwt" => jwt_auth_call(call),
@@ -1004,10 +1098,7 @@ fn compare_sort_keys(left: &Value, right: &Value) -> Result<Ordering, String> {
     }
 }
 
-fn memory_store_call(
-    stores: &mut BTreeMap<String, BTreeMap<String, Value>>,
-    call: ProviderCall<'_>,
-) -> Result<Value, String> {
+fn memory_store_call(stores: &mut MemoryStoreMap, call: ProviderCall<'_>) -> Result<Value, String> {
     let store = stores.entry(call.provider.to_string()).or_default();
     match call.operation {
         "save" => {
@@ -1024,6 +1115,7 @@ fn memory_store_call(
             Ok(Value::Bool(store.remove(id).is_some()))
         }
         "list" => Ok(Value::Array(store.values().cloned().collect())),
+        "query" => store_query(store.values().cloned().collect(), &call.input),
         operation => Err(format!(
             "memory store does not implement operation '{operation}' for {}",
             call.capacity
@@ -1082,9 +1174,530 @@ fn sqlite_store_call(connection: &Connection, call: ProviderCall<'_>) -> Result<
             }
             Ok(Value::Array(values))
         }
+        "query" => {
+            let mut statement = connection
+                .prepare("SELECT payload FROM axl_records WHERE provider = ?1 ORDER BY record_id")
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![call.provider], |row| row.get::<_, String>(0))
+                .map_err(|error| error.to_string())?;
+            let mut values = Vec::new();
+            for row in rows {
+                let payload = row.map_err(|error| error.to_string())?;
+                values.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+            }
+            store_query(values, &call.input)
+        }
         operation => Err(format!(
             "SQLite store does not implement operation '{operation}' for {}",
             call.capacity
+        )),
+    }
+}
+
+fn load_document_file(path: &str) -> Result<DocumentStoreMap, String> {
+    let file = std::path::Path::new(path);
+    if !file.exists() {
+        return Ok(DocumentStoreMap::new());
+    }
+    let text = std::fs::read_to_string(file)
+        .map_err(|error| format!("cannot read document store '{path}': {error}"))?;
+    if text.trim().is_empty() {
+        return Ok(DocumentStoreMap::new());
+    }
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|error| format!("document store '{path}' is not valid JSON: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("document store '{path}' must be a JSON object"))?;
+    let mut stores = DocumentStoreMap::new();
+    for (provider, records) in object {
+        let record_object = records
+            .as_object()
+            .ok_or_else(|| format!("document store provider '{provider}' must be a JSON object"))?;
+        stores.insert(
+            provider.clone(),
+            record_object.clone().into_iter().collect(),
+        );
+    }
+    Ok(stores)
+}
+
+fn write_document_file(path: &str, stores: &DocumentStoreMap) -> Result<(), String> {
+    if let Some(parent) = std::path::Path::new(path).parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create document store directory: {error}"))?;
+    }
+    let mut root = Map::new();
+    for (provider, records) in stores {
+        root.insert(
+            provider.clone(),
+            Value::Object(records.clone().into_iter().collect()),
+        );
+    }
+    let payload = serde_json::to_string_pretty(&Value::Object(root))
+        .map_err(|error| format!("cannot serialize document store: {error}"))?;
+    std::fs::write(path, payload)
+        .map_err(|error| format!("cannot write document store '{path}': {error}"))
+}
+
+fn document_store_call(
+    stores: &mut DocumentStoreMap,
+    call: ProviderCall<'_>,
+    flush_path: Option<&str>,
+) -> Result<Value, String> {
+    let result = match call.operation {
+        "save" => {
+            let id = record_id(&call.input)?;
+            stores
+                .entry(call.provider.to_string())
+                .or_default()
+                .insert(id, call.input.clone());
+            Ok(call.input.clone())
+        }
+        "find" => {
+            let id = string_input(&call.input, "find")?;
+            stores
+                .get(call.provider)
+                .and_then(|store| store.get(id).cloned())
+                .ok_or_else(|| "not_found".into())
+        }
+        "delete" => {
+            let id = string_input(&call.input, "delete")?;
+            let removed = stores
+                .get_mut(call.provider)
+                .is_some_and(|store| store.remove(id).is_some());
+            Ok(Value::Bool(removed))
+        }
+        "list" => {
+            let values = stores
+                .get(call.provider)
+                .map(|store| store.values().cloned().collect())
+                .unwrap_or_default();
+            Ok(Value::Array(values))
+        }
+        "query" => {
+            let values = stores
+                .get(call.provider)
+                .map(|store| store.values().cloned().collect())
+                .unwrap_or_default();
+            store_query(values, &call.input)
+        }
+        operation => Err(format!(
+            "document store does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }?;
+    if matches!(call.operation, "save" | "delete")
+        && let Some(path) = flush_path
+    {
+        write_document_file(path, stores)?;
+    }
+    Ok(result)
+}
+
+fn store_query(records: Vec<Value>, input: &Value) -> Result<Value, String> {
+    let spec = input
+        .as_object()
+        .ok_or_else(|| "store query requires an object QuerySpec".to_string())?;
+    let owned_filter;
+    let filter = match spec.get("filter") {
+        None | Some(Value::Null) => None,
+        Some(Value::Object(map)) if map.is_empty() => None,
+        Some(Value::Object(map)) => Some(map),
+        Some(Value::String(text)) if text.is_empty() || text == "{}" => None,
+        Some(Value::String(text)) => {
+            owned_filter = serde_json::from_str::<Value>(text)
+                .map_err(|error| format!("query filter text must be a JSON object: {error}"))?;
+            match &owned_filter {
+                Value::Object(map) if map.is_empty() => None,
+                Value::Object(_) => owned_filter.as_object(),
+                _ => {
+                    return Err("query filter text must be a JSON object".into());
+                }
+            }
+        }
+        Some(_) => return Err("query filter must be a map or JSON object text".into()),
+    };
+
+    let mut items: Vec<Value> = records
+        .into_iter()
+        .filter(|record| record_matches_query_filter(record, filter))
+        .collect();
+
+    if let Some(order_by) = spec
+        .get("order_by")
+        .and_then(Value::as_str)
+        .filter(|field| !field.is_empty())
+    {
+        let descending = matches!(
+            spec.get("direction").and_then(Value::as_str),
+            Some("desc") | Some("DESC")
+        );
+        items.sort_by(|left, right| {
+            let ordering =
+                compare_query_field_keys(left, right, order_by).unwrap_or(Ordering::Equal);
+            if descending {
+                ordering.reverse()
+            } else {
+                ordering
+            }
+        });
+    }
+
+    let total = items.len() as i64;
+    let offset = spec
+        .get("offset")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        .max(0) as usize;
+    let limit = spec
+        .get("limit")
+        .and_then(Value::as_i64)
+        .filter(|value| *value >= 0)
+        .map(|value| value as usize);
+    let page: Vec<Value> = items
+        .into_iter()
+        .skip(offset)
+        .take(limit.unwrap_or(usize::MAX))
+        .collect();
+    let limit_out = limit.map(|value| value as i64).unwrap_or(total);
+
+    Ok(json!({
+        "items": page,
+        "total": total,
+        "limit": limit_out,
+        "offset": offset as i64,
+    }))
+}
+
+fn record_matches_query_filter(
+    record: &Value,
+    filter: Option<&serde_json::Map<String, Value>>,
+) -> bool {
+    let Some(filter) = filter else {
+        return true;
+    };
+    let Some(object) = record.as_object() else {
+        return false;
+    };
+    filter.iter().all(|(key, expected)| {
+        object
+            .get(key)
+            .is_some_and(|actual| values_equal_for_query_filter(actual, expected))
+    })
+}
+
+fn values_equal_for_query_filter(actual: &Value, expected: &Value) -> bool {
+    if actual == expected {
+        return true;
+    }
+    let Some(expected_text) = expected.as_str() else {
+        return false;
+    };
+    match actual {
+        Value::String(value) => value == expected_text,
+        Value::Bool(value) => {
+            (*value && expected_text == "true") || (!*value && expected_text == "false")
+        }
+        Value::Number(value) => {
+            value.to_string() == expected_text
+                || value
+                    .as_i64()
+                    .is_some_and(|number| number.to_string() == expected_text)
+                || value
+                    .as_f64()
+                    .is_some_and(|number| number.to_string() == expected_text)
+        }
+        _ => false,
+    }
+}
+
+fn compare_query_field_keys(left: &Value, right: &Value, field: &str) -> Result<Ordering, String> {
+    let left_key = left.as_object().and_then(|object| object.get(field));
+    let right_key = right.as_object().and_then(|object| object.get(field));
+    match (left_key, right_key) {
+        (None, None) => Ok(Ordering::Equal),
+        (None, Some(_)) => Ok(Ordering::Less),
+        (Some(_), None) => Ok(Ordering::Greater),
+        (Some(left), Some(right)) => compare_sort_keys(left, right),
+    }
+}
+
+fn memory_tx_call(
+    stores: &mut MemoryStoreMap,
+    stack: &mut MemoryTxStack,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    match call.operation {
+        "begin" => {
+            let tid = string_input(&call.input, "begin")?.to_string();
+            if stack.iter().any(|(open, _)| open == &tid) {
+                return Err("tx_already_open".into());
+            }
+            stack.push((tid.clone(), stores.clone()));
+            Ok(Value::String(tid))
+        }
+        "commit" => {
+            let tid = string_input(&call.input, "commit")?;
+            let Some((open, _)) = stack.last() else {
+                return Err("tx_not_open".into());
+            };
+            if open != tid {
+                return Err("tx_mismatch".into());
+            }
+            stack.pop();
+            Ok(Value::Null)
+        }
+        "rollback" => {
+            let tid = string_input(&call.input, "rollback")?;
+            let Some((open, _)) = stack.last() else {
+                return Err("tx_not_open".into());
+            };
+            if open != tid {
+                return Err("tx_mismatch".into());
+            }
+            let (_, snapshot) = stack.pop().expect("checked");
+            *stores = snapshot;
+            Ok(Value::Null)
+        }
+        operation => Err(format!(
+            "memory transaction does not implement operation '{operation}'"
+        )),
+    }
+}
+
+fn sqlite_tx_call(
+    connection: &Connection,
+    stacks: &mut BTreeMap<String, Vec<String>>,
+    key: &str,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let stack = stacks.entry(key.to_string()).or_default();
+    match call.operation {
+        "begin" => {
+            let tid = string_input(&call.input, "begin")?.to_string();
+            if stack.iter().any(|open| open == &tid) {
+                return Err("tx_already_open".into());
+            }
+            if stack.is_empty() {
+                connection
+                    .execute_batch("BEGIN")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(&tid);
+                connection
+                    .execute_batch(&format!("SAVEPOINT {savepoint}"))
+                    .map_err(|error| error.to_string())?;
+            }
+            stack.push(tid.clone());
+            Ok(Value::String(tid))
+        }
+        "commit" => {
+            let tid = string_input(&call.input, "commit")?;
+            let Some(open) = stack.last() else {
+                return Err("tx_not_open".into());
+            };
+            if open != tid {
+                return Err("tx_mismatch".into());
+            }
+            if stack.len() == 1 {
+                connection
+                    .execute_batch("COMMIT")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(tid);
+                connection
+                    .execute_batch(&format!("RELEASE {savepoint}"))
+                    .map_err(|error| error.to_string())?;
+            }
+            stack.pop();
+            Ok(Value::Null)
+        }
+        "rollback" => {
+            let tid = string_input(&call.input, "rollback")?;
+            let Some(open) = stack.last() else {
+                return Err("tx_not_open".into());
+            };
+            if open != tid {
+                return Err("tx_mismatch".into());
+            }
+            if stack.len() == 1 {
+                connection
+                    .execute_batch("ROLLBACK")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(tid);
+                connection
+                    .execute_batch(&format!("ROLLBACK TO {savepoint}; RELEASE {savepoint}"))
+                    .map_err(|error| error.to_string())?;
+            }
+            stack.pop();
+            Ok(Value::Null)
+        }
+        operation => Err(format!(
+            "SQLite transaction does not implement operation '{operation}'"
+        )),
+    }
+}
+
+fn sqlite_savepoint_name(tid: &str) -> String {
+    let safe: String = tid
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("axl_sp_{safe}")
+}
+
+fn sqlite_migration_marker(version: &str) -> String {
+    let safe: String = version
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    format!("axl_schema_{safe}")
+}
+
+fn memory_migrate_call(
+    history: &mut MemoryMigrationMap,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let versions = history.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "up" => {
+            let version = string_input(&call.input, "up")?.to_string();
+            if version.is_empty() || version == "0" {
+                return Err("invalid_version".into());
+            }
+            if versions.iter().any(|applied| applied == &version) {
+                return Err("already_applied".into());
+            }
+            versions.push(version.clone());
+            Ok(Value::String(version))
+        }
+        "down" => {
+            let version = string_input(&call.input, "down")?;
+            let Some(head) = versions.last() else {
+                return Err("nothing_to_rollback".into());
+            };
+            if head != version {
+                return Err("not_head".into());
+            }
+            let rolled = versions.pop().expect("checked");
+            Ok(Value::String(rolled))
+        }
+        "status" => {
+            if !call.input.is_null() {
+                return Err("migration status requires unit".into());
+            }
+            Ok(Value::String(
+                versions.last().cloned().unwrap_or_else(|| "0".to_string()),
+            ))
+        }
+        operation => Err(format!(
+            "memory migration does not implement operation '{operation}'"
+        )),
+    }
+}
+
+fn sqlite_migrate_call(connection: &Connection, call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "up" => {
+            let version = string_input(&call.input, "up")?.to_string();
+            if version.is_empty() || version == "0" {
+                return Err("invalid_version".into());
+            }
+            let already = connection.query_row(
+                "SELECT 1 FROM axl_schema_history WHERE provider = ?1 AND version = ?2",
+                params![call.provider, version],
+                |_| Ok(true),
+            );
+            match already {
+                Ok(true) => return Err("already_applied".into()),
+                Err(rusqlite::Error::QueryReturnedNoRows) => {}
+                Err(error) => return Err(error.to_string()),
+                Ok(false) => {}
+            }
+            let next_seq: i64 = connection
+                .query_row(
+                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM axl_schema_history WHERE provider = ?1",
+                    params![call.provider],
+                    |row| row.get(0),
+                )
+                .map_err(|error| error.to_string())?;
+            connection
+                .execute(
+                    "INSERT INTO axl_schema_history (provider, version, seq) VALUES (?1, ?2, ?3)",
+                    params![call.provider, version, next_seq],
+                )
+                .map_err(|error| error.to_string())?;
+            let marker = sqlite_migration_marker(&version);
+            connection
+                .execute_batch(&format!(
+                    "CREATE TABLE IF NOT EXISTS {marker} (applied INTEGER NOT NULL DEFAULT 1)"
+                ))
+                .map_err(|error| error.to_string())?;
+            Ok(Value::String(version))
+        }
+        "down" => {
+            let version = string_input(&call.input, "down")?.to_string();
+            let head = match connection.query_row(
+                "SELECT version FROM axl_schema_history WHERE provider = ?1 \
+                 ORDER BY seq DESC LIMIT 1",
+                params![call.provider],
+                |row| row.get::<_, String>(0),
+            ) {
+                Ok(head) => head,
+                Err(rusqlite::Error::QueryReturnedNoRows) => {
+                    return Err("nothing_to_rollback".into());
+                }
+                Err(error) => return Err(error.to_string()),
+            };
+            if head != version {
+                return Err("not_head".into());
+            }
+            connection
+                .execute(
+                    "DELETE FROM axl_schema_history WHERE provider = ?1 AND version = ?2",
+                    params![call.provider, version],
+                )
+                .map_err(|error| error.to_string())?;
+            let marker = sqlite_migration_marker(&version);
+            connection
+                .execute_batch(&format!("DROP TABLE IF EXISTS {marker}"))
+                .map_err(|error| error.to_string())?;
+            Ok(Value::String(version))
+        }
+        "status" => {
+            if !call.input.is_null() {
+                return Err("migration status requires unit".into());
+            }
+            match connection.query_row(
+                "SELECT version FROM axl_schema_history WHERE provider = ?1 \
+                 ORDER BY seq DESC LIMIT 1",
+                params![call.provider],
+                |row| row.get::<_, String>(0),
+            ) {
+                Ok(version) => Ok(Value::String(version)),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(Value::String("0".into())),
+                Err(error) => Err(error.to_string()),
+            }
+        }
+        operation => Err(format!(
+            "SQLite migration does not implement operation '{operation}'"
         )),
     }
 }
@@ -1978,7 +2591,14 @@ fn initialize_sqlite(connection: &Connection) -> Result<(), String> {
              provider TEXT NOT NULL, \
              cache_key TEXT NOT NULL, \
              value TEXT NOT NULL, \
-             PRIMARY KEY (provider, cache_key));",
+             PRIMARY KEY (provider, cache_key));\
+             CREATE TABLE IF NOT EXISTS axl_schema_history (\
+             provider TEXT NOT NULL, \
+             version TEXT NOT NULL, \
+             seq INTEGER NOT NULL, \
+             PRIMARY KEY (provider, version));\
+             CREATE UNIQUE INDEX IF NOT EXISTS axl_schema_history_seq \
+             ON axl_schema_history (provider, seq);",
         )
         .map_err(|error| format!("cannot initialize SQLite schema: {error}"))
 }
@@ -2966,6 +3586,678 @@ flow TraceOnce unit -> Result<List<text>>
             authorize(&mut runtime, "not.a.jwt").unwrap(),
             Value::Bool(false)
         );
-        assert_eq!(authorize(&mut runtime, "a.b.c").unwrap(), Value::Bool(false));
+        assert_eq!(
+            authorize(&mut runtime, "a.b.c").unwrap(),
+            Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn sqlite_transaction_commit_survives_restart_and_rollback_hides_writes() {
+        let database = std::env::temp_dir().join(format!(
+            "axl-tx-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = serde_json::to_string(database.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app DurableTx
+entity Record
+  id: uuid required
+  value: text required
+entity RecordPair
+  first: Record required
+  second: Record required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+capacity TransactionManager
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+skill DurableRecords provides RecordStore
+  native rust axl::store::sqlite
+  config path: text = {path}
+  effect db.read
+  effect db.write
+skill DurableTx provides TransactionManager
+  native rust axl::tx::sqlite
+  config path: text = {path}
+  effect db.write
+flow CommitTwo RecordPair -> Result<Record>
+  in tx: TransactionManager = DurableTx
+  in store: RecordStore = DurableRecords
+  call tid = tx.begin("commit-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.commit(tid)?
+  return second
+flow RollbackTwo RecordPair -> Result<unit>
+  in tx: TransactionManager = DurableTx
+  in store: RecordStore = DurableRecords
+  call tid = tx.begin("rollback-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.rollback(tid)?
+  return done
+flow Find uuid -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call found = store.find(input)?
+  return found
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let commit_pair = json!({
+            "first": {"id": "tx-c1", "value": "one"},
+            "second": {"id": "tx-c2", "value": "two"}
+        });
+        {
+            let mut first = BuiltinRuntime::new().unwrap();
+            let saved =
+                evaluate_flow_with_runtime(&graph, "CommitTwo", commit_pair, &mut first).unwrap();
+            assert_eq!(saved["ok"]["id"], "tx-c2");
+        }
+        {
+            let mut second = BuiltinRuntime::new().unwrap();
+            let found =
+                evaluate_flow_with_runtime(&graph, "Find", json!("tx-c1"), &mut second).unwrap();
+            assert_eq!(found["ok"]["value"], "one");
+            let found =
+                evaluate_flow_with_runtime(&graph, "Find", json!("tx-c2"), &mut second).unwrap();
+            assert_eq!(found["ok"]["value"], "two");
+        }
+
+        let rollback_pair = json!({
+            "first": {"id": "tx-r1", "value": "gone"},
+            "second": {"id": "tx-r2", "value": "also-gone"}
+        });
+        {
+            let mut runtime = BuiltinRuntime::new().unwrap();
+            let rolled =
+                evaluate_flow_with_runtime(&graph, "RollbackTwo", rollback_pair, &mut runtime)
+                    .unwrap();
+            assert_eq!(rolled, json!({"ok": null}));
+        }
+        {
+            let mut runtime = BuiltinRuntime::new().unwrap();
+            let missing =
+                evaluate_flow_with_runtime(&graph, "Find", json!("tx-r1"), &mut runtime).unwrap();
+            assert_eq!(missing["error"], "not_found");
+            let missing =
+                evaluate_flow_with_runtime(&graph, "Find", json!("tx-r2"), &mut runtime).unwrap();
+            assert_eq!(missing["error"], "not_found");
+        }
+        drop(database.exists().then(|| std::fs::remove_file(&database)));
+    }
+
+    #[test]
+    fn memory_transaction_rollback_restores_snapshot() {
+        const SOURCE: &str = r#"axl 4
+app MemoryTx
+entity Record
+  id: uuid required
+  value: text required
+entity RecordPair
+  first: Record required
+  second: Record required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+capacity TransactionManager
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+skill MemoryRecords provides RecordStore
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+skill MemoryTx provides TransactionManager
+  native rust axl::tx::memory
+  effect db.write
+flow RollbackTwo RecordPair -> Result<unit>
+  in tx: TransactionManager = MemoryTx
+  in store: RecordStore = MemoryRecords
+  call tid = tx.begin("rollback-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.rollback(tid)?
+  return done
+flow Find uuid -> Result<Record>
+  in store: RecordStore = MemoryRecords
+  call found = store.find(input)?
+  return found
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let pair = json!({
+            "first": {"id": "m1", "value": "a"},
+            "second": {"id": "m2", "value": "b"}
+        });
+        let rolled = evaluate_flow_with_runtime(&graph, "RollbackTwo", pair, &mut runtime).unwrap();
+        assert_eq!(rolled, json!({"ok": null}));
+        let missing =
+            evaluate_flow_with_runtime(&graph, "Find", json!("m1"), &mut runtime).unwrap();
+        assert_eq!(missing["error"], "not_found");
+        let missing =
+            evaluate_flow_with_runtime(&graph, "Find", json!("m2"), &mut runtime).unwrap();
+        assert_eq!(missing["error"], "not_found");
+    }
+
+    #[test]
+    fn sqlite_migration_up_survives_restart_and_down_rolls_back() {
+        let database = std::env::temp_dir().join(format!(
+            "axl-migrate-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = serde_json::to_string(database.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app DurableMigrate
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
+skill DurableMigrations provides MigrationRunner
+  native rust axl::migrate::sqlite
+  config path: text = {path}
+  effect db.write
+flow Apply text -> Result<text>
+  in migrations: MigrationRunner = DurableMigrations
+  call version = migrations.up(input)?
+  return version
+flow Rollback text -> Result<text>
+  in migrations: MigrationRunner = DurableMigrations
+  call version = migrations.down(input)?
+  return version
+flow Status unit -> Result<text>
+  in migrations: MigrationRunner = DurableMigrations
+  call version = migrations.status(input)?
+  return version
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        {
+            let mut first = BuiltinRuntime::new().unwrap();
+            let applied =
+                evaluate_flow_with_runtime(&graph, "Apply", json!("v1"), &mut first).unwrap();
+            assert_eq!(applied, json!({"ok": "v1"}));
+            let applied =
+                evaluate_flow_with_runtime(&graph, "Apply", json!("v2"), &mut first).unwrap();
+            assert_eq!(applied, json!({"ok": "v2"}));
+            let status =
+                evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut first).unwrap();
+            assert_eq!(status, json!({"ok": "v2"}));
+        }
+        {
+            let mut second = BuiltinRuntime::new().unwrap();
+            let status =
+                evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut second).unwrap();
+            assert_eq!(status, json!({"ok": "v2"}));
+            let rolled =
+                evaluate_flow_with_runtime(&graph, "Rollback", json!("v2"), &mut second).unwrap();
+            assert_eq!(rolled, json!({"ok": "v2"}));
+            let status =
+                evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut second).unwrap();
+            assert_eq!(status, json!({"ok": "v1"}));
+        }
+        {
+            let mut third = BuiltinRuntime::new().unwrap();
+            let status =
+                evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut third).unwrap();
+            assert_eq!(status, json!({"ok": "v1"}));
+        }
+        drop(database.exists().then(|| std::fs::remove_file(&database)));
+    }
+
+    #[test]
+    fn memory_migration_up_down_and_status() {
+        const SOURCE: &str = r#"axl 4
+app MemoryMigrate
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
+skill MemoryMigrations provides MigrationRunner
+  native rust axl::migrate::memory
+  effect db.write
+flow Apply text -> Result<text>
+  in migrations: MigrationRunner = MemoryMigrations
+  call version = migrations.up(input)?
+  return version
+flow Rollback text -> Result<text>
+  in migrations: MigrationRunner = MemoryMigrations
+  call version = migrations.down(input)?
+  return version
+flow Status unit -> Result<text>
+  in migrations: MigrationRunner = MemoryMigrations
+  call version = migrations.status(input)?
+  return version
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let status =
+            evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut runtime).unwrap();
+        assert_eq!(status, json!({"ok": "0"}));
+        let applied =
+            evaluate_flow_with_runtime(&graph, "Apply", json!("v1"), &mut runtime).unwrap();
+        assert_eq!(applied, json!({"ok": "v1"}));
+        let applied =
+            evaluate_flow_with_runtime(&graph, "Apply", json!("v2"), &mut runtime).unwrap();
+        assert_eq!(applied, json!({"ok": "v2"}));
+        let status =
+            evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut runtime).unwrap();
+        assert_eq!(status, json!({"ok": "v2"}));
+        let rolled =
+            evaluate_flow_with_runtime(&graph, "Rollback", json!("v2"), &mut runtime).unwrap();
+        assert_eq!(rolled, json!({"ok": "v2"}));
+        let status =
+            evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut runtime).unwrap();
+        assert_eq!(status, json!({"ok": "v1"}));
+    }
+
+    #[test]
+    fn sqlite_store_query_filters_orders_pages_and_survives_restart() {
+        let database = std::env::temp_dir().join(format!(
+            "axl-query-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = serde_json::to_string(database.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app DurableQuery
+entity Record
+  id: uuid required
+  kind: text required
+  account: text required
+  occurred_at: text required
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+  op query RecordQuery -> Result<RecordPage> idempotent
+skill DurableRecords provides RecordStore
+  native rust axl::store::sqlite
+  config path: text = {path}
+  effect db.read
+  effect db.write
+flow Save Record -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call saved = store.save(input)?
+  return saved
+flow Query RecordQuery -> Result<RecordPage>
+  in store: RecordStore = DurableRecords
+  call page = store.query(input)?
+  return page
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let records = [
+            json!({"id": "q1", "kind": "income", "account": "a1", "occurred_at": "2026-08-27T09:00:00Z"}),
+            json!({"id": "q2", "kind": "expense", "account": "a1", "occurred_at": "2026-08-27T10:00:00Z"}),
+            json!({"id": "q3", "kind": "income", "account": "a1", "occurred_at": "2026-08-27T11:00:00Z"}),
+        ];
+        {
+            let mut first = BuiltinRuntime::new().unwrap();
+            for record in &records {
+                let saved =
+                    evaluate_flow_with_runtime(&graph, "Save", record.clone(), &mut first).unwrap();
+                assert_eq!(saved["ok"]["id"], record["id"]);
+            }
+            let page = evaluate_flow_with_runtime(
+                &graph,
+                "Query",
+                json!({
+                    "filter": {"kind": "income", "account": "a1"},
+                    "order_by": "occurred_at",
+                    "direction": "desc",
+                    "limit": 1,
+                    "offset": 0
+                }),
+                &mut first,
+            )
+            .unwrap();
+            assert_eq!(page["ok"]["total"], 2);
+            assert_eq!(page["ok"]["limit"], 1);
+            assert_eq!(page["ok"]["offset"], 0);
+            assert_eq!(page["ok"]["items"][0]["id"], "q3");
+        }
+        {
+            let mut second = BuiltinRuntime::new().unwrap();
+            let page = evaluate_flow_with_runtime(
+                &graph,
+                "Query",
+                json!({
+                    "filter": {"kind": "income", "account": "a1"},
+                    "order_by": "occurred_at",
+                    "direction": "desc",
+                    "limit": 1,
+                    "offset": 0
+                }),
+                &mut second,
+            )
+            .unwrap();
+            assert_eq!(page["ok"]["total"], 2);
+            assert_eq!(page["ok"]["items"][0]["id"], "q3");
+        }
+        drop(database.exists().then(|| std::fs::remove_file(&database)));
+    }
+
+    #[test]
+    fn memory_store_query_filters_orders_and_pages() {
+        const SOURCE: &str = r#"axl 4
+app MemoryQuery
+entity Record
+  id: uuid required
+  kind: text required
+  account: text required
+  occurred_at: text required
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+  op query RecordQuery -> Result<RecordPage> idempotent
+skill MemoryRecords provides RecordStore
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+flow Save Record -> Result<Record>
+  in store: RecordStore = MemoryRecords
+  call saved = store.save(input)?
+  return saved
+flow Query RecordQuery -> Result<RecordPage>
+  in store: RecordStore = MemoryRecords
+  call page = store.query(input)?
+  return page
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        for record in [
+            json!({"id": "m1", "kind": "income", "account": "cash", "occurred_at": "t1"}),
+            json!({"id": "m2", "kind": "expense", "account": "cash", "occurred_at": "t2"}),
+            json!({"id": "m3", "kind": "income", "account": "cash", "occurred_at": "t3"}),
+        ] {
+            evaluate_flow_with_runtime(&graph, "Save", record, &mut runtime).unwrap();
+        }
+        let page = evaluate_flow_with_runtime(
+            &graph,
+            "Query",
+            json!({
+                "filter": {"kind": "income"},
+                "order_by": "occurred_at",
+                "direction": "asc",
+                "limit": 10,
+                "offset": 1
+            }),
+            &mut runtime,
+        )
+        .unwrap();
+        assert_eq!(page["ok"]["total"], 2);
+        assert_eq!(page["ok"]["items"].as_array().unwrap().len(), 1);
+        assert_eq!(page["ok"]["items"][0]["id"], "m3");
+    }
+
+    #[test]
+    fn document_store_persists_across_independent_runtimes() {
+        let database = std::env::temp_dir().join(format!(
+            "axl-document-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = serde_json::to_string(database.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app DurableDocumentStore
+entity Record
+  id: uuid required
+  value: text required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+skill DurableRecords provides RecordStore
+  native rust axl::store::document
+  config path: text = {path}
+  effect db.read
+  effect db.write
+flow Save Record -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call saved = store.save(input)?
+  return saved
+flow Find uuid -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call found = store.find(input)?
+  return found
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let record = json!({"id": "doc-1", "value": "survives restart"});
+        {
+            let mut first_runtime = BuiltinRuntime::new().unwrap();
+            let saved =
+                evaluate_flow_with_runtime(&graph, "Save", record.clone(), &mut first_runtime)
+                    .unwrap();
+            assert_eq!(saved, json!({"ok": record}));
+        }
+        {
+            let mut second_runtime = BuiltinRuntime::new().unwrap();
+            let found =
+                evaluate_flow_with_runtime(&graph, "Find", json!("doc-1"), &mut second_runtime)
+                    .unwrap();
+            assert_eq!(found["ok"]["value"], "survives restart");
+        }
+        drop(database.exists().then(|| std::fs::remove_file(&database)));
+    }
+
+    #[test]
+    fn document_store_query_filters_orders_pages_and_survives_restart() {
+        let database = std::env::temp_dir().join(format!(
+            "axl-document-query-{}-{}.json",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = serde_json::to_string(database.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app DurableDocumentQuery
+entity Record
+  id: uuid required
+  kind: text required
+  account: text required
+  occurred_at: text required
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+  op query RecordQuery -> Result<RecordPage> idempotent
+skill DurableRecords provides RecordStore
+  native rust axl::store::document
+  config path: text = {path}
+  effect db.read
+  effect db.write
+flow Save Record -> Result<Record>
+  in store: RecordStore = DurableRecords
+  call saved = store.save(input)?
+  return saved
+flow Query RecordQuery -> Result<RecordPage>
+  in store: RecordStore = DurableRecords
+  call page = store.query(input)?
+  return page
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let records = [
+            json!({"id": "q1", "kind": "income", "account": "a1", "occurred_at": "2026-08-27T09:00:00Z"}),
+            json!({"id": "q2", "kind": "expense", "account": "a1", "occurred_at": "2026-08-27T10:00:00Z"}),
+            json!({"id": "q3", "kind": "income", "account": "a1", "occurred_at": "2026-08-27T11:00:00Z"}),
+        ];
+        {
+            let mut first = BuiltinRuntime::new().unwrap();
+            for record in &records {
+                let saved =
+                    evaluate_flow_with_runtime(&graph, "Save", record.clone(), &mut first).unwrap();
+                assert_eq!(saved["ok"]["id"], record["id"]);
+            }
+            let page = evaluate_flow_with_runtime(
+                &graph,
+                "Query",
+                json!({
+                    "filter": {"kind": "income", "account": "a1"},
+                    "order_by": "occurred_at",
+                    "direction": "desc",
+                    "limit": 1,
+                    "offset": 0
+                }),
+                &mut first,
+            )
+            .unwrap();
+            assert_eq!(page["ok"]["total"], 2);
+            assert_eq!(page["ok"]["items"][0]["id"], "q3");
+        }
+        {
+            let mut second = BuiltinRuntime::new().unwrap();
+            let page = evaluate_flow_with_runtime(
+                &graph,
+                "Query",
+                json!({
+                    "filter": {"kind": "income", "account": "a1"},
+                    "order_by": "occurred_at",
+                    "direction": "desc",
+                    "limit": 1,
+                    "offset": 0
+                }),
+                &mut second,
+            )
+            .unwrap();
+            assert_eq!(page["ok"]["total"], 2);
+            assert_eq!(page["ok"]["items"][0]["id"], "q3");
+        }
+        drop(database.exists().then(|| std::fs::remove_file(&database)));
+    }
+
+    #[test]
+    fn three_store_families_share_save_find_query_contract() {
+        for native in [
+            "axl::store::memory",
+            "axl::store::sqlite",
+            "axl::store::document",
+        ] {
+            let source = format!(
+                r#"axl 4
+app StoreFamily
+entity Record
+  id: uuid required
+  kind: text required
+  account: text required
+  occurred_at: text required
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+  op query RecordQuery -> Result<RecordPage> idempotent
+skill FamilyRecords provides RecordStore
+  native rust {native}
+  effect db.read
+  effect db.write
+flow Save Record -> Result<Record>
+  in store: RecordStore = FamilyRecords
+  call saved = store.save(input)?
+  return saved
+flow Find uuid -> Result<Record>
+  in store: RecordStore = FamilyRecords
+  call found = store.find(input)?
+  return found
+flow Query RecordQuery -> Result<RecordPage>
+  in store: RecordStore = FamilyRecords
+  call page = store.query(input)?
+  return page
+"#
+            );
+            let graph = compile_source(&source).unwrap().graph;
+            let mut runtime = BuiltinRuntime::new().unwrap();
+            let record = json!({
+                "id": "shared-1",
+                "kind": "income",
+                "account": "a1",
+                "occurred_at": "2026-08-28T01:00:00Z"
+            });
+            let saved =
+                evaluate_flow_with_runtime(&graph, "Save", record.clone(), &mut runtime).unwrap();
+            assert_eq!(saved["ok"]["id"], "shared-1", "native={native}");
+            let found = evaluate_flow_with_runtime(&graph, "Find", json!("shared-1"), &mut runtime)
+                .unwrap();
+            assert_eq!(found["ok"], record, "native={native}");
+            let page = evaluate_flow_with_runtime(
+                &graph,
+                "Query",
+                json!({
+                    "filter": {"kind": "income"},
+                    "order_by": "occurred_at",
+                    "direction": "asc",
+                    "limit": 5,
+                    "offset": 0
+                }),
+                &mut runtime,
+            )
+            .unwrap();
+            assert_eq!(page["ok"]["total"], 1, "native={native}");
+            assert_eq!(page["ok"]["items"][0]["id"], "shared-1", "native={native}");
+        }
     }
 }

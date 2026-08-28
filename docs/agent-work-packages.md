@@ -98,12 +98,16 @@ Goal: complete Gate 3 with portable data semantics.
 
 Deliverables:
 
-- typed repository query/filter/order/page contracts;
-- transaction block with commit and rollback proof;
-- versioned migrations and schema history;
+- ~~typed repository query/filter/order/page contracts~~ (store `query`
+  QuerySpec → Page; memory + SQLite + document);
+- ~~transaction block with commit and rollback proof~~ (capacity-backed
+  `TransactionManager` begin/commit/rollback proven);
+- ~~versioned migrations and schema history~~ (capacity-backed `MigrationRunner`
+  up/down/status proven);
+- ~~document/key-value provider contract~~ (`rust::axl::store::document` JSON
+  file; save/find/query behind the same `MovementStore`);
 - SQLite, PostgreSQL and MySQL providers behind the same capacities;
-- document/key-value provider contract;
-- pooling, health, timeout and tenant/namespace configuration;
+- document tx/migrate; pooling, health, timeout and tenant/namespace configuration;
 - deterministic test adapters independent of external infrastructure.
 
 Exit evidence: the same AXL application switches providers only through skill

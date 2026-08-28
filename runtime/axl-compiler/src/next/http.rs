@@ -1080,11 +1080,9 @@ api CorsApi
             Some("Bearer not-a-jwt"),
         );
         assert_eq!(bad_jwt.status, 403);
-        let wrong_issuer = runtime::encode_hs256_jwt(
-            "demo-only",
-            &json!({"sub": "alice", "iss": "other"}),
-        )
-        .unwrap();
+        let wrong_issuer =
+            runtime::encode_hs256_jwt("demo-only", &json!({"sub": "alice", "iss": "other"}))
+                .unwrap();
         let denied_jwt = dispatch_with_authorization(
             &graph,
             &mut runtime,
@@ -1094,11 +1092,9 @@ api CorsApi
             Some(&format!("Bearer {wrong_issuer}")),
         );
         assert_eq!(denied_jwt.status, 403);
-        let good_jwt = runtime::encode_hs256_jwt(
-            "demo-only",
-            &json!({"sub": "alice", "iss": "axl-demo"}),
-        )
-        .unwrap();
+        let good_jwt =
+            runtime::encode_hs256_jwt("demo-only", &json!({"sub": "alice", "iss": "axl-demo"}))
+                .unwrap();
         let accepted_jwt = dispatch_with_authorization(
             &graph,
             &mut runtime,

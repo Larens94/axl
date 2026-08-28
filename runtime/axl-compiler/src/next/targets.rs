@@ -5,6 +5,7 @@ use anyhow::Result;
 use serde_json::json;
 
 use super::ir::{GraphIr, GraphNode};
+use super::ui;
 
 pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     let rust_dir = output.join("rust");
@@ -14,6 +15,7 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     let block_dir = output.join("blocks");
     let flow_dir = output.join("flows");
     let http_dir = output.join("http");
+    let ui_dir = output.join("ui");
     let provider_dir = output.join("providers");
     for directory in [
         &rust_dir,
@@ -23,6 +25,7 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
         &block_dir,
         &flow_dir,
         &http_dir,
+        &ui_dir,
         &provider_dir,
     ] {
         std::fs::create_dir_all(directory)?;
@@ -45,6 +48,10 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     std::fs::write(
         http_dir.join("routes.json"),
         serde_json::to_string_pretty(&http_manifest(graph))?,
+    )?;
+    std::fs::write(
+        ui_dir.join("pages.json"),
+        serde_json::to_string_pretty(&ui::ui_manifest(graph))?,
     )?;
     std::fs::write(
         provider_dir.join("providers.json"),
@@ -525,6 +532,7 @@ fn target_manifest(graph: &GraphIr) -> serde_json::Value {
             "blocks": "blocks/open-blocks.json",
             "flows": "flows/flows.json",
             "http": "http/routes.json",
+            "ui": "ui/pages.json",
             "providers": "providers/providers.json"
         },
         "counts": {

@@ -1,0 +1,4 @@
+// Expected diagnostic: AXL-P931.
+axl 4
+app MissingImport
+import "./missing-module.axl"

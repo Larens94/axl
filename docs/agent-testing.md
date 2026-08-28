@@ -15,26 +15,94 @@ jq empty schema/axl-ir-4.0.schema.json
 jq empty schema/axl-open-block-2.schema.json
 jq empty schema/axl-flow-2.schema.json
 jq empty schema/axl-http-1.schema.json
+jq empty schema/axl-ui-1.schema.json
 jq empty schema/axl-provider-1.schema.json
+jq empty schema/axl-check-1.schema.json
 ```
 
-The integration suite compiles nine valid documented programs, round-trips each
-through Packed Graph IR and verifies twenty-five intentionally invalid programs.
+The integration suite compiles ten valid documented programs, round-trips each
+through Packed Graph IR, verifies twenty-seven intentionally invalid programs,
+and proves multi-file import through `examples/apps/import-demo.axl`.
 
 The foundation program `examples/catalog/software-foundation.axl` contains
 fourteen primary open blueprint contracts and must compile as application
 `SoftwareFoundation`.
 
-## 2. Compile the complete open block
+## 2. Structured check diagnostics (`axl-check/1`)
+
+`check` and `diagnose` are aliases. With `--json`, both success and failure
+write a single JSON document to **stdout** using protocol `axl-check/1`
+(schema: `schema/axl-check-1.schema.json`). Agents should parse stdout only.
+
+The input path and `--json` may appear in either order:
+
+```sh
+cargo run -p axl-compiler -- check examples/apps/ledger.axl --json
+cargo run -p axl-compiler -- check --json examples/apps/ledger.axl
+```
+
+Success example:
+
+```json
+{
+  "protocol": "axl-check/1",
+  "ok": true,
+  "path": "examples/apps/cashflow-core.axl",
+  "app": "CashflowCore",
+  "schema": "ax-ir/4.0",
+  "nodes": 87,
+  "edges": 142
+}
+```
+
+Failure example (parse, analyze, import and UI phases):
+
+```json
+{
+  "protocol": "axl-check/1",
+  "ok": false,
+  "path": "examples/invalid/flow-calls.axl",
+  "diagnostics": [
+    {
+      "code": "AXL-X817",
+      "phase": "execution",
+      "severity": "error",
+      "message": "call 'store.find' receives the wrong argument type",
+      "path": "examples/invalid/flow-calls.axl",
+      "span": { "line": 39, "column": 1, "length": 35 },
+      "expected": "uuid",
+      "found": "Movement",
+      "fix_safety": "manual"
+    }
+  ]
+}
+```
+
+Each diagnostic carries a stable `code`, human `message`, optional source `path`,
+1-based `span`, optional `expected`/`found`, optional `hint`, `fix_safety` and
+`repairs` (connect/replace candidates). Phases: `parse`, `imports`, `names`,
+`types`, `ports`, `execution`, `http`, `ui`, `compact`.
+
+Quick probe:
+
+```sh
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-calls.axl --json | jq '.protocol,.ok,(.diagnostics|length)'
+```
+
+Expected: `"axl-check/1"`, `false`, and a positive diagnostic count.
+
+## 3. Compile the complete open block
 
 ```sh
 cargo run -p axl-compiler -- \
   check examples/blocks/05-open-dataview.axl --json
 ```
 
-The command must return `ok: true` for application `OpenDataViewBlock`.
+The command must return `"ok": true` with `"protocol": "axl-check/1"` for
+application `OpenDataViewBlock`.
 
-## 3. Inspect the open surfaces
+## 4. Inspect the open surfaces
 
 ```sh
 cargo run -p axl-compiler -- \
@@ -51,7 +119,7 @@ Expected protocol: `axl-open-block/2`. The `CustomerDataView` block currently
 contains twelve typed surfaces, nine of which are direct customization surfaces.
 The other three are observable `state`, `event` and `error` surfaces.
 
-## 4. Verify a typed instance override
+## 5. Verify a typed instance override
 
 ```sh
 cargo run -p axl-compiler -- \
@@ -66,7 +134,7 @@ The resolved manifest entry must name blueprint `CustomerList`, contain two
 settings (`page_size`, `density`) and bind `table.row` to
 `CompactCustomerRow`.
 
-## 5. Execute the cashflow core
+## 6. Execute the cashflow core
 
 ```sh
 cargo run -p axl-compiler -- \
@@ -102,6 +170,10 @@ cargo run -p axl-compiler -- \
   examples/apps/inputs/movement-valid.json
 
 cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl StoreAndLoadMovementDocument \
+  examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl ValidateAndStoreMovement \
   examples/apps/inputs/movement-valid.json
 
@@ -126,6 +198,14 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   eval examples/apps/cashflow-core.axl FindDurableMovement \
+  examples/apps/inputs/movement-id.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl SaveDurableDocumentMovement \
+  examples/apps/inputs/movement-valid.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl FindDurableDocumentMovement \
   examples/apps/inputs/movement-id.json
 
 cargo run -p axl-compiler -- \
@@ -157,7 +237,9 @@ returns `"80000"` for key `ledger:demo` across processes; invalidate returns
 `true`, then get yields `cache_miss`. No application-specific Rust function
 contains these rules. The durable movement commands run in independent
 processes and must still find `movement-001`, proving that the configured
-SQLite path survives a runtime restart.
+SQLite path survives a runtime restart. The same save/find pattern through
+`SaveDurableDocumentMovement` / `FindDurableDocumentMovement` proves the
+document JSON path survives independently.
 
 Verify observability (memory skills; two writes listable in one eval):
 
@@ -180,6 +262,35 @@ cargo run -p axl-compiler -- \
 `{ "ok": 2 }`. `TraceObservabilitySpan` returns
 `{ "ok": ["CalculateLedgerBalance"] }`.
 
+Verify transactions (SQLite commit survives recreate; rollback hides writes):
+
+```sh
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl CommitTwoDurableMovements \
+  examples/apps/inputs/movement-pair-commit.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl FindDurableMovement \
+  examples/apps/inputs/movement-tx-c01.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl FindDurableMovement \
+  examples/apps/inputs/movement-tx-c02.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl RollbackTwoDurableMovements \
+  examples/apps/inputs/movement-pair-rollback.json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/cashflow-core.axl FindDurableMovement \
+  examples/apps/inputs/movement-tx-r01.json
+```
+
+`CommitTwoDurableMovements` returns the second movement. Fresh-process finds
+for `movement-tx-c01` and `movement-tx-c02` must succeed. After
+`RollbackTwoDurableMovements`, find for `movement-tx-r01` must be `not_found`.
+Memory adapters prove the same contract in-process via `cargo test`.
+
 Verify jobs (in-process memory enqueue is covered by `cargo test`; durable
 cross-process proof is the `ScheduleDurableMovementPersist` / `tick` /
 `FindDurableMovement` sequence above). Scheduled unit jobs use
@@ -187,7 +298,48 @@ cross-process proof is the `ScheduleDurableMovementPersist` / `tick` /
 covered by `cargo test`; durable cache cross-process proof is the sequence
 above.
 
-## 6. Verify the HTTP backend
+## 6.1 Verify multi-file import
+
+```sh
+cargo run -p axl-compiler -- \
+  check examples/apps/import-demo.axl --json
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/import-demo.axl CalculateBalance \
+  examples/apps/inputs/balance.json
+```
+
+The check command must return `ok: true` for application `ImportDemo`. The eval
+command must return `80000` using the imported `CalculateBalance` flow from
+`examples/modules/math-lib.axl`.
+
+Missing import paths must report `AXL-P931`. Duplicate imported symbols must
+report `AXL-N002`:
+
+```sh
+cargo run -p axl-compiler -- check examples/invalid/import-missing.axl
+cargo run -p axl-compiler -- check examples/invalid/import-duplicate.axl
+```
+
+## 6.2 Verify the minimal UI slice
+
+```sh
+cargo run -p axl-compiler -- \
+  check examples/apps/balance-ui.axl --json
+
+cargo run -p axl-compiler -- \
+  ui examples/apps/balance-ui.axl
+
+cargo run -p axl-compiler -- \
+  render examples/apps/balance-ui.axl /balance \
+  examples/apps/inputs/balance.json > /tmp/balance-ui.html
+```
+
+The manifest must use protocol `axl-ui/1` and bind `/balance` to
+`CalculateBalance`. The rendered HTML must contain `80000`. Invalid UI
+declarations must report stable codes (`AXL-P951`, `AXL-U904`, `AXL-U905`).
+
+## 7. Verify the HTTP backend
 
 ```sh
 cargo run -p axl-compiler -- \
@@ -240,8 +392,7 @@ and issuer as `CashflowDemoJwt`):
 ```sh
 # Helper shape used by compiler tests (HS256, claims sub + iss):
 # encode_hs256_jwt("axl-cashflow-demo-jwt", {"sub":"alice","iss":"axl-cashflow"})
-# Or with Python:
-python3 - <<'PY'
+TOKEN=$(python3 - <<'PY'
 import base64, hashlib, hmac, json
 secret=b"axl-cashflow-demo-jwt"
 def b64(data): return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
@@ -250,6 +401,7 @@ payload=b64(json.dumps({"sub":"alice","iss":"axl-cashflow"},separators=(",",":")
 sig=b64(hmac.new(secret,f"{header}.{payload}".encode(),hashlib.sha256).digest())
 print(f"{header}.{payload}.{sig}")
 PY
+)
 
 curl -X POST http://127.0.0.1:8080/jwt/balance \
   -H 'content-type: application/json' \
@@ -392,7 +544,7 @@ curl -X POST http://127.0.0.1:8080/observability/logs \
 
 The list response contains two `"ledger.balance"` lines inside `{ "ok": ... }`.
 
-## 7. Verify invalid programs
+## 8. Verify invalid programs
 
 These commands are expected to fail:
 
@@ -471,6 +623,15 @@ cargo run -p axl-compiler -- \
 
 cargo run -p axl-compiler -- \
   check examples/invalid/flow-jobs.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-transactions.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-migrations.axl --json
+
+cargo run -p axl-compiler -- \
+  check examples/invalid/flow-queries.axl --json
 ```
 
 The first diagnostic set must include `AXL-O401`; the second must include
@@ -495,9 +656,12 @@ The twentieth must include `AXL-P918`. The twenty-first must include every code
 from `AXL-H918` through `AXL-H922`. The twenty-second must include `AXL-P920`.
 The twenty-third must include every code from `AXL-E901` through `AXL-E906`.
 The twenty-fourth must include `AXL-P921`. The twenty-fifth must include every
-code from `AXL-J901` through `AXL-J908`.
+code from `AXL-J901` through `AXL-J908`. The twenty-sixth must include
+`AXL-D901`. The twenty-seventh must include `AXL-D902`. The twenty-eighth must
+include `AXL-D903`. File-based import invalid examples must report `AXL-P931`
+(`import-missing.axl`) and `AXL-N002` (`import-duplicate.axl`).
 
-## 8. Verify canonical formatting and transport
+## 9. Verify canonical formatting and transport
 
 ```sh
 cargo run -p axl-compiler -- \
@@ -535,7 +699,8 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - memory and SQLite providers execute through the same replaceable ABI;
 - typed provider config survives Graph/Packed IR and `axl-provider/1` generation;
 - configured SQLite data survives destruction and recreation of the runtime;
-- API auth is capacity-backed and proves missing, denied and accepted requests;
+- API auth is capacity-backed (static bearer and HS256 JWT) and proves missing,
+  denied and accepted requests;
 - ordered request middleware is capacity-backed over typed envelopes;
 - rate-limit request middleware uses `RateLimit.allow` and returns HTTP 429;
 - ordered response middleware mutates response headers through typed envelopes;
@@ -548,11 +713,27 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - rate-limit request middleware returns HTTP 429 after the configured budget;
 - scalar path/query/header/cookie bindings are checked, decoded and exact-route-safe;
 - composite request entities are assembled from checked body/path/query/header/cookie nodes;
-- documentation examples remain coupled to compiler tests.
+- documentation examples remain coupled to compiler tests;
+- capacity-backed transactions begin/commit/rollback through memory and SQLite;
+- SQLite commit survives runtime recreate; rollback leaves neither record visible;
+- capacity-backed migrations up/down/status through memory and SQLite;
+- SQLite schema history survives runtime recreate; `down` rolls back one head version;
+- typed store `query` filter/order/page through memory, SQLite and document;
+- durable SQLite and document query pages survive runtime recreate;
+- document/JSON-file store (`rust::axl::store::document`) shares save/find/query
+  with memory and SQLite; cashflow switches by skill binding only;
+- `ui` / `page` nodes lower to Graph IR and emit `axl-ui/1`;
+- `render` evaluates a bound flow and displays typed scalar/entity fields in HTML.
 
-It does not prove transaction/migration semantics or runtime UI rendering.
-HTTP execution, process-local memory, restart-durable configured SQLite,
-typed multi-subscriber events, durable jobs, Cache get/put/invalidate and
-Logger/Metrics/Tracer observability are proven. Generated target files are not
-yet a deployable app. Capacity-backed rate-limit and CORS middleware are proven.
-Secret references and JWT/OAuth remain.
+It does not prove PostgreSQL/MySQL, document tx/migrate, routing shell, component
+registry, forms, tables or responsive admin UI (full Gate 4).
+HTTP execution, process-local memory, restart-durable configured SQLite and
+document JSON, typed multi-subscriber events, durable jobs, Cache get/put/invalidate,
+Logger/Metrics/Tracer observability, transaction commit/rollback, migration
+upgrade/downgrade, typed store queries and the minimal UI page slice are proven.
+Generated target files are not yet a deployable app. Capacity-backed rate-limit
+and CORS middleware are proven. Capacity-backed HS256 JWT auth is proven with
+demo config secrets. True secret references remain Gate 8; OAuth remains.
+Gate 2 auth adapters are otherwise complete. Next Gate 3 target: PostgreSQL/
+MySQL and document tx/migrate behind the same capacities. Next Gate 4 target:
+routing shell, component registry and admin UI kit.

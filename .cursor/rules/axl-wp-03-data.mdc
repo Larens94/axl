@@ -1,0 +1,18 @@
+---
+description: AXL WP-03 data — stores, transactions, migrations, multi-DB
+globs: runtime/axl-compiler/src/next/runtime.rs,examples/apps/**,docs/status.md,docs/roadmap.md
+alwaysApply: false
+---
+
+# WP-03 Data and multi-database runtime
+
+Complete Gate 3 with portable data semantics.
+
+Already: memory + SQLite + document/JSON-file behind the same capacities; typed
+skill config paths; `TransactionManager` begin/commit/rollback; `MigrationRunner`
+up/down/status with schema history; typed store `query` (filter/order/page →
+page entity).
+
+Next: PostgreSQL/MySQL behind the same capacities; document tx/migrate.
+
+Use the prompt template in `docs/agent-work-packages.md`. Stop at the AXL boundary when a primitive is missing.

@@ -1,0 +1,18 @@
+{
+  "first": {
+    "id": "movement-tx-c01",
+    "kind": "income",
+    "amount": 10000,
+    "category": "consulting",
+    "occurred_at": "2026-08-28T10:00:00Z",
+    "note": "tx commit first"
+  },
+  "second": {
+    "id": "movement-tx-c02",
+    "kind": "expense",
+    "amount": 4000,
+    "category": "software",
+    "occurred_at": "2026-08-28T11:00:00Z",
+    "note": "tx commit second"
+  }
+}
