@@ -101,10 +101,10 @@ pub fn dispatch_with_headers(
     let Some((route, mut path_parameters)) = api_match else {
         return HttpResult::new(404, json!({ "error": "route_not_found" }));
     };
-    if input.is_object() {
-        if let Some(route_path) = route.metadata.get("path") {
-            prefer_form_path_parameters(&mut path_parameters, route_path, &input);
-        }
+    if input.is_object()
+        && let Some(route_path) = route.metadata.get("path")
+    {
+        prefer_form_path_parameters(&mut path_parameters, route_path, &input);
     }
     if let Some(result) =
         apply_request_middleware(graph, runtime, route, &method, request_path, headers)

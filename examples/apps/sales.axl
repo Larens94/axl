@@ -34,6 +34,17 @@ api VenditeApi
   post /preventivi/durable/{id}/invia uuid -> Result<Preventivo> = InviaPreventivoSqlite from path.id
   post /preventivi/durable/{id}/conferma uuid -> Result<Preventivo> = ConfermaPreventivoSqlite from path.id
   post /preventivi/durable/{id}/annulla uuid -> Result<Preventivo> = AnnullaPreventivoSqlite from path.id
+  post /ordini/da-preventivo/{id} uuid -> Result<Ordine> = CreaOrdineDaPreventivo from path.id
+  get /ordini/{id} uuid -> Result<Ordine> = CercaOrdine from path.id
+  get /ordini unit -> Result<List<Ordine>> = ElencaOrdini
+  post /ordini/query OrdineQuery -> Result<OrdinePage> = InterrogaOrdini
+  post /ordini/{id}/conferma uuid -> Result<Ordine> = ConfermaOrdine from path.id
+  post /ordini/{id}/annulla uuid -> Result<Ordine> = AnnullaOrdine from path.id
+  post /ordini/durable/da-preventivo/{id} uuid -> Result<Ordine> = CreaOrdineDaPreventivoSqlite from path.id
+  get /ordini/durable/{id} uuid -> Result<Ordine> = CercaOrdineSqlite from path.id
+  post /ordini/durable/query OrdineQuery -> Result<OrdinePage> = InterrogaOrdiniSqlite
+  post /ordini/durable/{id}/conferma uuid -> Result<Ordine> = ConfermaOrdineSqlite from path.id
+  post /ordini/durable/{id}/annulla uuid -> Result<Ordine> = AnnullaOrdineSqlite from path.id
 
 ui VenditeUi
   page /clienti unit -> Result<ClientePage> = PaginaClienti
@@ -44,7 +55,13 @@ ui VenditeUi
   form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdotto submit /prodotti
   page /preventivi unit -> Result<PreventivoPage> = PaginaPreventivi
   page /preventivi/demo unit -> Result<PreventivoPage> = PaginaPreventiviDemoUnit
-  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+  page /preventivi/{id} uuid -> Result<Preventivo> = DettaglioPreventivo from path.id
   form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivo submit /preventivi redirect /preventivi
   action /preventivi/invia POST /preventivi/{id}/invia redirect /preventivi/{id}
   action /preventivi/conferma POST /preventivi/{id}/conferma redirect /preventivi/{id}
+  action /preventivi/ordine POST /ordini/da-preventivo/{id} redirect /preventivi/{id}
+  page /ordini unit -> Result<OrdinePage> = PaginaOrdini
+  page /ordini/demo unit -> Result<OrdinePage> = PaginaOrdiniDemoUnit
+  page /ordini/{id} uuid -> Result<Ordine> = DettaglioOrdine from path.id
+  action /ordini/conferma POST /ordini/{id}/conferma redirect /ordini/{id}
+  action /ordini/annulla POST /ordini/{id}/annulla redirect /ordini/{id}

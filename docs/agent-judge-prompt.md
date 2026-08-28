@@ -1,14 +1,13 @@
-# Judge prompt — sales milestone 14
+# Judge prompt — sales milestone 20 (next wave)
 
 Repo: `/Users/fabriziocorpora/Desktop/workspaces/axl`
 
-UI path templates work. Sales still uses `/preventivi/live/invia` for actions because `ui action` submit must be static.
+Milestones 1–19 complete. Module readiness **9.5/10**.
 
-## Milestone 14
+## Milestone 20: pick from steward queue
 
-1. If steward allows action submit with path template OR hidden id field on detail page — wire `POST /preventivi/{id}/invia` from detail UI
-2. Else: document live/* pattern in README; add eval proof `render /preventivi/preventivo-001` after seed flow in same eval (new DemoUnit)
-3. Update `examples/apps/README.md` with full browser demo: create cliente → create preventivo → open `/preventivi/{id}` → invia → conferma
-4. Remove obsolete `/preventivi/detail` if still present in domain
+1. **uuid generation** — independent ordine ids (if primitive exists or report gap)
+2. **ui action visibility** — show create-ordine on preventivo detail while redirecting to `/ordini`
+3. Or **auth stub** on `VenditeApi` if capacity exists
 
-verify-sales.sh. Report A–F. No commit.
+Extend verify. Report A–F. No commit.

@@ -297,12 +297,18 @@ fn render_action_form(
     let redirect = action.metadata.get("redirect").cloned();
     let path_params = action_page_path_parameters(page_path, redirect.as_deref());
     let submit = if submit_template.contains('{') {
-        substitute_path_template(&submit_template, &path_params).unwrap_or(submit_template)
+        substitute_path_template(&submit_template, &path_params)
+            .unwrap_or_else(|| submit_template.clone())
     } else {
         submit_template.clone()
     };
     let label = action_label(action);
-    let hidden = render_action_hidden_inputs(&submit_template, redirect.as_deref(), &path_params, page_data);
+    let hidden = render_action_hidden_inputs(
+        &submit_template,
+        redirect.as_deref(),
+        &path_params,
+        page_data,
+    );
     let entity_inputs = route_input_entity(graph, "post", &submit_template)
         .as_deref()
         .filter(|type_name| !is_scalar_type(type_name))
@@ -367,16 +373,13 @@ fn render_action_hidden_inputs(
     names
         .into_iter()
         .filter_map(|name| {
-            let value = path_params
-                .get(&name)
-                .cloned()
-                .or_else(|| {
-                    ok.and_then(|object| object.get(&name))
-                        .and_then(|value| value.as_str().map(String::from))
-                });
-            value.map(|value| format!(
-                r#"      <input type="hidden" name="{name}" value="{value}">"#
-            ))
+            let value = path_params.get(&name).cloned().or_else(|| {
+                ok.and_then(|object| object.get(&name))
+                    .and_then(|value| value.as_str().map(String::from))
+            });
+            value.map(|value| {
+                format!(r#"      <input type="hidden" name="{name}" value="{value}">"#)
+            })
         })
         .collect::<Vec<_>>()
         .join("\n")
@@ -565,6 +568,58 @@ fn wrap_html(title: &str, nav: &str, body: &str) -> String {
     )
 }
 
+fn render_entity_array_table(graph: &GraphIr, item_type: &str, items: &[Value]) -> Option<String> {
+    let columns = entity_field_names(graph, item_type);
+    if columns.is_empty() {
+        return None;
+    }
+    Some(render_object_array_table(&columns, items))
+}
+
+fn render_object_array_table(columns: &[String], items: &[Value]) -> String {
+    let header = columns
+        .iter()
+        .map(|column| format!("          <th>{column}</th>"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let rows = items
+        .iter()
+        .filter_map(|item| {
+            let Value::Object(row) = item else {
+                return None;
+            };
+            let cells = columns
+                .iter()
+                .map(|column| {
+                    let value = row.get(column).map(display_value).unwrap_or_default();
+                    format!("          <td>{value}</td>")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Some(format!("        <tr>\n{cells}\n        </tr>"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        r#"      <table class="nested-table">
+        <thead>
+          <tr>
+{header}
+          </tr>
+        </thead>
+        <tbody>
+{rows}
+        </tbody>
+      </table>"#
+    )
+}
+
+fn strip_list_type(type_name: &str) -> Option<&str> {
+    type_name
+        .strip_prefix("List<")
+        .and_then(|value| value.strip_suffix('>'))
+}
+
 fn render_items_table(
     graph: &GraphIr,
     page_path: &str,
@@ -645,11 +700,7 @@ fn page_item_type(graph: &GraphIr, output_type: &str) -> Option<String> {
     items_field
         .type_name
         .as_deref()
-        .and_then(|type_name| {
-            type_name
-                .strip_prefix("List<")
-                .and_then(|value| value.strip_suffix('>'))
-        })
+        .and_then(strip_list_type)
         .map(str::to_string)
 }
 
@@ -795,8 +846,15 @@ fn collect_fields(graph: &GraphIr, output_type: &str, data: &Value) -> Vec<(Stri
             return fields
                 .iter()
                 .filter_map(|field| {
-                    map.get(&field.name)
-                        .map(|value| (field.name.clone(), display_value(value)))
+                    let value = map.get(&field.name)?;
+                    if let Value::Array(items) = value
+                        && let Some(item_type) =
+                            field.type_name.as_deref().and_then(strip_list_type)
+                        && let Some(table) = render_entity_array_table(graph, item_type, items)
+                    {
+                        return Some((field.name.clone(), table));
+                    }
+                    Some((field.name.clone(), display_value(value)))
                 })
                 .collect();
         }
@@ -1078,8 +1136,16 @@ ui PreventivoScreen
         let graph = compile_source(ACTION_UI).unwrap().graph;
         let rendered = render_page(&graph, "/preventivi/preventivo-001", json!(null)).unwrap();
         assert!(rendered.html.contains("class=\"actions\""));
-        assert!(rendered.html.contains(r#"action="/preventivi/demo/preventivo-001/invia""#));
-        assert!(rendered.html.contains(r#"name="id" value="preventivo-001""#));
+        assert!(
+            rendered
+                .html
+                .contains(r#"action="/preventivi/demo/preventivo-001/invia""#)
+        );
+        assert!(
+            rendered
+                .html
+                .contains(r#"name="id" value="preventivo-001""#)
+        );
         assert!(rendered.html.contains(">invia</button>"));
     }
 
@@ -1130,5 +1196,49 @@ ui PreventivoScreen
         let graph = compile_source(TEMPLATED_LIST_UI).unwrap().graph;
         let rendered = render_page(&graph, "/preventivi/preventivo-001", json!(null)).unwrap();
         assert_eq!(rendered.data["ok"]["id"], "preventivo-001");
+    }
+
+    const NESTED_DETAIL_UI: &str = r#"axl 4
+app NestedDetailUI
+
+entity RigaPreventivo
+  prodotto_id: text required
+  quantita: int required
+  prezzo_unitario: money required
+  importo: money required
+
+entity Preventivo
+  id: uuid key
+  stato: text required
+  totale: money required
+  righe: List<RigaPreventivo> required
+
+flow DettaglioPreventivo unit -> Result<Preventivo>
+  make r1: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+    prezzo_unitario = 129900
+    importo = 259800
+  make p: Preventivo
+    id = "preventivo-001"
+    stato = "bozza"
+    totale = 259800
+    righe = [r1]
+  return p
+
+ui PreventivoScreen
+  page /preventivi unit -> Result<Preventivo> = DettaglioPreventivo
+"#;
+
+    #[test]
+    fn render_detail_page_emits_nested_entity_list_table() {
+        let graph = compile_source(NESTED_DETAIL_UI).unwrap().graph;
+        let rendered = render_page(&graph, "/preventivi", json!(null)).unwrap();
+        assert!(rendered.html.contains("<dt>righe</dt>"));
+        assert!(rendered.html.contains("class=\"nested-table\""));
+        assert!(rendered.html.contains("<th>prodotto_id</th>"));
+        assert!(rendered.html.contains("<th>quantita</th>"));
+        assert!(rendered.html.contains("prodotto-001"));
+        assert!(!rendered.html.contains(r#"<dd>[{"#));
     }
 }

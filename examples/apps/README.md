@@ -282,18 +282,18 @@ curl -s -X POST http://127.0.0.1:8080/preventivi \
 # 3. Open templated detail page (list links href="/preventivi/{id}")
 curl -s -H 'accept: text/html' http://127.0.0.1:8080/preventivi/preventivo-002 | grep 'preventivo-002'
 
-# 4. Invia from detail UI (ui action → POST /preventivi/live/invia → 303 /preventivi/{id})
-curl -s -D - -o /dev/null -X POST http://127.0.0.1:8080/preventivi/live/invia \
+# 4. Invia from detail UI (ui action → POST /preventivi/{id}/invia → 303 /preventivi/{id})
+curl -s -D - -o /dev/null -X POST http://127.0.0.1:8080/preventivi/preventivo-002/invia \
   -H 'content-type: application/x-www-form-urlencoded' \
   -H 'accept: text/html' \
-  --data-urlencode 'nota=' | grep -i '^location: /preventivi/preventivo-002'
+  --data-urlencode 'id=preventivo-002' | grep -i '^location: /preventivi/preventivo-002'
 curl -s -H 'accept: text/html' http://127.0.0.1:8080/preventivi/preventivo-002 | grep 'inviato'
 
-# 5. Conferma (same live/* pattern)
-curl -s -D - -o /dev/null -X POST http://127.0.0.1:8080/preventivi/live/conferma \
+# 5. Conferma (templated action submit)
+curl -s -D - -o /dev/null -X POST http://127.0.0.1:8080/preventivi/preventivo-002/conferma \
   -H 'content-type: application/x-www-form-urlencoded' \
   -H 'accept: text/html' \
-  --data-urlencode 'nota=' | grep -i '^location: /preventivi/preventivo-002'
+  --data-urlencode 'id=preventivo-002' | grep -i '^location: /preventivi/preventivo-002'
 curl -s -H 'accept: text/html' http://127.0.0.1:8080/preventivi/preventivo-002 | grep 'confermato'
 
 # JSON API workflow (same session, path-param routes):
@@ -316,13 +316,15 @@ curl -s -X POST http://127.0.0.1:8080/preventivi/durable/preventivo-002/invia
 ./scripts/verify-sales.sh
 ```
 
-**Preventivo detail UI** uses `page /preventivi/{id}` with `CercaPreventivo from path.id`.
+**Preventivo detail UI** uses `page /preventivi/{id}` with `DettaglioPreventivo from path.id`.
 List tables link each row `id` to `/preventivi/{id}`. Workflow buttons on the detail
-page are `ui action` forms. Because `ui action` submit paths must be absolute and
-static (`AXL-P972`), actions POST to `/preventivi/live/invia` and
-`/preventivi/live/conferma` (flows resolve the latest preventivo in the store) and
-redirect to `/preventivi/{id}` with the response `ok.id` substituted. Path-param API
-routes `POST /preventivi/{id}/invia` remain for JSON clients.
+page are `ui action` forms with templated submit paths (`POST /preventivi/{id}/invia`
+and `/preventivi/{id}/conferma`), resolved at render time from the current page context
+with hidden `id` inputs; `serve` returns `303` to `/preventivi/{id}` after success.
+
+**Righe on detail pages:** `List<RigaPreventivo>` fields render as nested HTML tables
+(`<table class="nested-table">` with `prodotto_id`, `quantita`, `prezzo_unitario`, `importo`
+columns) on `/preventivi/{id}` and `/ordini/{id}` detail pages.
 
 Expected results:
 
@@ -331,7 +333,7 @@ Expected results:
 - live list pages (`/clienti`, `/prodotti`, `/preventivi`) query the memory store; `GET /clienti` after form POST shows the new row in HTML (shared `BuiltinRuntime` in serve);
 - form POST (`application/x-www-form-urlencoded`) creates `Cliente` via HTTP; `GET /clienti` and JSON query confirm the record in the same session;
 - preventivo detail at `/preventivi/{id}` (templated path); seeded eval `RenderDettaglioPreventivoDemoUnit` + serve GET after `/preventivi/demo` show `preventivo-001`;
-- workflow actions on detail POST to `/preventivi/live/invia` and `/preventivi/live/conferma` with `303` redirect to `/preventivi/{id}` (`accept: text/html`);
+- workflow actions on detail POST to `/preventivi/{id}/invia` and `/preventivi/{id}/conferma` with `303` redirect to `/preventivi/{id}` (`accept: text/html`);
 - list pages link `id` uuid fields to `/preventivi/{id}` (path template substitution);
 - preventivo workflow (`bozza` → `inviato` → `confermato`) via JSON POST after create on memory and durable routes;
 - verify script passes check, eval, render, UI manifest, serve GET and durable gates.
