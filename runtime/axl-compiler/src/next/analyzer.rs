@@ -1034,8 +1034,7 @@ fn check_flow(
                             "AXL-X817",
                             "execution",
                             format!(
-                                "call '{}.{}' receives the wrong argument type",
-                                dependency, operation
+                                "call '{dependency}.{operation}' receives the wrong argument type",
                             ),
                             span.clone(),
                         )
@@ -3285,7 +3284,7 @@ fn check_ui(
                 Diagnostic::error(
                     "AXL-U902",
                     "ui",
-                    format!("invalid UI action redirect path '{}'", redirect),
+                    format!("invalid UI action redirect path '{redirect}'"),
                     action.span.clone(),
                 )
                 .expected("absolute path without query or fragment", redirect),

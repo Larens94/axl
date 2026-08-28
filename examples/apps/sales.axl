@@ -20,6 +20,7 @@ api VenditeApi
   post /listini/query ListinoQuery -> Result<ListinoPage> = InterrogaListini
   post /listini/prezzo PrezzoListinoQuery -> Result<money> = RisolviPrezzo
   post /preventivi/con-listino PreventivoConListinoInput -> Result<Preventivo> = CreaPreventivoConListino
+  post /preventivi/listino-form PreventivoListinoForm -> Result<Preventivo> = CreaPreventivoListinoForm
   post /preventivi Preventivo -> Result<Preventivo> = CreaPreventivo
   get /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
   get /preventivi unit -> Result<List<Preventivo>> = ElencaPreventivi
@@ -75,11 +76,13 @@ ui VenditeUi
   form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdotto submit /prodotti
   page /listini unit -> Result<ListinoPage> = PaginaListini
   page /listini/demo unit -> Result<ListinoPage> = PaginaListiniDemoUnit
+  page /listini/{id} uuid -> Result<Listino> = DettaglioListino from path.id
   form /listini/new Listino -> Result<Listino> = CreaListino submit /listini
   page /preventivi unit -> Result<PreventivoPage> = PaginaPreventivi
   page /preventivi/demo unit -> Result<PreventivoPage> = PaginaPreventiviDemoUnit
   page /preventivi/{id} uuid -> Result<Preventivo> = DettaglioPreventivo from path.id
   form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivo submit /preventivi redirect /preventivi
+  form /preventivi/new-listino PreventivoListinoForm -> Result<Preventivo> = CreaPreventivoListinoForm submit /preventivi/listino-form redirect /preventivi
   action /preventivi/invia POST /preventivi/{id}/invia redirect /preventivi/{id}
   action /preventivi/conferma POST /preventivi/{id}/conferma redirect /preventivi/{id}
   action /preventivi/ordine POST /ordini/da-preventivo/{id} on /preventivi/{id} redirect /ordini/{id}

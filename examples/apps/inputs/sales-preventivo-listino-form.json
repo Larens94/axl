@@ -1,0 +1,9 @@
+{
+  "id": "preventivo-listino-form-001",
+  "cliente_id": "cliente-001",
+  "listino_id": "listino-001",
+  "prodotto_id_1": "prodotto-001",
+  "quantita_1": 2,
+  "prodotto_id_2": "prodotto-002",
+  "quantita_2": 3
+}

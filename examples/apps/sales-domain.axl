@@ -341,6 +341,15 @@ entity PreventivoConListinoInput
   cliente_id: uuid required
   righe: List<RigaPreventivoDaListino> required
 
+entity PreventivoListinoForm
+  id: uuid required
+  cliente_id: uuid required
+  listino_id: uuid required
+  prodotto_id_1: uuid required
+  quantita_1: int required
+  prodotto_id_2: uuid required
+  quantita_2: int required
+
 capacity ArchivioListini
   op save Listino -> Result<Listino>
   op find uuid -> Result<Listino> idempotent
@@ -485,6 +494,19 @@ flow PaginaListiniDemoUnit unit -> Result<ListinoPage>
     offset = 0
   call pagina = store.query(query)?
   return pagina
+
+flow DettaglioListino uuid -> Result<Listino>
+  run trovato = CercaListino(input)?
+  return trovato
+
+flow DettaglioListinoDemoUnit unit -> Result<Listino>
+  run seed = SeedListinoDemoUnit(input)?
+  run dettaglio = DettaglioListino(seed.id)?
+  return dettaglio
+
+flow RenderDettaglioListinoDemoUnit unit -> Result<Listino>
+  run dettaglio = DettaglioListinoDemoUnit(input)?
+  return dettaglio
 
 flow CreaListinoSqlite Listino -> Result<Listino>
   in store: ArchivioListini = SqliteListini
@@ -654,6 +676,45 @@ flow CreaPreventivoConListinoDemoUnit unit -> Result<Preventivo>
     cliente_id = "cliente-001"
     righe = [riga1, riga2]
   run preventivo = CreaPreventivoConListino(input_preventivo)?
+  return preventivo
+
+flow CreaPreventivoListinoForm PreventivoListinoForm -> Result<Preventivo>
+  make riga1: RigaPreventivoDaListino
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id_1
+    quantita = input.quantita_1
+  make riga2: RigaPreventivoDaListino
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id_2
+    quantita = input.quantita_2
+  make payload: PreventivoConListinoInput
+    id = input.id
+    cliente_id = input.cliente_id
+    righe = [riga1, riga2]
+  run preventivo = CreaPreventivoConListino(payload)?
+  return preventivo
+
+flow CreaPreventivoListinoFormDemoUnit unit -> Result<Preventivo>
+  in clienti: ArchivioClienti = MemoriaClienti
+  run listino = SeedListinoDemoUnit(input)?
+  make cliente: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  run valida_cliente = ValidaCliente(cliente)?
+  call salvato_cliente = clienti.save(valida_cliente)?
+  make form: PreventivoListinoForm
+    id = "preventivo-listino-form-001"
+    cliente_id = "cliente-001"
+    listino_id = listino.id
+    prodotto_id_1 = "prodotto-001"
+    quantita_1 = 2
+    prodotto_id_2 = "prodotto-002"
+    quantita_2 = 3
+  run preventivo = CreaPreventivoListinoForm(form)?
   return preventivo
 
 flow CreaPreventivo Preventivo -> Result<Preventivo>

@@ -62,6 +62,12 @@ echo "== eval RisolviPrezzoFallbackDemoUnit (prodotto not in listino righe) =="
 echo "== eval CreaPreventivoConListinoDemoUnit (righe priced from listino) =="
 "${BIN[@]}" eval examples/apps/sales.axl CreaPreventivoConListinoDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.totale == 247270 and .ok.righe[0].prezzo_unitario == 119900 and .ok.righe[1].prezzo_unitario == 2490'
 
+echo "== eval CreaPreventivoListinoFormDemoUnit (flat form -> CreaPreventivoConListino) =="
+"${BIN[@]}" eval examples/apps/sales.axl CreaPreventivoListinoFormDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.totale == 247270 and .ok.righe[0].prezzo_unitario == 119900'
+
+echo "== eval DettaglioListinoDemoUnit (seeded detail + righe) =="
+"${BIN[@]}" eval examples/apps/sales.axl DettaglioListinoDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.id == "listino-001" and (.ok.righe | length) == 2 and .ok.righe[0].prodotto_id == "prodotto-001" and .ok.righe[0].prezzo == 119900'
+
 echo "== eval CercaProdotto =="
 "${BIN[@]}" eval examples/apps/sales.axl CercaProdotto examples/apps/inputs/sales-prodotto-id.json | jq -e '.ok.sku == "LP-001" or .error != null'
 
@@ -181,6 +187,14 @@ echo "== render prodotti list (seeded demo) =="
 echo "== render listini list (seeded demo) =="
 "${BIN[@]}" render examples/apps/sales.axl /listini/demo examples/apps/inputs/unit.json | grep -q 'listino-001'
 "${BIN[@]}" render examples/apps/sales.axl /listini/demo examples/apps/inputs/unit.json | grep -q 'Promo estate'
+"${BIN[@]}" render examples/apps/sales.axl /listini/demo examples/apps/inputs/unit.json | grep -q 'href="/listini/listino-001"'
+
+echo "== render listino detail (templated path manifest) =="
+"${BIN[@]}" ui examples/apps/sales.axl | jq -e '.uis[0].pages[] | select(.path=="/listini/{id}") | .template == "/listini/{id}" and .input_source == "path" and .input_name == "id"'
+
+echo "== render listino detail (templated path /listini/listino-001) =="
+# render CLI uses a fresh store; eval DettaglioListinoDemoUnit proves seed+lookup.
+"${BIN[@]}" render examples/apps/sales.axl /listini/listino-001 null | grep -q 'listini/listino-001'
 
 echo "== render preventivi list (seeded demo) =="
 "${BIN[@]}" render examples/apps/sales.axl /preventivi/demo examples/apps/inputs/unit.json | grep -q 'preventivo-001'
@@ -240,8 +254,11 @@ echo "== ui manifest (document) pages, forms and actions =="
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].forms[].path] | index("/prodotti/new")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/listini")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/listini/demo")'
+"${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/listini/{id}")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].forms[].path] | index("/listini/new")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '.uis[0].forms[] | select(.path=="/listini/new") | .submit == "/listini"'
+"${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].forms[].path] | index("/preventivi/new-listino")'
+"${BIN[@]}" ui examples/apps/sales.axl | jq -e '.uis[0].forms[] | select(.path=="/preventivi/new-listino") | .submit == "/preventivi/listino-form" and .redirect == "/preventivi"'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/preventivi")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/preventivi/demo")'
 "${BIN[@]}" ui examples/apps/sales.axl | jq -e '[.uis[].pages[].path] | index("/preventivi/{id}")'
@@ -292,6 +309,12 @@ PORT=18082
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/prodotti/demo" | grep -q 'prodotto-001'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/listini/new" | grep -q '<form method="post" action="/listini">'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/listini/demo" | grep -q 'listino-001'
+  curl -sf --max-time 2 "http://127.0.0.1:${PORT}/listini/demo" | grep -q 'href="/listini/listino-001"'
+  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q 'Promo estate'
+  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q '<th>prodotto_id</th>'
+  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q '119900'
+  curl -sf --max-time 2 "http://127.0.0.1:${PORT}/preventivi/new-listino" | grep -q '<form method="post" action="/preventivi/listino-form">'
+  curl -sf --max-time 2 "http://127.0.0.1:${PORT}/preventivi/new-listino" | grep -q 'name="listino_id"'
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/prodotti" \
     -H 'content-type: application/json' \
     -d '{"id":"prodotto-001","nome":"Laptop Pro","prezzo":129900,"sku":"LP-001","attivo":true}'
@@ -310,6 +333,22 @@ PORT=18082
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/con-listino" \
     -H 'content-type: application/json' \
     -d @examples/apps/inputs/sales-preventivo-listino.json | jq -e '.ok.totale == 247270 and .ok.righe[0].prezzo_unitario == 119900'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/listino-form" \
+    -H 'content-type: application/json' \
+    -d @examples/apps/inputs/sales-preventivo-listino-form.json | jq -e '.ok.totale == 247270 and .ok.id == "preventivo-listino-form-001"'
+  LISTINO_FORM_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/listino-form" \
+    -H 'content-type: application/x-www-form-urlencoded' \
+    -H 'accept: text/html' \
+    --data-urlencode 'id=preventivo-listino-form-smoke' \
+    --data-urlencode 'cliente_id=cliente-001' \
+    --data-urlencode 'listino_id=listino-001' \
+    --data-urlencode 'prodotto_id_1=prodotto-001' \
+    --data-urlencode 'quantita_1=2' \
+    --data-urlencode 'prodotto_id_2=prodotto-002' \
+    --data-urlencode 'quantita_2=3')
+  echo "$LISTINO_FORM_HEADERS" | grep -qi '^HTTP/.* 303'
+  echo "$LISTINO_FORM_HEADERS" | grep -qi '^location: /preventivi'
+  curl -sf --max-time 2 "http://127.0.0.1:${PORT}/preventivi" | grep -q 'preventivo-listino-form-smoke'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/preventivi/demo" | grep -q 'preventivo-001'
   curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'preventivo-001'
   curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q '268770'
