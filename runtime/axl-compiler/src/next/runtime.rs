@@ -3117,6 +3117,15 @@ pub(crate) fn provider_config(
     children(graph, provider, "config")
         .into_iter()
         .map(|config| {
+            if let Some(secret_ref) = config.metadata.get("secret_ref") {
+                let resolved = std::env::var(secret_ref).map_err(|_| {
+                    RuntimeError(format!(
+                        "{}: secret_ref '{secret_ref}' is not set in the environment",
+                        config.id
+                    ))
+                })?;
+                return Ok((config.name.clone(), Value::String(resolved)));
+            }
             let raw = config
                 .metadata
                 .get("value")

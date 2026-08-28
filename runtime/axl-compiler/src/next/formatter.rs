@@ -54,9 +54,14 @@ pub fn format(program: &Program) -> String {
                     output.push(format!("  native {} {}", native.target, native.symbol));
                 }
                 for config in &skill.configs {
+                    let value = config
+                        .secret_ref
+                        .as_ref()
+                        .map(|name| format!("secret(\"{name}\")"))
+                        .unwrap_or_else(|| config.value.clone());
                     output.push(format!(
                         "  config {}: {} = {}",
-                        config.name, config.type_name, config.value
+                        config.name, config.type_name, value
                     ));
                 }
                 append_values(&mut output, "effect", &skill.effects);

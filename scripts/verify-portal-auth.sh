@@ -48,6 +48,29 @@ echo "== route guards in HTTP manifest (session + can on VenditeApi POST /client
 "${BIN[@]}" ir "$PORTAL" | jq -e '[.nodes[] | select(.kind=="route_guard" and .metadata.kind=="session")] | length > 0'
 "${BIN[@]}" ir "$PORTAL" | jq -e '[.nodes[] | select(.kind=="route_guard" and .metadata.kind=="can")] | length > 0'
 
+echo "== Gate 8 secret refs (no plaintext pepper/jwt in IR) =="
+"${BIN[@]}" ir "$PORTAL" | jq -e '[.nodes[] | select(.kind=="config" and .metadata.secret_ref != null)] | length >= 3'
+"${BIN[@]}" ir "$PORTAL" | jq -e '
+  [.nodes[]
+    | select(.kind=="config")
+    | select(.metadata.secret_ref == null)
+    | .metadata.value
+    | tostring
+    | select(test("axl-auth-demo-pepper|axl-auth-demo-jwt|axl-vendite-demo"))]
+  | length == 0
+'
+
+echo "== React codegen from axl-ui/1 (experiment targets) =="
+TMP_REACT=$(mktemp -d)
+"${BIN[@]}" experiment "$PORTAL" "$TMP_REACT" >/dev/null
+test -f "$TMP_REACT/targets/react/axl_routes.tsx"
+test -f "$TMP_REACT/targets/react/axl_layouts.tsx"
+test -f "$TMP_REACT/targets/react/axl_registry.ts"
+grep -q 'axl-ui/1' "$TMP_REACT/targets/react/axl_routes.tsx"
+grep -q 'GuestLayout' "$TMP_REACT/targets/react/axl_layouts.tsx"
+grep -q 'axlProductionRoutes' "$TMP_REACT/targets/react/axl_routes.tsx"
+rm -rf "$TMP_REACT"
+
 echo "== HTTP route guard smoke (401 without session, 200 with session) =="
 GPORT=18088
 (

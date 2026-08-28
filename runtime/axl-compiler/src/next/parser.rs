@@ -512,10 +512,24 @@ fn parse_skill(
                 );
                 continue;
             };
+            let config_value = config_value.trim();
+            let secret_ref = parse_secret_ref(config_value);
+            if config_value.starts_with("secret(") && secret_ref.is_none() {
+                diagnostics.push(
+                    Diagnostic::error("AXL-P315", "parse", "invalid secret reference", span(line))
+                        .expected("config name: type = secret(\"ENV_NAME\")", config_value),
+                );
+                continue;
+            }
             skill.configs.push(SkillConfig {
                 name: name.trim().to_string(),
                 type_name: type_name.trim().to_string(),
-                value: config_value.trim().to_string(),
+                value: if secret_ref.is_some() {
+                    "null".into()
+                } else {
+                    config_value.to_string()
+                },
+                secret_ref,
                 span: span(line),
             });
         } else if let Some(effect) = line.text.strip_prefix("effect ") {
@@ -3066,6 +3080,20 @@ fn parse_route_guard(
         name,
         span: span(line),
     })
+}
+
+fn parse_secret_ref(value: &str) -> Option<String> {
+    let value = value.trim();
+    let inner = value.strip_prefix("secret(")?.strip_suffix(')')?.trim();
+    let name = inner
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            inner
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })?;
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 fn parse_request_source(value: &str) -> Option<(String, Option<String>)> {

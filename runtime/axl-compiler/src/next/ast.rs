@@ -160,6 +160,7 @@ pub struct SkillConfig {
     pub name: String,
     pub type_name: String,
     pub value: String,
+    pub secret_ref: Option<String>,
     pub span: SourceSpan,
 }
 

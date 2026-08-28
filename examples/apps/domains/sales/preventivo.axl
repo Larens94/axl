@@ -1,0 +1,657 @@
+// Sales aggregate: Preventivo
+axl 4
+app SalesPreventivo
+entity RigaPreventivo
+  prodotto_id: uuid required
+  quantita: int required
+  prezzo_unitario: money required
+  importo: money required
+
+entity Preventivo
+  id: uuid key
+  cliente_id: uuid required
+  stato: StatoPreventivo required
+  righe: List<RigaPreventivo> required
+  totale: money required
+
+entity PreventivoQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity PreventivoPage
+  items: List<Preventivo> required
+  total: int required
+  limit: int required
+  offset: int required
+
+entity WorkflowConfirm
+  nota: text optional
+
+capacity ArchivioPreventivi
+  op save Preventivo -> Result<Preventivo>
+  op find uuid -> Result<Preventivo> idempotent
+  op list unit -> Result<List<Preventivo>> idempotent
+  op query PreventivoQuery -> Result<PreventivoPage> idempotent
+
+skill MemoriaPreventivi provides ArchivioPreventivi
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqlitePreventivi provides ArchivioPreventivi
+  native rust axl::store::sqlite
+  config path: text = "./build/vendite.db"
+  effect db.read
+  effect db.write
+
+flow ValidaRigaPreventivo RigaPreventivo -> Result<RigaPreventivo>
+  let quantita_positiva = input.quantita > 0
+  require quantita_positiva else "quantita_deve_essere_positiva"
+  let prezzo_positivo = input.prezzo_unitario > 0
+  require prezzo_positivo else "prezzo_deve_essere_positivo"
+  let importo_calcolato = input.quantita * input.prezzo_unitario
+  make riga: RigaPreventivo
+    prodotto_id = input.prodotto_id
+    quantita = input.quantita
+    prezzo_unitario = input.prezzo_unitario
+    importo = importo_calcolato
+  return riga
+
+flow CalcolaTotalePreventivo Preventivo -> money
+  fold totale: money = input.righe from 0 as riga
+    next = value + riga.importo
+  return totale
+
+flow ValidaPreventivo Preventivo -> Result<Preventivo>
+  parallel righe_valide: List<RigaPreventivo> = input.righe as riga
+    run = ValidaRigaPreventivo(riga)?
+  make con_righe: Preventivo
+    id = input.id
+    cliente_id = input.cliente_id
+    stato = input.stato
+    righe = righe_valide
+    totale = 0
+  run totale = CalcolaTotalePreventivo(con_righe)
+  let totale_positivo = totale > 0
+  require totale_positivo else "totale_deve_essere_positivo"
+  make preventivo: Preventivo
+    id = input.id
+    cliente_id = input.cliente_id
+    stato = input.stato
+    righe = righe_valide
+    totale = totale
+  return preventivo
+
+flow CostruisciRigaDaListino RigaPreventivoDaListino -> Result<RigaPreventivo>
+  make query: PrezzoListinoQuery
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id
+  run prezzo = RisolviPrezzo(query)?
+  make riga: RigaPreventivo
+    prodotto_id = input.prodotto_id
+    quantita = input.quantita
+    prezzo_unitario = prezzo
+    importo = 0
+  run valida = ValidaRigaPreventivo(riga)?
+  return valida
+
+flow CreaPreventivoConListino PreventivoConListinoInput -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  parallel righe: List<RigaPreventivo> = input.righe as riga_input
+    run = CostruisciRigaDaListino(riga_input)?
+  make preventivo: Preventivo
+    id = input.id
+    cliente_id = input.cliente_id
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 0
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CreaPreventivoConListinoDemoUnit unit -> Result<Preventivo>
+  in clienti: ArchivioClienti = MemoriaClienti
+  run listino = SeedListinoDemoUnit(input)?
+  make cliente: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  run valida_cliente = ValidaCliente(cliente)?
+  call salvato_cliente = clienti.save(valida_cliente)?
+  make riga1: RigaPreventivoDaListino
+    listino_id = listino.id
+    prodotto_id = "prodotto-001"
+    quantita = 2
+  make riga2: RigaPreventivoDaListino
+    listino_id = listino.id
+    prodotto_id = "prodotto-002"
+    quantita = 3
+  make input_preventivo: PreventivoConListinoInput
+    id = "preventivo-listino-001"
+    cliente_id = "cliente-001"
+    righe = [riga1, riga2]
+  run preventivo = CreaPreventivoConListino(input_preventivo)?
+  return preventivo
+
+flow CreaPreventivoListinoForm PreventivoListinoForm -> Result<Preventivo>
+  make riga1: RigaPreventivoDaListino
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id_1
+    quantita = input.quantita_1
+  make riga2: RigaPreventivoDaListino
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id_2
+    quantita = input.quantita_2
+  make payload: PreventivoConListinoInput
+    id = input.id
+    cliente_id = input.cliente_id
+    righe = [riga1, riga2]
+  run preventivo = CreaPreventivoConListino(payload)?
+  return preventivo
+
+flow CreaPreventivoListinoFormDemoUnit unit -> Result<Preventivo>
+  in clienti: ArchivioClienti = MemoriaClienti
+  run listino = SeedListinoDemoUnit(input)?
+  make cliente: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  run valida_cliente = ValidaCliente(cliente)?
+  call salvato_cliente = clienti.save(valida_cliente)?
+  make form: PreventivoListinoForm
+    id = "preventivo-listino-form-001"
+    cliente_id = "cliente-001"
+    listino_id = listino.id
+    prodotto_id_1 = "prodotto-001"
+    quantita_1 = 2
+    prodotto_id_2 = "prodotto-002"
+    quantita_2 = 3
+  run preventivo = CreaPreventivoListinoForm(form)?
+  return preventivo
+
+flow CreaPreventivo Preventivo -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  run valida = ValidaPreventivo(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaPreventivo uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  call trovato = store.find(input)?
+  return trovato
+
+flow ElencaPreventivi unit -> Result<List<Preventivo>>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  call preventivi = store.list(input)?
+  return preventivi
+
+flow InterrogaPreventivi PreventivoQuery -> Result<PreventivoPage>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  call pagina = store.query(input)?
+  return pagina
+
+flow CercaPreventiviPerStato PreventivoQuery -> Result<PreventivoPage>
+  run pagina = InterrogaPreventivi(input)?
+  return pagina
+
+flow CercaPreventiviPerStatoDemoUnit PreventivoQuery -> Result<PreventivoPage>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  make riga_bozza: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 1
+    prezzo_unitario = 129900
+    importo = 129900
+  make preventivo_bozza: Preventivo
+    id = "preventivo-001"
+    cliente_id = "cliente-001"
+    stato = StatoPreventivo.bozza
+    righe = [riga_bozza]
+    totale = 129900
+  run valida_bozza = ValidaPreventivo(preventivo_bozza)?
+  call salvato_bozza = store.save(valida_bozza)?
+  make riga_inviato: RigaPreventivo
+    prodotto_id = "prodotto-002"
+    quantita = 2
+    prezzo_unitario = 2990
+    importo = 5980
+  make preventivo_inviato: Preventivo
+    id = "preventivo-002"
+    cliente_id = "cliente-002"
+    stato = StatoPreventivo.inviato
+    righe = [riga_inviato]
+    totale = 5980
+  run valida_inviato = ValidaPreventivo(preventivo_inviato)?
+  call salvato_inviato = store.save(valida_inviato)?
+  run pagina = CercaPreventiviPerStato(input)?
+  return pagina
+
+flow SeedClienteDemoUnit unit -> Result<Cliente>
+  in store: ArchivioClienti = MemoriaClienti
+  make cliente: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  run valida = ValidaCliente(cliente)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow SeedPreventivoDemoUnit unit -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  run cliente = SeedClienteDemoUnit(input)?
+  make riga1: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+    prezzo_unitario = 129900
+    importo = 259800
+  make riga2: RigaPreventivo
+    prodotto_id = "prodotto-002"
+    quantita = 3
+    prezzo_unitario = 2990
+    importo = 8970
+  let righe = [riga1, riga2]
+  make preventivo: Preventivo
+    id = "preventivo-001"
+    cliente_id = "cliente-001"
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 268770
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow PaginaPreventivi unit -> Result<PreventivoPage>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  make query: PreventivoQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaPreventiviDemoUnit unit -> Result<PreventivoPage>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  run seed = SeedPreventivoDemoUnit(input)?
+  make query: PreventivoQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow InviaPreventivo uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  in clienti: ArchivioClienti = MemoriaClienti
+  in mailer: EmailSender = MemoriaEmail
+  in pdf: PdfRenderer = MemoriaPdf
+  call trovato = store.find(input)?
+  match stato_inviabile: bool = trovato.stato
+    bozza => true
+    inviato => false
+    confermato => false
+  require stato_inviabile else "stato_non_inviabile"
+  call cliente = clienti.find(trovato.cliente_id)?
+  make doc: PdfDocument
+    id = trovato.id
+    title = "Preventivo"
+    totale = trovato.totale
+  call pdf_ref = pdf.render(doc)?
+  make email: EmailMessage
+    to = cliente.email
+    subject = "Preventivo inviato"
+    body = "Preventivo inviato"
+    attachment_id = pdf_ref
+  call inviato_id = mailer.send(email)?
+  match nuovo_stato: StatoPreventivo = trovato.stato
+    bozza => StatoPreventivo.inviato
+    inviato => StatoPreventivo.inviato
+    confermato => StatoPreventivo.confermato
+  make aggiornato: Preventivo
+    id = trovato.id
+    cliente_id = trovato.cliente_id
+    stato = nuovo_stato
+    righe = trovato.righe
+    totale = trovato.totale
+  run valida = ValidaPreventivo(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow ConfermaPreventivo uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  call trovato = store.find(input)?
+  match stato_confermable: bool = trovato.stato
+    bozza => false
+    inviato => true
+    confermato => false
+  require stato_confermable else "stato_non_confermable"
+  match nuovo_stato: StatoPreventivo = trovato.stato
+    bozza => StatoPreventivo.bozza
+    inviato => StatoPreventivo.confermato
+    confermato => StatoPreventivo.confermato
+  make aggiornato: Preventivo
+    id = trovato.id
+    cliente_id = trovato.cliente_id
+    stato = nuovo_stato
+    righe = trovato.righe
+    totale = trovato.totale
+  run valida = ValidaPreventivo(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow AnnullaPreventivo uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  call trovato = store.find(input)?
+  match stato_annullabile: bool = trovato.stato
+    bozza => true
+    inviato => true
+    confermato => false
+  require stato_annullabile else "stato_non_annullabile"
+  make aggiornato: Preventivo
+    id = trovato.id
+    cliente_id = trovato.cliente_id
+    stato = StatoPreventivo.bozza
+    righe = trovato.righe
+    totale = trovato.totale
+  run valida = ValidaPreventivo(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow DettaglioPreventivo uuid -> Result<Preventivo>
+  run trovato = CercaPreventivo(input)?
+  return trovato
+
+flow InviaPreventivoSeeded uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  in clienti: ArchivioClienti = MemoriaClienti
+  make cliente: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  run valida_cliente = ValidaCliente(cliente)?
+  call salvato_cliente = clienti.save(valida_cliente)?
+  make riga1: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+    prezzo_unitario = 129900
+    importo = 259800
+  make riga2: RigaPreventivo
+    prodotto_id = "prodotto-002"
+    quantita = 3
+    prezzo_unitario = 2990
+    importo = 8970
+  let righe = [riga1, riga2]
+  make preventivo: Preventivo
+    id = "preventivo-001"
+    cliente_id = "cliente-001"
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 268770
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  run inviato = InviaPreventivo(input)?
+  return inviato
+
+flow ConfermaPreventivoSeeded uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  in clienti: ArchivioClienti = MemoriaClienti
+  make cliente: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  run valida_cliente = ValidaCliente(cliente)?
+  call salvato_cliente = clienti.save(valida_cliente)?
+  make riga1: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+    prezzo_unitario = 129900
+    importo = 259800
+  make riga2: RigaPreventivo
+    prodotto_id = "prodotto-002"
+    quantita = 3
+    prezzo_unitario = 2990
+    importo = 8970
+  let righe = [riga1, riga2]
+  make preventivo: Preventivo
+    id = "preventivo-001"
+    cliente_id = "cliente-001"
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 268770
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  run inviato = InviaPreventivo(input)?
+  run confermato = ConfermaPreventivo(input)?
+  return confermato
+
+flow DettaglioPreventivoDemoUnit unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  run dettaglio = DettaglioPreventivo(seed.id)?
+  return dettaglio
+
+flow RenderDettaglioPreventivoDemoUnit unit -> Result<Preventivo>
+  run dettaglio = DettaglioPreventivoDemoUnit(input)?
+  return dettaglio
+
+flow SeedPreventivoDemoForm WorkflowConfirm -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  in clienti: ArchivioClienti = MemoriaClienti
+  make cliente: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  run valida_cliente = ValidaCliente(cliente)?
+  call salvato_cliente = clienti.save(valida_cliente)?
+  make riga1: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+    prezzo_unitario = 129900
+    importo = 259800
+  make riga2: RigaPreventivo
+    prodotto_id = "prodotto-002"
+    quantita = 3
+    prezzo_unitario = 2990
+    importo = 8970
+  let righe = [riga1, riga2]
+  make preventivo: Preventivo
+    id = "preventivo-001"
+    cliente_id = "cliente-001"
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 268770
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow InviaPreventivoDemoForm WorkflowConfirm -> Result<Preventivo>
+  run seed = SeedPreventivoDemoForm(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  return inviato
+
+flow ConfermaPreventivoDemoForm WorkflowConfirm -> Result<Preventivo>
+  run seed = SeedPreventivoDemoForm(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  run confermato = ConfermaPreventivo(seed.id)?
+  return confermato
+
+flow InviaPreventivoDemoUnit unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  return inviato
+
+flow InviaPreventivoConNotificaDemoUnit unit -> Result<List<text>>
+  in mailer: EmailSender = MemoriaEmail
+  run seed = SeedPreventivoDemoUnit(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  call emails = mailer.list(input)?
+  return emails
+
+flow ConfermaPreventivoDemoUnit unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  run confermato = ConfermaPreventivo(seed.id)?
+  return confermato
+
+flow AnnullaPreventivoDemoUnit unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  run annullato = AnnullaPreventivo(seed.id)?
+  return annullato
+
+flow InviaPreventivoDoppioDemoUnit unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  run doppio = InviaPreventivo(seed.id)?
+  return doppio
+
+flow CreaClienteSqlite Cliente -> Result<Cliente>
+  in store: ArchivioClienti = SqliteClienti
+  run valida = ValidaCliente(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaClienteSqlite uuid -> Result<Cliente>
+  in store: ArchivioClienti = SqliteClienti
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaClientiSqlite ClienteQuery -> Result<ClientePage>
+  in store: ArchivioClienti = SqliteClienti
+  call pagina = store.query(input)?
+  return pagina
+
+flow CreaProdottoSqlite Prodotto -> Result<Prodotto>
+  in store: ArchivioProdotti = SqliteProdotti
+  run valida = ValidaProdotto(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaProdottoSqlite uuid -> Result<Prodotto>
+  in store: ArchivioProdotti = SqliteProdotti
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaProdottiSqlite ProdottoQuery -> Result<ProdottoPage>
+  in store: ArchivioProdotti = SqliteProdotti
+  call pagina = store.query(input)?
+  return pagina
+
+flow CreaPreventivoSqlite Preventivo -> Result<Preventivo>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  run valida = ValidaPreventivo(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaPreventivoSqlite uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaPreventiviSqlite PreventivoQuery -> Result<PreventivoPage>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  call pagina = store.query(input)?
+  return pagina
+
+flow InviaPreventivoSqlite uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  in clienti: ArchivioClienti = SqliteClienti
+  in mailer: EmailSender = MemoriaEmail
+  in pdf: PdfRenderer = MemoriaPdf
+  call trovato = store.find(input)?
+  match stato_inviabile: bool = trovato.stato
+    bozza => true
+    inviato => false
+    confermato => false
+  require stato_inviabile else "stato_non_inviabile"
+  call cliente = clienti.find(trovato.cliente_id)?
+  make doc: PdfDocument
+    id = trovato.id
+    title = "Preventivo"
+    totale = trovato.totale
+  call pdf_ref = pdf.render(doc)?
+  make email: EmailMessage
+    to = cliente.email
+    subject = "Preventivo inviato"
+    body = "Preventivo inviato"
+    attachment_id = pdf_ref
+  call inviato_id = mailer.send(email)?
+  match nuovo_stato: StatoPreventivo = trovato.stato
+    bozza => StatoPreventivo.inviato
+    inviato => StatoPreventivo.inviato
+    confermato => StatoPreventivo.confermato
+  make aggiornato: Preventivo
+    id = trovato.id
+    cliente_id = trovato.cliente_id
+    stato = nuovo_stato
+    righe = trovato.righe
+    totale = trovato.totale
+  run valida = ValidaPreventivo(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow ConfermaPreventivoSqlite uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  call trovato = store.find(input)?
+  match stato_confermable: bool = trovato.stato
+    bozza => false
+    inviato => true
+    confermato => false
+  require stato_confermable else "stato_non_confermable"
+  match nuovo_stato: StatoPreventivo = trovato.stato
+    bozza => StatoPreventivo.bozza
+    inviato => StatoPreventivo.confermato
+    confermato => StatoPreventivo.confermato
+  make aggiornato: Preventivo
+    id = trovato.id
+    cliente_id = trovato.cliente_id
+    stato = nuovo_stato
+    righe = trovato.righe
+    totale = trovato.totale
+  run valida = ValidaPreventivo(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow AnnullaPreventivoSqlite uuid -> Result<Preventivo>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  call trovato = store.find(input)?
+  match stato_annullabile: bool = trovato.stato
+    bozza => true
+    inviato => true
+    confermato => false
+  require stato_annullabile else "stato_non_annullabile"
+  make aggiornato: Preventivo
+    id = trovato.id
+    cliente_id = trovato.cliente_id
+    stato = StatoPreventivo.bozza
+    righe = trovato.righe
+    totale = trovato.totale
+  run valida = ValidaPreventivo(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+enum StatoOrdine
+  bozza
+  confermato
+  annullato
+

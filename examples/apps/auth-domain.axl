@@ -8,7 +8,7 @@ capacity PasswordHasher
 
 skill DemoPasswordHasher provides PasswordHasher
   native rust axl::auth::password
-  config pepper: text = "axl-auth-demo-pepper"
+  config pepper: text = secret("AXL_AUTH_PEPPER")
   capability auth.hash
 
 entity PasswordCheck
@@ -27,13 +27,13 @@ capacity JwtDecoder
 
 skill AuthDemoJwtIssuer provides JwtIssuer
   native rust axl::auth::jwt_sign
-  config secret: text = "axl-auth-demo-jwt"
+  config secret: text = secret("AXL_AUTH_JWT")
   config issuer: text = "axl-auth"
   capability auth.sign
 
 skill AuthDemoJwtDecoder provides JwtDecoder
   native rust axl::auth::jwt_decode
-  config secret: text = "axl-auth-demo-jwt"
+  config secret: text = secret("AXL_AUTH_JWT")
   config issuer: text = "axl-auth"
   capability auth.verify
 

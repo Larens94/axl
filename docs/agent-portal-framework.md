@@ -10,17 +10,19 @@ Modular portal aligned with the **ledger.axl** pattern: domain modules + thin sh
 | **Portal core** | `examples/apps/domains/portal/core.axl` | Session/RBAC guards (`RequireSession`, `RequireSessionPermesso`) |
 | **Portal handlers** | `examples/apps/domains/portal/vendite-pages.axl` | Session-gated UI page flows |
 | **Auth domain** | `examples/apps/auth-domain.axl` | IAM entities, stores, flows |
-| **Sales domain** | `examples/apps/sales-domain.axl` | Vendite entities, stores, flows |
+| **Sales shell** | `examples/apps/sales-domain.axl` | Aggregate imports only |
+| **Sales aggregates** | `examples/apps/domains/sales/{cliente,prodotto,listino,preventivo,ordine,shared}.axl` | Vendite domain modules |
 
 Domain files must **not** declare `api` or `ui` (except isolated eval stubs).
 
 ## Rule: AXL only for product logic
 
 Portal IAM, vendite, admin and UI behavior are expressed **only in `.axl`**
-(`auth-domain.axl`, `sales-domain.axl`, `domains/portal/*`, `portal.axl`).
-Rust (`ui.rs`, `http.rs`) and React are **targets**: bindings, middleware slots,
-HTML shell primitives, manifest → codegen. Never implement login, RBAC, CRUD or
-page rules directly in Rust or React — add an AXL primitive and bind it from flows.
+(`auth-domain.axl`, `domains/sales/*`, `domains/portal/*`, `portal.axl`).
+Rust (`ui.rs`, `http.rs`, `targets.rs`) and React are **targets**: bindings, middleware slots,
+HTML shell primitives, manifest → codegen (`axl_routes.tsx`, layouts, registry).
+Never implement login, RBAC, CRUD or page rules directly in Rust or React — add an
+AXL primitive and bind it from flows.
 
 ## API surfaces (portal.axl)
 
@@ -79,9 +81,11 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 
 - UI **composite page binding** (`cookie.sid` + `path.id`) is available for session-gated detail routes.
 - **Per-route HTTP guards** (`session` / `can` / `guest`) protect Auth admin and VenditeApi mutations.
+- **React codegen** emits routes/layouts/registry from `axl-ui/1` (`experiment` → `targets/react/`).
+- **Gate 8 secret refs** (`secret("ENV")`) used by portal auth/vendite demo skills.
 - Nested `List<>` form rows still use flat workaround forms.
-- React codegen from `axl-ui/1` remains Gate 4.
-- Secret refs Gate 8 and real email for password reset remain open.
+- Full React host (Vite + shared cookie origin) remains a host integration, not AXL product logic.
+- OAuth and package registry remain open Gate 8 items.
 
 ## Verify
 

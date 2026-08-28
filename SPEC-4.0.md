@@ -435,9 +435,20 @@ The compiler requires the exact idempotent `authorize` contract and a compatible
 provider. The Axum adapter maps a missing bearer header to 401 and denial to 403.
 A replaceable HS256 JWT skill (`native rust axl::auth::jwt`) validates bearer
 tokens against typed `secret` and `issuer` config and requires `sub`/`iss`
-claims. Demo secrets may appear as plaintext skill config (same honesty rule as
-the static bearer fixture). True secret references that never enter Graph or
-manifest plaintext are Gate 8. OAuth adapters are not implemented.
+claims. Skills may bind secrets with Gate 8 references that never enter Graph or
+manifest plaintext:
+
+```axl
+skill AuthDemoJwtIssuer provides JwtIssuer
+  native rust axl::auth::jwt_sign
+  config secret: text = secret("AXL_AUTH_JWT")
+  config issuer: text = "axl-auth"
+```
+
+The IR stores `secret_ref` metadata with a null value; `provider_config` resolves
+the environment variable at invoke time. Provider manifests redact the value.
+Demo plaintext skill config remains allowed for fixtures that have not migrated.
+OAuth adapters are not implemented.
 
 Routes may also declare **per-route guards** that call AXL flows (no application
 logic in Rust). Guards run after API middleware and before bearer auth:
@@ -865,6 +876,10 @@ server and CLI restarts.
 ### UI pages and forms
 
 UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` / `ui_action` nodes in Graph
+IR. The HTML renderer evaluates bound flows. The React target emits open codegen artifacts from the
+same manifest — `axl_routes.tsx` (React Router table + layout assignment), `axl_layouts.tsx`
+(Guest/App/Admin slots), and `axl_registry.ts` (component registry). Hosts bind concrete React
+components to those slots; product routes and forms are never authored by hand in React.
 IR. The built-in HTML renderer emits a dashboard shell (`theme: dashboard-apple` in the UI manifest):
 sidebar navigation grouped by section, top bar, cards, stat blocks, and responsive tables/forms styled
 with system typography and light/dark support. Application layout stays in the open renderer; domain

@@ -238,7 +238,7 @@ fn check_skill(
             ));
         }
         check_type(&config.type_name, &config.span, declarations, diagnostics);
-        if !scalar_value_matches(&config.type_name, &config.value) {
+        if config.secret_ref.is_none() && !scalar_value_matches(&config.type_name, &config.value) {
             diagnostics.push(
                 Diagnostic::error(
                     "AXL-V305",
@@ -4518,7 +4518,14 @@ fn lower_skill(skill: &Skill, graph: &mut GraphIr) {
         let config_id = format!("{id}.config.{}", config.name);
         let mut value = node(&config_id, "config", &config.name);
         value.type_name = Some(config.type_name.clone());
-        value.metadata.insert("value".into(), config.value.clone());
+        if let Some(secret_ref) = &config.secret_ref {
+            value
+                .metadata
+                .insert("secret_ref".into(), secret_ref.clone());
+            value.metadata.insert("value".into(), "null".into());
+        } else {
+            value.metadata.insert("value".into(), config.value.clone());
+        }
         graph.nodes.push(value);
         graph.edges.push(edge(&id, &config_id, "owns", None));
     }

@@ -81,6 +81,13 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "flow": page.metadata.get("flow"),
                         "input_source": page.metadata.get("input_source"),
                         "input_name": page.metadata.get("input_name"),
+                        "layout": if matches!(path.as_str(), "/" | "/login" | "/register" | "/password-dimenticata" | "/reimposta-password") {
+                            "guest"
+                        } else if path.starts_with("/admin") {
+                            "admin"
+                        } else {
+                            "app"
+                        },
                     })
                 }).collect::<Vec<_>>(),
                 "forms": forms.into_iter().map(|form| {
@@ -209,8 +216,6 @@ fn nav_group(path: &str) -> &'static str {
         || normalized.contains("reimposta")
     {
         "Accesso"
-    } else if normalized.ends_with("/demo") {
-        "Demo"
     } else {
         "Vendite"
     }
@@ -251,9 +256,8 @@ fn nav_group_order(group: &str) -> u8 {
         "Home" => 0,
         "Accesso" => 1,
         "Vendite" => 2,
-        "Demo" => 3,
-        "Amministrazione" => 4,
-        _ => 5,
+        "Amministrazione" => 3,
+        _ => 4,
     }
 }
 
