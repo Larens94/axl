@@ -1,17 +1,20 @@
 {
-  "iteration": 31,
-  "product": "sales-module",
-  "milestone": 26,
-  "milestone_label": "ui form nested List righe + listino picker",
-  "module_readiness": "10/10 Odoo Vendite slice",
+  "iteration": 32,
+  "product": "auth-module",
+  "milestone": 31,
+  "milestone_label": "IAM login/register/RBAC/admin/dynamic roles",
+  "module_readiness": "M27-M31 auth slice complete",
+  "sales_milestone_26": "closed deferred — nested List form + listino picker remain in steward_queue",
   "milestones_1_25": "complete",
+  "auth_milestones_27_31": "complete",
   "steward_queue": [
     "ui form nested List<> repeatable righe rows",
-    "ui form select from store query (dynamic listino picker)"
+    "ui form select from store query (dynamic listino picker)",
+    "policy runtime enforcement on blueprint AccessPolicy"
   ],
-  "last_steward_summary": "M25 listino durable SQLite eval + HTTP restart smoke",
-  "last_judge_summary": "M25 done; nested List form blocked — flat PreventivoListinoForm workaround remains",
-  "last_verification": "verify-sales + verify-libro-cassa OK; M25 complete",
+  "last_steward_summary": "password hash/verify, jwt sign/decode, store find_by, UI cookie bind, session Set-Cookie on login redirect",
+  "last_judge_summary": "auth-domain + AuthApi/Ui + Vendite RBAC integration; M26 sales UI deferred",
+  "last_verification": "verify-auth + verify-sales + verify-libro-cassa",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
   "autoloop": "local only",
   "active_branch": "main"

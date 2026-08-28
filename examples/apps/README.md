@@ -244,21 +244,21 @@ process restarts via `./build/libro-cassa.db`. The UI demo uses in-memory
 `MemoriaVoci` only; each eval/render starts a fresh store unless the seed flow
 registers voci in the same evaluation (as `PaginaVociDemo` does).
 
-## Vendite (`sales.axl`)
+## Portal (`portal.axl`)
 
-Odoo-like sales slice: domain module (`sales-domain.axl`), HTTP API and UI for
-`Cliente`, `Prodotto`, and `Preventivo` with workflow transitions. Memory routes
+Unified AXL portal: IAM (login, RBAC, admin) + Odoo-like vendite in one app and one
+`PortalUi` shell. Domain modules: `auth-domain.axl`, `sales-domain.axl`. Memory routes
 are process-local; durable SQLite routes share `./build/vendite.db` and survive
 process restarts.
 
 ```sh
-./scripts/demo-sales.sh
+./scripts/demo-portal.sh
 
 cargo run -p axl-compiler -- \
-  eval examples/apps/sales.axl CreaCliente examples/apps/inputs/sales-cliente.json
+  eval examples/apps/portal.axl CreaCliente examples/apps/inputs/sales-cliente.json
 
 cargo run -p axl-compiler -- \
-  render examples/apps/sales.axl /clienti/demo examples/apps/inputs/unit.json
+  render examples/apps/portal.axl /clienti/demo examples/apps/inputs/unit.json
 
 # Full browser demo (one serve session; UI GET shares the API memory store):
 #
@@ -302,9 +302,9 @@ curl -s http://127.0.0.1:8080/preventivi/preventivo-002 | jq '.ok.stato'
 
 # Seeded demo list + templated detail (eval/render companion):
 cargo run -p axl-compiler -- \
-  eval examples/apps/sales.axl RenderDettaglioPreventivoDemoUnit examples/apps/inputs/unit.json
+  eval examples/apps/portal.axl RenderDettaglioPreventivoDemoUnit examples/apps/inputs/unit.json
 cargo run -p axl-compiler -- \
-  render examples/apps/sales.axl /preventivi/preventivo-001 null
+  render examples/apps/portal.axl /preventivi/preventivo-001 null
 # render CLI uses a fresh store (no row data); serve GET after /preventivi/demo seeds in-session.
 
 # Durable workflow survives restart:
@@ -313,7 +313,7 @@ curl -s -X POST http://127.0.0.1:8080/preventivi/durable \
   -d @examples/apps/inputs/sales-preventivo.json
 curl -s -X POST http://127.0.0.1:8080/preventivi/durable/preventivo-002/invia
 
-./scripts/verify-sales.sh
+./scripts/verify-portal.sh
 ```
 
 **Preventivo detail UI** uses `page /preventivi/{id}` with `DettaglioPreventivo from path.id`.
@@ -333,7 +333,7 @@ Listino durable routes: `POST/GET /listini/durable/*` (same SQLite db as prevent
 
 Expected results:
 
-- `./scripts/demo-sales.sh` serves `examples/apps/sales.axl` on `127.0.0.1:8080`;
+- `./scripts/demo-portal.sh` serves `examples/apps/portal.axl` on `127.0.0.1:8080`;
 - memory eval/render gates pass for clienti, prodotti, preventivi (seeded pages at `/clienti/demo`, `/prodotti/demo`, `/preventivi/demo`);
 - live list pages (`/clienti`, `/prodotti`, `/preventivi`) query the memory store; `GET /clienti` after form POST shows the new row in HTML (shared `BuiltinRuntime` in serve);
 - form POST (`application/x-www-form-urlencoded`) creates `Cliente` via HTTP; `GET /clienti` and JSON query confirm the record in the same session;

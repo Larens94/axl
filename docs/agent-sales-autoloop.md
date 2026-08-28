@@ -45,14 +45,15 @@ Evolves toward an Odoo-like **Vendite** slice: backend + frontend in AXL.
 | 23 | `Listino` + righe store + `RisolviPrezzo` / `CreaPreventivoConListino` pricing hook | done |
 | 24 | Listini UI: `/listini/{id}` detail righe table + `/preventivi/new-listino` form via `CreaPreventivoConListino` | done |
 | 25 | Listino durable SQLite HTTP restart + eval gates; nested `List<>` form **blocked** (steward queue) | done |
+| 26 | Nested `List<>` form + dynamic listino picker | **deferred** (steward queue; flat listino form workaround remains) |
 
-Milestones 1–25 complete. Readiness **10/10**. Next steward: `ui form` nested repeatable righe + dynamic listino picker.
+Milestones 1–25 complete. Readiness **10/10** for Odoo Vendite slice. **M26 closed deferred.** Auth IAM M27–M31: see `docs/agent-auth-autoloop.md` and `scripts/verify-auth.sh`.
 
 ## Files
 
 - `examples/apps/sales-domain.axl` — domain module
-- `examples/apps/sales.axl` — app import + api + ui
+- `examples/apps/portal.axl` — unified portal (IAM + vendite, single `PortalUi`)
 - `examples/apps/form-demo.axl` — minimal form + POST api + serve GET (until sales slice lands)
-- `scripts/verify-sales.sh` — sales gate
+- `scripts/verify-portal.sh` — portal gate (auth + vendite)
 
 See also `docs/agent-judge-loop.md` (libro-cassa experiment).

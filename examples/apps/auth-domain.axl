@@ -1,0 +1,712 @@
+// Auth domain: users, dynamic roles, permissions and sessions (IAM in AXL).
+axl 4
+app AuthDomain
+
+capacity PasswordHasher
+  op hash text -> Result<text>
+  op verify PasswordCheck -> Result<bool> idempotent
+
+skill DemoPasswordHasher provides PasswordHasher
+  native rust axl::auth::password
+  config pepper: text = "axl-auth-demo-pepper"
+  capability auth.hash
+
+entity PasswordCheck
+  password: text required
+  hash: text required
+
+entity JwtClaims
+  sub: uuid required
+  roles: List<text> optional
+
+capacity JwtIssuer
+  op sign JwtClaims -> Result<text>
+
+capacity JwtDecoder
+  op decode text -> Result<JwtClaims> idempotent
+
+skill AuthDemoJwtIssuer provides JwtIssuer
+  native rust axl::auth::jwt_sign
+  config secret: text = "axl-auth-demo-jwt"
+  config issuer: text = "axl-auth"
+  capability auth.sign
+
+skill AuthDemoJwtDecoder provides JwtDecoder
+  native rust axl::auth::jwt_decode
+  config secret: text = "axl-auth-demo-jwt"
+  config issuer: text = "axl-auth"
+  capability auth.verify
+
+entity Utente
+  id: uuid key
+  email: text required
+  password_hash: text required
+  nome: text optional
+  attivo: bool required
+  permessi: List<text> required
+
+entity UtenteLookup
+  field: text required
+  value: text required
+
+entity UtenteQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity UtentePage
+  items: List<Utente> required
+  total: int required
+  limit: int required
+  offset: int required
+
+entity RegistrazioneInput
+  email: text required
+  password: text required
+  nome: text optional
+
+entity LoginInput
+  email: text required
+  password: text required
+
+entity LoginResult
+  session_id: uuid required
+  token: text required
+  utente_id: uuid required
+
+entity Sessione
+  id: uuid key
+  utente_id: uuid required
+  attiva: bool required
+
+entity Ruolo
+  id: uuid key
+  nome: text required
+  descrizione: text optional
+  permessi: List<text> required
+
+entity RuoloQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity RuoloPage
+  items: List<Ruolo> required
+  total: int required
+  limit: int required
+  offset: int required
+
+entity Permesso
+  id: text key
+  descrizione: text required
+
+entity RuoloPermesso
+  id: uuid key
+  ruolo_id: uuid required
+  permesso_codice: text required
+
+entity UtenteRuolo
+  id: uuid key
+  utente_id: uuid required
+  ruolo_id: uuid required
+
+entity PermessoCheck
+  utente_id: uuid required
+  codice: text required
+
+entity AssegnaRuoloInput
+  utente_id: uuid required
+  ruolo_id: uuid required
+
+entity AssegnaPermessoInput
+  ruolo_id: uuid required
+  permesso_codice: text required
+
+entity CreaRuoloInput
+  nome: text required
+  descrizione: text optional
+
+entity BearerAuthInput
+  authorization: text required
+  permesso: text required
+
+entity RichiestaResetPasswordInput
+  email: text required
+
+entity ReimpostaPasswordInput
+  token: uuid required
+  password: text required
+  password_conferma: text required
+
+entity ResetPasswordResult
+  token: uuid required
+  messaggio: text required
+
+entity TokenResetPassword
+  id: uuid key
+  utente_id: uuid required
+  attivo: bool required
+
+entity HomePage
+  titolo: text required
+  messaggio: text required
+  totale_utenti: int required
+
+capacity ArchivioUtenti
+  op save Utente -> Result<Utente>
+  op find uuid -> Result<Utente> idempotent
+  op find_by UtenteLookup -> Result<Utente> idempotent
+  op list unit -> Result<List<Utente>> idempotent
+  op query UtenteQuery -> Result<UtentePage> idempotent
+
+capacity ArchivioSessioni
+  op save Sessione -> Result<Sessione>
+  op find uuid -> Result<Sessione> idempotent
+  op list unit -> Result<List<Sessione>> idempotent
+
+capacity ArchivioRuoli
+  op save Ruolo -> Result<Ruolo>
+  op find uuid -> Result<Ruolo> idempotent
+  op list unit -> Result<List<Ruolo>> idempotent
+  op query RuoloQuery -> Result<RuoloPage> idempotent
+
+capacity ArchivioPermessi
+  op save Permesso -> Result<Permesso>
+  op find text -> Result<Permesso> idempotent
+  op list unit -> Result<List<Permesso>> idempotent
+
+capacity ArchivioRuoloPermessi
+  op save RuoloPermesso -> Result<RuoloPermesso>
+  op list unit -> Result<List<RuoloPermesso>> idempotent
+
+capacity ArchivioUtenteRuoli
+  op save UtenteRuolo -> Result<UtenteRuolo>
+  op list unit -> Result<List<UtenteRuolo>> idempotent
+
+capacity ArchivioTokenReset
+  op save TokenResetPassword -> Result<TokenResetPassword>
+  op find uuid -> Result<TokenResetPassword> idempotent
+
+skill MemoriaTokenReset provides ArchivioTokenReset
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill MemoriaUtenti provides ArchivioUtenti
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill MemoriaSessioni provides ArchivioSessioni
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill MemoriaRuoli provides ArchivioRuoli
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill MemoriaPermessi provides ArchivioPermessi
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill MemoriaRuoloPermessi provides ArchivioRuoloPermessi
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill MemoriaUtenteRuoli provides ArchivioUtenteRuoli
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+flow ValidaRegistrazione RegistrazioneInput -> Result<RegistrazioneInput>
+  let password_lunga = input.password != ""
+  require password_lunga else "password_obbligatoria"
+  return input
+
+flow TrovaUtentePerEmail text -> Result<Utente>
+  in store: ArchivioUtenti = MemoriaUtenti
+  make lookup: UtenteLookup
+    field = "email"
+    value = input
+  call utente = store.find_by(lookup)?
+  return utente
+
+flow RegistraUtente RegistrazioneInput -> Result<Utente>
+  in store: ArchivioUtenti = MemoriaUtenti
+  in hasher: PasswordHasher = DemoPasswordHasher
+  run valida = ValidaRegistrazione(input)?
+  call hash = hasher.hash(valida.password)?
+  let sentinel = ["__none__"]
+  filter permessi_vuoti: List<text> = sentinel as codice
+    where = false
+  make utente: Utente
+    id = uuid.v4
+    email = valida.email
+    password_hash = hash
+    nome = valida.nome
+    attivo = true
+    permessi = permessi_vuoti
+  call salvato = store.save(utente)?
+  return salvato
+
+flow LoginUtente LoginInput -> Result<LoginResult>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  in sessioni: ArchivioSessioni = MemoriaSessioni
+  in hasher: PasswordHasher = DemoPasswordHasher
+  in issuer: JwtIssuer = AuthDemoJwtIssuer
+  run utente = TrovaUtentePerEmail(input.email)?
+  let attivo = utente.attivo
+  require attivo else "utente_disattivato"
+  make check: PasswordCheck
+    password = input.password
+    hash = utente.password_hash
+  call ok = hasher.verify(check)?
+  require ok else "credenziali_non_valide"
+  make sessione: Sessione
+    id = uuid.v4
+    utente_id = utente.id
+    attiva = true
+  call salvata = sessioni.save(sessione)?
+  make claims: JwtClaims
+    sub = utente.id
+    roles = utente.permessi
+  call token = issuer.sign(claims)?
+  make result: LoginResult
+    session_id = salvata.id
+    token = token
+    utente_id = utente.id
+  return result
+
+flow RichiediResetPassword RichiestaResetPasswordInput -> Result<ResetPasswordResult>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  in token_store: ArchivioTokenReset = MemoriaTokenReset
+  let email_presente = input.email != ""
+  require email_presente else "email_obbligatoria"
+  make lookup: UtenteLookup
+    field = "email"
+    value = input.email
+  call utente = utenti.find_by(lookup)?
+  make token_reset: TokenResetPassword
+    id = uuid.v4
+    utente_id = utente.id
+    attivo = true
+  call salvato = token_store.save(token_reset)?
+  make result: ResetPasswordResult
+    token = salvato.id
+    messaggio = "Token generato. Inseriscilo nel form reimposta password (demo: email non inviata)."
+  return result
+
+flow ReimpostaPassword ReimpostaPasswordInput -> Result<Utente>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  in token_store: ArchivioTokenReset = MemoriaTokenReset
+  in hasher: PasswordHasher = DemoPasswordHasher
+  let password_ok = input.password != ""
+  require password_ok else "password_obbligatoria"
+  let conferma_ok = input.password == input.password_conferma
+  require conferma_ok else "password_non_coincidono"
+  call token_reset = token_store.find(input.token)?
+  let attivo = token_reset.attivo
+  require attivo else "token_non_valido"
+  call utente = utenti.find(token_reset.utente_id)?
+  call nuovo_hash = hasher.hash(input.password)?
+  make aggiornato: Utente
+    id = utente.id
+    email = utente.email
+    password_hash = nuovo_hash
+    nome = utente.nome
+    attivo = utente.attivo
+    permessi = utente.permessi
+  call salvato = utenti.save(aggiornato)?
+  make token_spento: TokenResetPassword
+    id = token_reset.id
+    utente_id = token_reset.utente_id
+    attivo = false
+  call _spento = token_store.save(token_spento)?
+  return salvato
+
+flow PaginaHome unit -> Result<HomePage>
+  in store: ArchivioUtenti = MemoriaUtenti
+  make query: UtenteQuery
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  make home: HomePage
+    titolo = "AXL Portal"
+    messaggio = "Benvenuto. Accedi per gestire vendite, clienti, preventivi e amministrazione."
+    totale_utenti = pagina.total
+  return home
+
+flow PaginaHomeUtente uuid -> Result<HomePage>
+  in store: ArchivioUtenti = MemoriaUtenti
+  run utente = UtenteDaSessione(input)?
+  make query: UtenteQuery
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  make home: HomePage
+    titolo = "AXL Portal"
+    messaggio = "Bentornato nel portale."
+    totale_utenti = pagina.total
+  return home
+
+flow ValidaSessione uuid -> Result<Sessione>
+  in sessioni: ArchivioSessioni = MemoriaSessioni
+  call sessione = sessioni.find(input)?
+  let attiva = sessione.attiva
+  require attiva else "sessione_scaduta"
+  return sessione
+
+flow UtenteDaSessione uuid -> Result<Utente>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  run sessione = ValidaSessione(input)?
+  call utente = utenti.find(sessione.utente_id)?
+  return utente
+
+flow UtenteHaPermesso PermessoCheck -> Result<bool>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  call utente = utenti.find(input.utente_id)?
+  fold ha_permesso: bool = utente.permessi from false as codice
+    next = if value then true else codice == input.codice
+  return ha_permesso
+
+flow RichiediPermesso PermessoCheck -> Result<bool>
+  run autorizzato = UtenteHaPermesso(input)?
+  require autorizzato else "permesso_negato"
+  return autorizzato
+
+flow CreaPermesso Permesso -> Result<Permesso>
+  in store: ArchivioPermessi = MemoriaPermessi
+  call salvato = store.save(input)?
+  return salvato
+
+flow CreaRuolo CreaRuoloInput -> Result<Ruolo>
+  in store: ArchivioRuoli = MemoriaRuoli
+  let nome_presente = input.nome != ""
+  require nome_presente else "nome_ruolo_obbligatorio"
+  let sentinel = ["__none__"]
+  filter permessi_vuoti: List<text> = sentinel as codice
+    where = false
+  make ruolo: Ruolo
+    id = uuid.v4
+    nome = input.nome
+    descrizione = input.descrizione
+    permessi = permessi_vuoti
+  call salvato = store.save(ruolo)?
+  return salvato
+
+
+flow AssegnaPermessoARuolo AssegnaPermessoInput -> Result<Ruolo>
+  in ruoli: ArchivioRuoli = MemoriaRuoli
+  in permessi: ArchivioPermessi = MemoriaPermessi
+  in collegamenti: ArchivioRuoloPermessi = MemoriaRuoloPermessi
+  call ruolo = ruoli.find(input.ruolo_id)?
+  call _perm = permessi.find(input.permesso_codice)?
+  make link: RuoloPermesso
+    id = uuid.v4
+    ruolo_id = input.ruolo_id
+    permesso_codice = input.permesso_codice
+  call _saved = collegamenti.save(link)?
+  let permessi = [input.permesso_codice]
+  make aggiornato: Ruolo
+    id = ruolo.id
+    nome = ruolo.nome
+    descrizione = ruolo.descrizione
+    permessi = permessi
+  call salvato = ruoli.save(aggiornato)?
+  return salvato
+
+flow AssegnaRuoloUtente AssegnaRuoloInput -> Result<Utente>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  in ruoli: ArchivioRuoli = MemoriaRuoli
+  in assegnazioni: ArchivioUtenteRuoli = MemoriaUtenteRuoli
+  call utente = utenti.find(input.utente_id)?
+  call ruolo = ruoli.find(input.ruolo_id)?
+  make link: UtenteRuolo
+    id = uuid.v4
+    utente_id = input.utente_id
+    ruolo_id = input.ruolo_id
+  call _saved = assegnazioni.save(link)?
+  make aggiornato: Utente
+    id = utente.id
+    email = utente.email
+    password_hash = utente.password_hash
+    nome = utente.nome
+    attivo = utente.attivo
+    permessi = ruolo.permessi
+  call salvato = utenti.save(aggiornato)?
+  return salvato
+
+flow SeedPermessiBase unit -> Result<List<Permesso>>
+  in store: ArchivioPermessi = MemoriaPermessi
+  make p1: Permesso
+    id = "admin.utenti.read"
+    descrizione = "Leggere utenti"
+  make p2: Permesso
+    id = "admin.ruoli.read"
+    descrizione = "Leggere ruoli"
+  make p3: Permesso
+    id = "admin.ruoli.write"
+    descrizione = "Gestire ruoli e permessi"
+  make p4: Permesso
+    id = "vendite.clienti.read"
+    descrizione = "Leggere clienti vendite"
+  make p5: Permesso
+    id = "vendite.prodotti.read"
+    descrizione = "Leggere prodotti"
+  make p6: Permesso
+    id = "vendite.listini.read"
+    descrizione = "Leggere listini"
+  make p7: Permesso
+    id = "vendite.preventivi.read"
+    descrizione = "Leggere preventivi"
+  make p8: Permesso
+    id = "vendite.preventivi.write"
+    descrizione = "Scrivere preventivi"
+  make p9: Permesso
+    id = "vendite.ordini.read"
+    descrizione = "Leggere ordini"
+  call s1 = store.save(p1)?
+  call s2 = store.save(p2)?
+  call s3 = store.save(p3)?
+  call s4 = store.save(p4)?
+  call s5 = store.save(p5)?
+  call s6 = store.save(p6)?
+  call s7 = store.save(p7)?
+  call s8 = store.save(p8)?
+  call s9 = store.save(p9)?
+  return [s1, s2, s3, s4, s5, s6, s7, s8, s9]
+
+flow SeedRuoliBase unit -> Result<List<Ruolo>>
+  in store: ArchivioRuoli = MemoriaRuoli
+  let permessi_admin = [
+    "admin.utenti.read",
+    "admin.ruoli.read",
+    "admin.ruoli.write",
+    "vendite.clienti.read",
+    "vendite.prodotti.read",
+    "vendite.listini.read",
+    "vendite.preventivi.read",
+    "vendite.preventivi.write",
+    "vendite.ordini.read"
+  ]
+  let permessi_venditore = [
+    "vendite.clienti.read",
+    "vendite.prodotti.read",
+    "vendite.listini.read",
+    "vendite.preventivi.read",
+    "vendite.preventivi.write",
+    "vendite.ordini.read"
+  ]
+  make admin: Ruolo
+    id = "ruolo-admin"
+    nome = "admin"
+    descrizione = "Amministratore"
+    permessi = permessi_admin
+  make venditore: Ruolo
+    id = "ruolo-venditore"
+    nome = "venditore"
+    descrizione = "Venditore"
+    permessi = permessi_venditore
+  call s1 = store.save(admin)?
+  call s2 = store.save(venditore)?
+  return [s1, s2]
+
+flow SeedUtentiDemo unit -> Result<List<Utente>>
+  in store: ArchivioUtenti = MemoriaUtenti
+  in hasher: PasswordHasher = DemoPasswordHasher
+  call admin_hash = hasher.hash("admin123")?
+  let permessi_admin = [
+    "admin.utenti.read",
+    "admin.ruoli.read",
+    "admin.ruoli.write",
+    "vendite.clienti.read",
+    "vendite.prodotti.read",
+    "vendite.listini.read",
+    "vendite.preventivi.read",
+    "vendite.preventivi.write",
+    "vendite.ordini.read"
+  ]
+  let permessi_venditore = [
+    "vendite.clienti.read",
+    "vendite.prodotti.read",
+    "vendite.listini.read",
+    "vendite.preventivi.read",
+    "vendite.preventivi.write",
+    "vendite.ordini.read"
+  ]
+  make admin: Utente
+    id = "utente-admin"
+    email = "admin@example.com"
+    password_hash = admin_hash
+    nome = "Admin Demo"
+    attivo = true
+    permessi = permessi_admin
+  call vend_hash = hasher.hash("vend123")?
+  make venditore: Utente
+    id = "utente-venditore"
+    email = "venditore@example.com"
+    password_hash = vend_hash
+    nome = "Venditore Demo"
+    attivo = true
+    permessi = permessi_venditore
+  call s1 = store.save(admin)?
+  call s2 = store.save(venditore)?
+  return [s1, s2]
+
+flow SeedUtenteRuoliDemo unit -> Result<List<UtenteRuolo>>
+  in store: ArchivioUtenteRuoli = MemoriaUtenteRuoli
+  make a1: UtenteRuolo
+    id = "ur-admin"
+    utente_id = "utente-admin"
+    ruolo_id = "ruolo-admin"
+  make a2: UtenteRuolo
+    id = "ur-venditore"
+    utente_id = "utente-venditore"
+    ruolo_id = "ruolo-venditore"
+  call s1 = store.save(a1)?
+  call s2 = store.save(a2)?
+  return [s1, s2]
+
+flow InizializzaAuthDemo unit -> Result<UtentePage>
+  run _permessi = SeedPermessiBase(input)?
+  run _ruoli = SeedRuoliBase(input)?
+  run _utenti = SeedUtentiDemo(input)?
+  run _links = SeedUtenteRuoliDemo(input)?
+  run pagina = PaginaUtentiAdmin(input)?
+  return pagina
+
+flow PaginaUtentiAdmin unit -> Result<UtentePage>
+  in store: ArchivioUtenti = MemoriaUtenti
+  make query: UtenteQuery
+    order_by = "email"
+    direction = "asc"
+    limit = 25
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaRuoliAdmin unit -> Result<RuoloPage>
+  in store: ArchivioRuoli = MemoriaRuoli
+  make query: RuoloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 25
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaUtentiAdminSessione uuid -> Result<UtentePage>
+  run utente = UtenteDaSessione(input)?
+  make check: PermessoCheck
+    utente_id = utente.id
+    codice = "admin.utenti.read"
+  run _ = RichiediPermesso(check)?
+  in store: ArchivioUtenti = MemoriaUtenti
+  make query: UtenteQuery
+    order_by = "email"
+    direction = "asc"
+    limit = 25
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaRuoliAdminSessione uuid -> Result<RuoloPage>
+  run utente = UtenteDaSessione(input)?
+  make check: PermessoCheck
+    utente_id = utente.id
+    codice = "admin.ruoli.read"
+  run _ = RichiediPermesso(check)?
+  in store: ArchivioRuoli = MemoriaRuoli
+  make query: RuoloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 25
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow UtenteIdDaAuthorization text -> Result<uuid>
+  in decoder: JwtDecoder = AuthDemoJwtDecoder
+  call claims = decoder.decode(input)?
+  return claims.sub
+
+flow VerificaAuthorization BearerAuthInput -> Result<uuid>
+  run utente_id = UtenteIdDaAuthorization(input.authorization)?
+  make check: PermessoCheck
+    utente_id = utente_id
+    codice = input.permesso
+  run _ = RichiediPermesso(check)?
+  return utente_id
+
+flow LoginAdminDemoUnit unit -> Result<LoginResult>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  run _seed = SeedUtentiDemo(input)?
+  make credenziali: LoginInput
+    email = "admin@example.com"
+    password = "admin123"
+  run login = LoginUtente(credenziali)?
+  return login
+
+flow LoginVenditoreDemoUnit unit -> Result<LoginResult>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  run _seed = SeedUtentiDemo(input)?
+  make credenziali: LoginInput
+    email = "venditore@example.com"
+    password = "vend123"
+  run login = LoginUtente(credenziali)?
+  return login
+
+flow UtenteHaPermessoDemoUnit unit -> Result<bool>
+  run _seed = SeedUtentiDemo(input)?
+  make check_admin: PermessoCheck
+    utente_id = "utente-admin"
+    codice = "admin.ruoli.write"
+  run admin_ok = UtenteHaPermesso(check_admin)?
+  make check_vend: PermessoCheck
+    utente_id = "utente-venditore"
+    codice = "admin.ruoli.write"
+  run vend_negato = UtenteHaPermesso(check_vend)?
+  let ok = admin_ok && !vend_negato
+  require ok else "rbac_seed_non_coerente"
+  return admin_ok
+
+flow CreaRuoloDinamicoDemoUnit unit -> Result<Ruolo>
+  run _init = InizializzaAuthDemo(input)?
+  make nuovo: CreaRuoloInput
+    nome = "supporto"
+    descrizione = "Supporto clienti"
+  run ruolo = CreaRuolo(nuovo)?
+  make assegna: AssegnaPermessoInput
+    ruolo_id = ruolo.id
+    permesso_codice = "vendite.clienti.read"
+  run aggiornato = AssegnaPermessoARuolo(assegna)?
+  fold primo: text = aggiornato.permessi from "" as codice
+    next = if value != "" then value else codice
+  let dinamico = primo == "vendite.clienti.read"
+  require dinamico else "ruolo_dinamico_non_aggiornato"
+  return aggiornato
+
+flow ResetPasswordDemoUnit unit -> Result<Utente>
+  in utenti: ArchivioUtenti = MemoriaUtenti
+  run _seed = SeedUtentiDemo(input)?
+  make richiesta: RichiestaResetPasswordInput
+    email = "admin@example.com"
+  run reset_req = RichiediResetPassword(richiesta)?
+  make reimposta: ReimpostaPasswordInput
+    token = reset_req.token
+    password = "nuova-admin-123"
+    password_conferma = "nuova-admin-123"
+  run aggiornato = ReimpostaPassword(reimposta)?
+  make login: LoginInput
+    email = "admin@example.com"
+    password = "nuova-admin-123"
+  run _login = LoginUtente(login)?
+  return aggiornato

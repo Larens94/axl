@@ -847,7 +847,10 @@ server and CLI restarts.
 ### UI pages and forms
 
 UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` / `ui_action` nodes in Graph
-IR. A page binds an absolute path to a flow with an exact input/output signature. Pages may
+IR. The built-in HTML renderer emits a dashboard shell (`theme: dashboard-apple` in the UI manifest):
+sidebar navigation grouped by section, top bar, cards, stat blocks, and responsive tables/forms styled
+with system typography and light/dark support. Application layout stays in the open renderer; domain
+logic remains in AXL flows. A page binds an absolute path to a flow with an exact input/output signature. Pages may
 use path templates with `{param}` placeholders, reusing the same `from path.name` binding
 model as HTTP routes:
 
@@ -860,7 +863,7 @@ ui PreventivoScreen
 ```
 
 When a page declares `from path.name`, `serve` GET and `render` bind the matching path
-segment to the flow input (for example `render sales.axl /preventivi/preventivo-001 null`).
+segment to the flow input (for example `render portal.axl /preventivi/preventivo-001 null`).
 The manifest records the template path in `path` and `template` when placeholders are present.
 
 A form binds an absolute path to an entity type and flow. The optional `submit` clause

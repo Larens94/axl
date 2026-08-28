@@ -90,7 +90,7 @@ pub fn dispatch_with_headers(
     let exact_ui = ui::matches_exact_ui_path(graph, request_path);
     if method == "get"
         && (exact_ui || accepts_html(headers))
-        && let Some(result) = dispatch_ui_get(graph, runtime, request_path)
+        && let Some(result) = dispatch_ui_get(graph, runtime, request_path, headers)
     {
         return result;
     }
@@ -178,6 +178,7 @@ fn dispatch_ui_get(
     graph: &GraphIr,
     runtime: &mut dyn ProviderRuntime,
     request_path: &str,
+    headers: &BTreeMap<String, String>,
 ) -> Option<HttpResult> {
     if let Ok(rendered) = ui::render_form(graph, request_path) {
         let mut result = HttpResult::new(200, Value::String(rendered.html));
@@ -186,7 +187,9 @@ fn dispatch_ui_get(
             .insert("content-type".into(), "text/html; charset=utf-8".into());
         return Some(result);
     }
-    if let Ok(rendered) = ui::render_page_with_runtime(graph, runtime, request_path, Value::Null) {
+    if let Ok(rendered) =
+        ui::render_page_with_runtime(graph, runtime, request_path, Value::Null, headers)
+    {
         let mut result = HttpResult::new(200, Value::String(rendered.html));
         result
             .headers
@@ -431,7 +434,7 @@ fn bind_composite_input(
     Ok(Value::Object(result))
 }
 
-fn query_value(query: &str, name: &str) -> Option<String> {
+pub(crate) fn query_value(query: &str, name: &str) -> Option<String> {
     query.split('&').find_map(|pair| {
         let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
         (percent_decode(key).as_deref() == Some(name)).then(|| percent_decode(value))?
@@ -442,7 +445,7 @@ fn header_value(headers: &BTreeMap<String, String>, name: &str) -> Option<String
     headers.get(&name.to_ascii_lowercase()).cloned()
 }
 
-fn cookie_value(headers: &BTreeMap<String, String>, name: &str) -> Option<String> {
+pub(crate) fn cookie_value(headers: &BTreeMap<String, String>, name: &str) -> Option<String> {
     let cookie = headers.get("cookie")?;
     cookie.split(';').find_map(|part| {
         let part = part.trim();
@@ -686,6 +689,18 @@ fn apply_form_post_redirect(
     let location = substitute_path_from_value(&location, &result.body).unwrap_or(location);
     result.status = 303;
     result.headers.insert("location".into(), location);
+    if let Some(session_id) = result
+        .body
+        .get("ok")
+        .and_then(Value::as_object)
+        .and_then(|object| object.get("session_id"))
+        .and_then(Value::as_str)
+    {
+        result.headers.insert(
+            "set-cookie".into(),
+            format!("sid={session_id}; Path=/; HttpOnly; SameSite=Lax"),
+        );
+    }
 }
 
 fn parse_form_urlencoded(body: &[u8]) -> Result<Value, String> {

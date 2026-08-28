@@ -1,0 +1,82 @@
+// Portal vendite UI handlers: session-gated page flows over sales domain.
+axl 4
+app PortalVenditePages
+
+flow PaginaClientiSessione uuid -> Result<ClientePage>
+  make gate: SessionePermessoInput
+    session_id = input
+    permesso = "vendite.clienti.read"
+  run _ = RequireSessionPermesso(gate)?
+  in store: ArchivioClienti = MemoriaClienti
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaProdottiSessione uuid -> Result<ProdottoPage>
+  make gate: SessionePermessoInput
+    session_id = input
+    permesso = "vendite.prodotti.read"
+  run _ = RequireSessionPermesso(gate)?
+  in store: ArchivioProdotti = MemoriaProdotti
+  make query: ProdottoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaListiniSessione uuid -> Result<ListinoPage>
+  make gate: SessionePermessoInput
+    session_id = input
+    permesso = "vendite.listini.read"
+  run _ = RequireSessionPermesso(gate)?
+  in store: ArchivioListini = MemoriaListini
+  make query: ListinoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaPreventiviSessione uuid -> Result<PreventivoPage>
+  make gate: SessionePermessoInput
+    session_id = input
+    permesso = "vendite.preventivi.read"
+  run _ = RequireSessionPermesso(gate)?
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  make query: PreventivoQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaOrdiniSessione uuid -> Result<OrdinePage>
+  make gate: SessionePermessoInput
+    session_id = input
+    permesso = "vendite.ordini.read"
+  run _ = RequireSessionPermesso(gate)?
+  in store: ArchivioOrdini = MemoriaOrdini
+  make query: OrdineQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaClientiRbacDemoUnit unit -> Result<ClientePage>
+  run _init = InizializzaAuthDemo(input)?
+  make check: PermessoCheck
+    utente_id = "utente-admin"
+    codice = "vendite.clienti.read"
+  run _ = RichiediPermesso(check)?
+  run pagina = PaginaClientiDemoUnit(input)?
+  return pagina

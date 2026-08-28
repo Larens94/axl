@@ -345,8 +345,8 @@ cargo run -p axl-compiler -- \
 ```
 
 Open `http://127.0.0.1:8080/clienti/new` in a browser or curl it; the response
-must be `text/html` with a `<form method="post" action="/clienti">` and a nav
-shell linking `/clienti` and `/clienti/new`. POST JSON to `/clienti` still goes
+must be `text/html` with a form posting to `/clienti` and a dashboard sidebar
+linking `/clienti` and `/clienti/new`. POST JSON to `/clienti` still goes
 through the api route unchanged.
 
 ```sh

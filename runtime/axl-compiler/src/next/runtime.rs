@@ -8,7 +8,7 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
 use rusqlite::{Connection, params};
 use serde_json::{Map, Value, json};
-use sha2::Sha256;
+use sha2::{Digest, Sha256};
 
 type HmacSha256 = Hmac<Sha256>;
 type MemoryStoreMap = BTreeMap<String, BTreeMap<String, Value>>;
@@ -233,6 +233,9 @@ impl ProviderRuntime for BuiltinRuntime {
             }
             "rust::axl::auth::bearer" => bearer_auth_call(call),
             "rust::axl::auth::jwt" => jwt_auth_call(call),
+            "rust::axl::auth::jwt_sign" => jwt_sign_call(call),
+            "rust::axl::auth::jwt_decode" => jwt_decode_call(call),
+            "rust::axl::auth::password" => password_auth_call(call),
             "rust::axl::middleware::header_gate" => header_gate_call(call),
             "rust::axl::middleware::response_headers" => response_headers_call(call),
             "rust::axl::middleware::cors" => cors_call(call),
@@ -1134,6 +1137,7 @@ fn memory_store_call(stores: &mut MemoryStoreMap, call: ProviderCall<'_>) -> Res
         }
         "list" => Ok(Value::Array(store.values().cloned().collect())),
         "query" => store_query(store.values().cloned().collect(), &call.input),
+        "find_by" => store_find_by(store.values().cloned().collect(), &call.input),
         operation => Err(format!(
             "memory store does not implement operation '{operation}' for {}",
             call.capacity
@@ -1303,6 +1307,13 @@ fn document_store_call(
                 .unwrap_or_default();
             store_query(values, &call.input)
         }
+        "find_by" => {
+            let values = stores
+                .get(call.provider)
+                .map(|store| store.values().cloned().collect())
+                .unwrap_or_default();
+            store_find_by(values, &call.input)
+        }
         operation => Err(format!(
             "document store does not implement operation '{operation}' for {}",
             call.capacity
@@ -1314,6 +1325,29 @@ fn document_store_call(
         write_document_file(path, stores)?;
     }
     Ok(result)
+}
+
+fn store_find_by(records: Vec<Value>, input: &Value) -> Result<Value, String> {
+    let lookup = input
+        .as_object()
+        .ok_or_else(|| "store find_by requires a lookup object".to_string())?;
+    let field = lookup
+        .get("field")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "store find_by requires field".to_string())?;
+    let expected = lookup
+        .get("value")
+        .ok_or_else(|| "store find_by requires value".to_string())?;
+    for record in records {
+        if record
+            .as_object()
+            .and_then(|object| object.get(field))
+            .is_some_and(|value| value == expected)
+        {
+            return Ok(record);
+        }
+    }
+    Err("not_found".into())
 }
 
 fn store_query(records: Vec<Value>, input: &Value) -> Result<Value, String> {
@@ -1778,6 +1812,156 @@ fn jwt_auth_call(call: ProviderCall<'_>) -> Result<Value, String> {
         .as_str()
         .ok_or_else(|| "jwt authorize requires a text token".to_string())?;
     Ok(Value::Bool(verify_hs256_jwt(token, secret, issuer)))
+}
+
+fn sha256_hex(input: &str) -> String {
+    format!("{:x}", Sha256::digest(input.as_bytes()))
+}
+
+fn password_auth_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    let pepper = call
+        .config
+        .get("pepper")
+        .and_then(Value::as_str)
+        .unwrap_or("axl-demo-pepper");
+    match call.operation {
+        "hash" => {
+            let password = call
+                .input
+                .as_str()
+                .ok_or_else(|| "password hash requires a text password".to_string())?;
+            Ok(Value::String(sha256_hex(&format!("{pepper}:{password}"))))
+        }
+        "verify" => {
+            let object = call
+                .input
+                .as_object()
+                .ok_or_else(|| "password verify requires PasswordCheck".to_string())?;
+            let password = object
+                .get("password")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "password verify requires password".to_string())?;
+            let hash = object
+                .get("hash")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "password verify requires hash".to_string())?;
+            Ok(Value::Bool(constant_time_eq(
+                hash.as_bytes(),
+                sha256_hex(&format!("{pepper}:{password}")).as_bytes(),
+            )))
+        }
+        operation => Err(format!(
+            "password auth does not implement operation '{operation}'"
+        )),
+    }
+}
+
+fn jwt_sign_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    if call.operation != "sign" {
+        return Err(format!(
+            "jwt sign does not implement operation '{}'",
+            call.operation
+        ));
+    }
+    let secret = call
+        .config
+        .get("secret")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "jwt_secret_not_configured".to_string())?;
+    let issuer = call
+        .config
+        .get("issuer")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "jwt_issuer_not_configured".to_string())?;
+    let claims_input = call
+        .input
+        .as_object()
+        .ok_or_else(|| "jwt sign requires JwtClaims".to_string())?;
+    let sub = claims_input
+        .get("sub")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "jwt sign requires sub".to_string())?;
+    let mut claims = json!({ "sub": sub, "iss": issuer });
+    if let Some(roles) = claims_input.get("roles") {
+        claims
+            .as_object_mut()
+            .expect("claims object")
+            .insert("roles".into(), roles.clone());
+    }
+    encode_hs256_jwt(secret, &claims).map(Value::String)
+}
+
+fn jwt_decode_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    if call.operation != "decode" {
+        return Err(format!(
+            "jwt decode does not implement operation '{}'",
+            call.operation
+        ));
+    }
+    let secret = call
+        .config
+        .get("secret")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "jwt_secret_not_configured".to_string())?;
+    let issuer = call
+        .config
+        .get("issuer")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "jwt_issuer_not_configured".to_string())?;
+    let token = call
+        .input
+        .as_str()
+        .ok_or_else(|| "jwt decode requires a text token".to_string())?;
+    let token = token
+        .strip_prefix("Bearer ")
+        .or_else(|| token.strip_prefix("bearer "))
+        .unwrap_or(token);
+    decode_hs256_jwt(token, secret, issuer)
+}
+
+fn decode_hs256_jwt(token: &str, secret: &str, expected_issuer: &str) -> Result<Value, String> {
+    let parts: Vec<&str> = token.split('.').collect();
+    if parts.len() != 3 {
+        return Err("jwt_invalid".into());
+    }
+    let (header_b64, payload_b64, signature_b64) = (parts[0], parts[1], parts[2]);
+    let header_bytes = URL_SAFE_NO_PAD
+        .decode(header_b64)
+        .map_err(|_| "jwt_invalid".to_string())?;
+    let header: Value =
+        serde_json::from_slice(&header_bytes).map_err(|_| "jwt_invalid".to_string())?;
+    if header.get("alg").and_then(Value::as_str) != Some("HS256") {
+        return Err("jwt_invalid".into());
+    }
+    let signing_input = format!("{header_b64}.{payload_b64}");
+    let expected_sig = hmac_sha256_b64(secret.as_bytes(), signing_input.as_bytes())?;
+    if !constant_time_eq(expected_sig.as_bytes(), signature_b64.as_bytes()) {
+        return Err("jwt_invalid".into());
+    }
+    let payload_bytes = URL_SAFE_NO_PAD
+        .decode(payload_b64)
+        .map_err(|_| "jwt_invalid".to_string())?;
+    let claims: Value =
+        serde_json::from_slice(&payload_bytes).map_err(|_| "jwt_invalid".to_string())?;
+    let sub = claims
+        .get("sub")
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| "jwt_missing_sub".to_string())?;
+    let iss = claims
+        .get("iss")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "jwt_missing_iss".to_string())?;
+    if iss != expected_issuer {
+        return Err("jwt_invalid_issuer".into());
+    }
+    let mut decoded = Map::new();
+    decoded.insert("sub".into(), Value::String(sub.into()));
+    decoded.insert("iss".into(), Value::String(iss.into()));
+    if let Some(roles) = claims.get("roles") {
+        decoded.insert("roles".into(), roles.clone());
+    }
+    Ok(Value::Object(decoded))
 }
 
 fn verify_hs256_jwt(token: &str, secret: &str, expected_issuer: &str) -> bool {
@@ -3666,6 +3850,34 @@ flow TraceOnce unit -> Result<List<text>>
         let spans =
             evaluate_flow_with_runtime(&graph, "TraceOnce", Value::Null, &mut runtime).unwrap();
         assert_eq!(spans, json!({"ok": ["CalculateLedgerBalance"]}));
+    }
+
+    #[test]
+    fn password_hash_and_verify_round_trip() {
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let mut config = BTreeMap::new();
+        config.insert("pepper".into(), Value::String("test-pepper".into()));
+        let hash = runtime
+            .invoke(ProviderCall {
+                provider: "DemoPassword",
+                capacity: "PasswordHasher",
+                implementation: "rust::axl::auth::password",
+                operation: "hash",
+                config: config.clone(),
+                input: Value::String("secret".into()),
+            })
+            .unwrap();
+        let verified = runtime
+            .invoke(ProviderCall {
+                provider: "DemoPassword",
+                capacity: "PasswordHasher",
+                implementation: "rust::axl::auth::password",
+                operation: "verify",
+                config,
+                input: json!({"password": "secret", "hash": hash}),
+            })
+            .unwrap();
+        assert_eq!(verified, Value::Bool(true));
     }
 
     #[test]

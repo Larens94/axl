@@ -1,0 +1,4 @@
+{
+  "authorization": "Bearer REPLACE_AT_RUNTIME",
+  "permesso": "vendite.clienti.read"
+}

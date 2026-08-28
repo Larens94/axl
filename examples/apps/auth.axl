@@ -1,0 +1,4 @@
+// Auth domain entry for isolated check/eval. Unified app: portal.axl
+axl 4
+app AuthVerify
+import "./auth-domain.axl"

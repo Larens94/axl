@@ -112,13 +112,14 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
         "schema": graph.schema,
         "app": graph.app,
         "protocol": "axl-ui/1",
+        "theme": "dashboard-apple",
         "uis": uis,
     })
 }
 
 pub fn render_page(graph: &GraphIr, path: &str, input: Value) -> Result<UiRenderResult, String> {
     let mut runtime = runtime::BuiltinRuntime::new().map_err(|error| error.0)?;
-    render_page_with_runtime(graph, &mut runtime, path, input)
+    render_page_with_runtime(graph, &mut runtime, path, input, &BTreeMap::new())
 }
 
 pub fn render_page_with_runtime(
@@ -126,6 +127,7 @@ pub fn render_page_with_runtime(
     provider_runtime: &mut dyn runtime::ProviderRuntime,
     path: &str,
     input: Value,
+    headers: &BTreeMap<String, String>,
 ) -> Result<UiRenderResult, String> {
     let (page, _) = find_page(graph, path).ok_or_else(|| format!("ui_page_not_found:{path}"))?;
     let flow = page
@@ -138,11 +140,11 @@ pub fn render_page_with_runtime(
         .as_deref()
         .and_then(|value| value.split_once("->").map(|(_, output)| output.to_string()))
         .unwrap_or_else(|| "text".to_string());
-    let input = bind_page_input(page, path, input)?;
+    let input = bind_page_input(page, path, input, headers)?;
     let data = runtime::evaluate_flow_with_runtime(graph, &flow, input, provider_runtime)
         .map_err(|error| error.0)?;
-    let nav = render_nav(graph);
-    let html = render_page_html(graph, &graph.app, path, &output_type, &data, &nav);
+    let sidebar = render_sidebar(graph, path);
+    let html = render_page_html(graph, &graph.app, path, &output_type, &data, &sidebar);
     Ok(UiRenderResult {
         path: path.into(),
         flow,
@@ -184,8 +186,8 @@ pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, St
         .get("submit")
         .cloned()
         .ok_or_else(|| "ui_form_has_no_submit".to_string())?;
-    let nav = render_nav(graph);
-    let html = render_form_html(graph, &graph.app, path, &entity, &submit, &nav);
+    let sidebar = render_sidebar(graph, path);
+    let html = render_form_html(graph, &graph.app, path, &entity, &submit, &sidebar);
     Ok(UiFormRenderResult {
         path: path.into(),
         entity,
@@ -195,7 +197,68 @@ pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, St
     })
 }
 
-fn render_nav(graph: &GraphIr) -> String {
+fn nav_group(path: &str) -> &'static str {
+    let normalized = normalize_path(path);
+    if normalized == "/" || normalized == "/home" {
+        "Home"
+    } else if normalized.starts_with("/admin") {
+        "Amministrazione"
+    } else if normalized.starts_with("/login")
+        || normalized.starts_with("/register")
+        || normalized.contains("password")
+        || normalized.contains("reimposta")
+    {
+        "Accesso"
+    } else if normalized.ends_with("/demo") {
+        "Demo"
+    } else {
+        "Vendite"
+    }
+}
+
+fn nav_label(path: &str) -> String {
+    match normalize_path(path).as_str() {
+        "/" => "Dashboard".into(),
+        "/home" => "La mia home".into(),
+        "/login" => "Accedi".into(),
+        "/register" => "Registrati".into(),
+        "/password-dimenticata" => "Password dimenticata".into(),
+        "/reimposta-password" => "Reimposta password".into(),
+        "/clienti" => "Clienti".into(),
+        "/clienti/new" => "Nuovo cliente".into(),
+        "/clienti/demo" => "Clienti demo".into(),
+        "/preventivi" => "Preventivi".into(),
+        "/preventivi/new" => "Nuovo preventivo".into(),
+        "/preventivi/new-listino" => "Preventivo da listino".into(),
+        "/preventivi/demo" => "Preventivi demo".into(),
+        "/ordini" => "Ordini".into(),
+        "/ordini/demo" => "Ordini demo".into(),
+        "/prodotti" => "Prodotti".into(),
+        "/prodotti/new" => "Nuovo prodotto".into(),
+        "/prodotti/demo" => "Prodotti demo".into(),
+        "/listini" => "Listini".into(),
+        "/listini/new" => "Nuovo listino".into(),
+        "/listini/demo" => "Listini demo".into(),
+        "/admin/utenti" => "Utenti".into(),
+        "/admin/ruoli" => "Ruoli".into(),
+        "/admin/ruoli/new" => "Nuovo ruolo".into(),
+        other => other.trim_start_matches('/').into(),
+    }
+}
+
+fn nav_group_order(group: &str) -> u8 {
+    match group {
+        "Home" => 0,
+        "Accesso" => 1,
+        "Vendite" => 2,
+        "Demo" => 3,
+        "Amministrazione" => 4,
+        _ => 5,
+    }
+}
+
+fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
+    let current = normalize_path(current_path);
     let mut links = Vec::new();
     for node in &graph.nodes {
         if node.kind != "page" && node.kind != "form" {
@@ -204,28 +267,135 @@ fn render_nav(graph: &GraphIr) -> String {
         let Some(path) = node.metadata.get("path") else {
             continue;
         };
-        let label = if node.kind == "form" {
-            format!("{path} (form)")
-        } else {
-            path.clone()
-        };
-        links.push((path.clone(), label));
+        if path.contains('{') {
+            continue;
+        }
+        let normalized = normalize_path(path);
+        let group = nav_group(path);
+        let label = nav_label(path);
+        let is_form = node.kind == "form";
+        links.push((group, normalized, path.clone(), label, is_form));
     }
-    links.sort_by(|left, right| left.0.cmp(&right.0));
+    links.sort_by(|left, right| {
+        nav_group_order(left.0)
+            .cmp(&nav_group_order(right.0))
+            .then_with(|| left.2.cmp(&right.2))
+    });
     if links.is_empty() {
         return String::new();
     }
-    let items = links
-        .into_iter()
-        .map(|(path, label)| format!(r#"    <a href="{path}">{label}</a>"#))
+    let mut sections = Vec::new();
+    let mut current_group = "";
+    let mut items = String::new();
+    for (group, normalized, path, label, is_form) in links {
+        if group != current_group {
+            if !items.is_empty() {
+                sections.push(format!(
+                    r#"    <div class="nav-section">
+      <span class="nav-label">{current_group}</span>
+{items}    </div>"#
+                ));
+                items.clear();
+            }
+            current_group = group;
+        }
+        let active = if normalized == current { " active" } else { "" };
+        let badge = if is_form {
+            r#" <span class="badge">form</span>"#
+        } else {
+            ""
+        };
+        items.push_str(&format!(
+            r#"      <a class="nav-link{active}" href="{path}">{label}{badge}</a>
+"#
+        ));
+    }
+    if !items.is_empty() {
+        sections.push(format!(
+            r#"    <div class="nav-section">
+      <span class="nav-label">{current_group}</span>
+{items}    </div>"#
+        ));
+    }
+    format!(
+        r#"  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <div class="brand-copy">
+        <span class="brand-name">{app}</span>
+        <span class="brand-tag">Portale</span>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+{sections}
+    </nav>
+  </aside>"#,
+        app = graph.app,
+        sections = sections.join("\n")
+    )
+}
+
+fn page_heading(path: &str) -> String {
+    nav_label(path)
+}
+
+fn page_breadcrumb(path: &str) -> String {
+    let group = nav_group(path);
+    format!("{group} · {}", page_heading(path))
+}
+
+fn payload_object(data: &Value) -> Option<&serde_json::Map<String, Value>> {
+    data.get("ok")
+        .and_then(|value| value.as_object())
+        .or_else(|| data.as_object())
+}
+
+fn render_home_dashboard(data: &Value) -> Option<String> {
+    let map = payload_object(data)?;
+    let titolo = map.get("titolo").and_then(|v| v.as_str())?;
+    let messaggio = map.get("messaggio").and_then(|v| v.as_str()).unwrap_or("");
+    let totale = map
+        .get("totale_utenti")
+        .map(display_value)
+        .unwrap_or_else(|| "—".into());
+    Some(format!(
+        r#"  <section class="hero">
+    <p class="eyebrow">Benvenuto</p>
+    <h2 class="hero-title">{titolo}</h2>
+    <p class="hero-subtitle">{messaggio}</p>
+  </section>
+  <section class="stat-grid">
+    <article class="stat-card">
+      <p class="stat-label">Utenti registrati</p>
+      <p class="stat-value">{totale}</p>
+      <p class="stat-hint">Totale nel sistema</p>
+    </article>
+  </section>
+  <section class="quick-grid">
+    <a class="quick-card" href="/clienti/demo"><span class="quick-label">Clienti</span><span class="quick-hint">Anagrafica e CRM</span></a>
+    <a class="quick-card" href="/preventivi/demo"><span class="quick-label">Preventivi</span><span class="quick-hint">Offerte e workflow</span></a>
+    <a class="quick-card" href="/ordini/demo"><span class="quick-label">Ordini</span><span class="quick-hint">Conferme e stati</span></a>
+    <a class="quick-card" href="/login"><span class="quick-label">Accedi</span><span class="quick-hint">Sessione e permessi</span></a>
+    <a class="quick-card" href="/admin/utenti"><span class="quick-label">Admin</span><span class="quick-hint">Utenti e ruoli</span></a>
+  </section>"#
+    ))
+}
+
+fn render_detail_card(fields: &[(String, String)]) -> String {
+    let rows = fields
+        .iter()
+        .map(|(label, value)| format!("        <dt>{label}</dt>\n        <dd>{value}</dd>"))
         .collect::<Vec<_>>()
         .join("\n");
     format!(
-        r#"  <nav class="nav">
-    <strong>Navigation</strong>
-{items}
-  </nav>
-"#
+        r#"  <section class="card detail-card">
+    <div class="card-header">
+      <h2 class="card-title">Dettaglio</h2>
+    </div>
+    <dl class="detail-list">
+{rows}
+    </dl>
+  </section>"#
     )
 }
 
@@ -235,26 +405,28 @@ fn render_page_html(
     path: &str,
     output_type: &str,
     data: &Value,
-    nav: &str,
+    sidebar: &str,
 ) -> String {
     let title = format!("{app}{path}");
-    let body = if let Some(table) = render_items_table(graph, path, output_type, data) {
+    let heading = page_heading(path);
+    let body = if strip_result(output_type) == "HomePage" {
+        render_home_dashboard(data)
+            .unwrap_or_else(|| render_detail_card(&collect_fields(graph, output_type, data)))
+    } else if let Some(table) = render_items_table(graph, path, output_type, data) {
         table
     } else {
         let fields = collect_fields(graph, output_type, data);
-        let rows = fields
-            .iter()
-            .map(|(label, value)| format!("    <dt>{label}</dt>\n    <dd>{value}</dd>"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        format!(
-            r#"  <dl>
-{rows}
-  </dl>"#
-        )
+        render_detail_card(&fields)
     };
     let actions = render_page_actions(graph, path, data);
-    wrap_html(&title, nav, &format!("{body}{actions}"))
+    wrap_html(
+        app,
+        path,
+        &title,
+        &heading,
+        sidebar,
+        &format!("{body}{actions}"),
+    )
 }
 
 fn render_page_actions(graph: &GraphIr, page_path: &str, page_data: &Value) -> String {
@@ -286,7 +458,9 @@ fn render_page_actions(graph: &GraphIr, page_path: &str, page_data: &Value) -> S
         .map(|action| render_action_form(graph, action, page_path, page_data))
         .collect::<Vec<_>>()
         .join("\n");
-    format!("\n  <section class=\"actions\">\n{forms}\n  </section>")
+    format!(
+        "\n  <section class=\"card actions-card\">\n    <div class=\"card-header\"><h2 class=\"card-title\">Azioni</h2></div>\n    <div class=\"actions\">\n{forms}\n    </div>\n  </section>"
+    )
 }
 
 fn render_action_form(
@@ -331,9 +505,9 @@ fn render_action_form(
         format!("{hidden}{entity_inputs}")
     };
     format!(
-        r#"    <form method="post" action="{submit}" class="action-form">
-{inputs}      <button type="submit">{label}</button>
-    </form>"#
+        r#"      <form method="post" action="{submit}" class="action-form">
+{inputs}        <button type="submit" class="btn btn-secondary">{label}</button>
+      </form>"#
     )
 }
 
@@ -444,9 +618,10 @@ fn render_form_html(
     path: &str,
     entity: &str,
     submit: &str,
-    nav: &str,
+    sidebar: &str,
 ) -> String {
     let title = format!("{app}{path}");
+    let heading = page_heading(path);
     let fields = entity_fields(graph, entity);
     let inputs = fields
         .iter()
@@ -454,13 +629,20 @@ fn render_form_html(
         .collect::<Vec<_>>()
         .join("\n");
     let body = format!(
-        r#"  <p class="meta">Submit entity JSON to <code>{submit}</code> via POST API.</p>
-  <form method="post" action="{submit}">
+        r#"  <section class="card form-card">
+    <div class="card-header">
+      <h2 class="card-title">Nuovo record</h2>
+      <p class="card-subtitle">Invia i dati a <code>{submit}</code></p>
+    </div>
+    <form method="post" action="{submit}" class="stack-form">
 {inputs}
-    <button type="submit">Submit</button>
-  </form>"#
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary">Salva</button>
+      </div>
+    </form>
+  </section>"#
     );
-    wrap_html(&title, nav, &body)
+    wrap_html(app, path, &title, &heading, sidebar, &body)
 }
 
 fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
@@ -478,7 +660,7 @@ fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
         return format!(
             r#"  <div class="field">
 {label}
-    <select id="{name}" name="{name}"{required}>
+    <select id="{name}" name="{name}" class="control"{required}>
 {options}
     </select>
   </div>"#
@@ -493,7 +675,7 @@ fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
     format!(
         r#"  <div class="field">
 {label}
-    <input id="{name}" name="{name}" type="{input_type}"{required}>
+    <input id="{name}" name="{name}" type="{input_type}" class="control"{required}>
   </div>"#
     )
 }
@@ -535,40 +717,391 @@ fn entity_fields<'a>(graph: &'a GraphIr, entity_name: &str) -> Vec<&'a super::ir
         .unwrap_or_default()
 }
 
-fn wrap_html(title: &str, nav: &str, body: &str) -> String {
+fn dashboard_styles() -> &'static str {
+    r#"
+    :root {
+      color-scheme: light dark;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Segoe UI", sans-serif;
+      --bg: #f5f5f7;
+      --surface: rgba(255, 255, 255, 0.78);
+      --surface-solid: #ffffff;
+      --border: rgba(0, 0, 0, 0.08);
+      --text: #1d1d1f;
+      --muted: #6e6e73;
+      --accent: #0071e3;
+      --accent-hover: #0077ed;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.08);
+      --radius: 18px;
+      --sidebar-width: 17rem;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #000000;
+        --surface: rgba(28, 28, 30, 0.82);
+        --surface-solid: #1c1c1e;
+        --border: rgba(255, 255, 255, 0.1);
+        --text: #f5f5f7;
+        --muted: #98989d;
+        --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .app-shell {
+      min-height: 100vh;
+      display: grid;
+      grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      padding: 1.25rem 1rem;
+      border-right: 1px solid var(--border);
+      background: var(--surface);
+      backdrop-filter: blur(24px) saturate(180%);
+      -webkit-backdrop-filter: blur(24px) saturate(180%);
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 0.75rem 1.25rem;
+    }
+    .brand-mark {
+      width: 2rem;
+      height: 2rem;
+      border-radius: 0.65rem;
+      background: linear-gradient(145deg, #0071e3, #64d2ff);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.35);
+    }
+    .brand-copy { display: flex; flex-direction: column; gap: 0.1rem; }
+    .brand-name { font-weight: 700; letter-spacing: -0.02em; }
+    .brand-tag { font-size: 0.75rem; color: var(--muted); }
+    .sidebar-nav { display: flex; flex-direction: column; gap: 1.25rem; }
+    .nav-section { display: flex; flex-direction: column; gap: 0.25rem; }
+    .nav-label {
+      padding: 0 0.75rem;
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .nav-link {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+      padding: 0.55rem 0.75rem;
+      border-radius: 0.75rem;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9375rem;
+    }
+    .nav-link:hover { background: rgba(0, 113, 227, 0.08); text-decoration: none; }
+    .nav-link.active {
+      background: rgba(0, 113, 227, 0.12);
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .badge {
+      font-size: 0.625rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 0.15rem 0.4rem;
+      border-radius: 999px;
+      background: rgba(0, 113, 227, 0.12);
+      color: var(--accent);
+    }
+    .main {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: 1rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: rgba(245, 245, 247, 0.72);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+    @media (prefers-color-scheme: dark) {
+      .topbar { background: rgba(0, 0, 0, 0.72); }
+    }
+    .topbar-title {
+      margin: 0;
+      font-size: 1.75rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .topbar-meta {
+      margin: 0;
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+    .content {
+      padding: 1.5rem 2rem 2.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+    .hero {
+      padding: 1.75rem 0 0.5rem;
+    }
+    .eyebrow {
+      margin: 0 0 0.35rem;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .hero-title {
+      margin: 0;
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+    .hero-subtitle {
+      margin: 0.75rem 0 0;
+      max-width: 42rem;
+      font-size: 1.0625rem;
+      color: var(--muted);
+    }
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+      gap: 1rem;
+    }
+    .stat-card, .card {
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+    .stat-card { padding: 1.25rem 1.35rem; }
+    .stat-label {
+      margin: 0;
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+    .stat-value {
+      margin: 0.35rem 0 0;
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.03em;
+    }
+    .stat-hint {
+      margin: 0.35rem 0 0;
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+    .quick-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+      gap: 0.85rem;
+    }
+    .quick-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      padding: 1rem 1.1rem;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--surface-solid);
+      box-shadow: var(--shadow);
+      color: inherit;
+      text-decoration: none;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .quick-card:hover {
+      transform: translateY(-2px);
+      text-decoration: none;
+      box-shadow: 0 22px 55px rgba(0, 113, 227, 0.12);
+    }
+    .quick-label {
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    .quick-hint {
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+    .card-header {
+      padding: 1.25rem 1.35rem 0;
+    }
+    .card-title {
+      margin: 0;
+      font-size: 1.125rem;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+    .card-subtitle {
+      margin: 0.35rem 0 0;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+    .detail-card .detail-list,
+    .table-card .table-wrap { padding: 1rem 1.35rem 1.35rem; }
+    .detail-list {
+      display: grid;
+      grid-template-columns: minmax(9rem, 28%) 1fr;
+      gap: 0.75rem 1.25rem;
+      margin: 0;
+    }
+    .detail-list dt {
+      margin: 0;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .detail-list dd { margin: 0; word-break: break-word; }
+    .table-wrap { overflow-x: auto; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.9375rem;
+    }
+    th, td {
+      padding: 0.75rem 0.85rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    tbody tr:hover { background: rgba(0, 113, 227, 0.04); }
+    .nested-table th, .nested-table td { padding: 0.5rem 0.65rem; }
+    .empty-state {
+      padding: 2.5rem 1.35rem;
+      text-align: center;
+      color: var(--muted);
+    }
+    .stack-form { padding: 1rem 1.35rem 1.35rem; }
+    .field { margin-bottom: 1rem; }
+    .field label {
+      display: block;
+      margin-bottom: 0.35rem;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .control {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      background: var(--surface-solid);
+      color: var(--text);
+      font: inherit;
+    }
+    .control:focus {
+      outline: none;
+      border-color: rgba(0, 113, 227, 0.55);
+      box-shadow: 0 0 0 4px rgba(0, 113, 227, 0.15);
+    }
+    .form-actions { margin-top: 0.5rem; }
+    .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; padding: 0 1.35rem 1.35rem; }
+    .action-form { display: flex; flex-wrap: wrap; align-items: end; gap: 0.75rem; }
+    .btn {
+      appearance: none;
+      border: none;
+      border-radius: 999px;
+      padding: 0.65rem 1.15rem;
+      font: inherit;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary {
+      background: rgba(0, 113, 227, 0.1);
+      color: var(--accent);
+    }
+    .btn-secondary:hover { background: rgba(0, 113, 227, 0.16); }
+    .footer-note {
+      padding: 0 2rem 1.5rem;
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    @media (max-width: 900px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar {
+        position: relative;
+        height: auto;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+      .topbar, .content { padding-left: 1rem; padding-right: 1rem; }
+    }
+"#
+}
+
+fn wrap_html(
+    app: &str,
+    page_path: &str,
+    document_title: &str,
+    heading: &str,
+    sidebar: &str,
+    body: &str,
+) -> String {
+    let breadcrumb = page_breadcrumb(page_path);
     format!(
         r#"<!DOCTYPE html>
-<html lang="en">
+<html lang="it">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title}</title>
-  <style>
-    :root {{ color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }}
-    body {{ margin: 2rem auto; max-width: 56rem; line-height: 1.5; }}
-    h1 {{ font-size: 1.5rem; margin-bottom: 1rem; }}
-    .nav {{ display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #ccc; }}
-    .nav a {{ color: inherit; }}
-    table {{ width: 100%; border-collapse: collapse; }}
-    th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }}
-    th {{ background: #f4f4f4; }}
-    dl {{ display: grid; grid-template-columns: minmax(8rem, 30%) 1fr; gap: 0.5rem 1rem; }}
-    dt {{ font-weight: 600; color: #555; }}
-    dd {{ margin: 0; }}
-    .field {{ margin-bottom: 1rem; }}
-    .field label {{ display: block; font-weight: 600; margin-bottom: 0.25rem; }}
-    .field input, .field select {{ width: 100%; padding: 0.4rem 0.6rem; }}
-    .meta {{ color: #666; font-size: 0.875rem; margin-bottom: 1.5rem; }}
-    button {{ margin-top: 0.5rem; padding: 0.5rem 1rem; }}
-  </style>
+  <title>{document_title}</title>
+  <style>{styles}</style>
 </head>
 <body>
-  <h1>{title}</h1>
-  <p class="meta">Rendered from AXL UI IR (axl-ui/1)</p>
-{nav}{body}
+  <div class="app-shell">
+{sidebar}
+    <div class="main">
+      <header class="topbar">
+        <div>
+          <p class="topbar-meta">{breadcrumb}</p>
+          <h1 class="topbar-title">{heading}</h1>
+        </div>
+        <p class="topbar-meta">{app}</p>
+      </header>
+      <main class="content">
+{body}
+      </main>
+      <p class="footer-note">AXL UI · axl-ui/1 · dashboard kit</p>
+    </div>
+  </div>
 </body>
 </html>
-"#
+"#,
+        styles = dashboard_styles(),
     )
 }
 
@@ -642,7 +1175,13 @@ fn render_items_table(
         return None;
     };
     if items.is_empty() {
-        return Some("  <p>No items.</p>".into());
+        return Some(
+            r#"  <section class="card table-card">
+    <div class="card-header"><h2 class="card-title">Elenco</h2></div>
+    <p class="empty-state">Nessun elemento da mostrare.</p>
+  </section>"#
+                .into(),
+        );
     }
     let item_type = page_item_type(graph, output_type)?;
     let detail_template = detail_path_template_for_list(graph, page_path, &item_type);
@@ -688,7 +1227,21 @@ fn render_items_table(
         .collect::<Vec<_>>()
         .join("\n");
     Some(format!(
-        "  <table>\n    <thead>\n      <tr>\n{header}\n      </tr>\n    </thead>\n    <tbody>\n{rows}\n    </tbody>\n  </table>"
+        r#"  <section class="card table-card">
+    <div class="card-header"><h2 class="card-title">Elenco</h2></div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+{header}
+          </tr>
+        </thead>
+        <tbody>
+{rows}
+        </tbody>
+      </table>
+    </div>
+  </section>"#
     ))
 }
 
@@ -764,6 +1317,7 @@ fn bind_page_input(
     page: &super::ir::GraphNode,
     request_path: &str,
     explicit_input: Value,
+    headers: &BTreeMap<String, String>,
 ) -> Result<Value, String> {
     let source = page
         .metadata
@@ -777,22 +1331,42 @@ fn bind_page_input(
         .metadata
         .get("input_name")
         .ok_or_else(|| "ui_page_binding_has_no_name".to_string())?;
-    let pattern = page
-        .metadata
-        .get("path")
-        .ok_or_else(|| "ui_page_has_no_path".to_string())?;
-    let parameters = match_http_path(pattern, request_path)
-        .ok_or_else(|| format!("ui_page_path_mismatch:{request_path}"))?;
-    let raw = parameters
-        .get(name)
-        .ok_or_else(|| format!("missing_path_parameter:{name}"))?;
     let input_type = page
         .type_name
         .as_deref()
         .and_then(|value| value.split_once("->"))
         .map(|value| value.0)
         .ok_or_else(|| "ui_page_has_no_input_type".to_string())?;
-    parse_bound_scalar(input_type, raw)
+    let raw = match source {
+        "path" => {
+            let pattern = page
+                .metadata
+                .get("path")
+                .ok_or_else(|| "ui_page_has_no_path".to_string())?;
+            let parameters = match_http_path(pattern, request_path)
+                .ok_or_else(|| format!("ui_page_path_mismatch:{request_path}"))?;
+            parameters
+                .get(name)
+                .ok_or_else(|| format!("missing_path_parameter:{name}"))?
+                .clone()
+        }
+        "query" => {
+            let query = request_path
+                .split_once('?')
+                .map(|(_, query)| query)
+                .unwrap_or("");
+            super::http::query_value(query, name)
+                .ok_or_else(|| format!("missing_query_parameter:{name}"))?
+        }
+        "header" => headers
+            .get(name)
+            .cloned()
+            .ok_or_else(|| format!("missing_header:{name}"))?,
+        "cookie" => super::http::cookie_value(headers, name)
+            .ok_or_else(|| format!("missing_cookie:{name}"))?,
+        other => return Err(format!("unsupported_ui_page_source:{other}")),
+    };
+    parse_bound_scalar(input_type, &raw)
 }
 
 fn detail_path_template_for_list(
@@ -1036,9 +1610,24 @@ flow EchoClienti unit -> text
         )
         .unwrap();
         assert_eq!(rendered.data, json!(80000));
-        assert!(rendered.html.contains("<!DOCTYPE html>"));
+        assert!(rendered.html.contains("class=\"app-shell\""));
+        assert!(rendered.html.contains("class=\"sidebar\""));
         assert!(rendered.html.contains("80000"));
         assert!(rendered.html.contains("<dt>money</dt>"));
+    }
+
+    #[test]
+    fn render_page_emits_dashboard_shell() {
+        let graph = compile_source(BALANCE_UI).unwrap().graph;
+        let rendered = render_page(
+            &graph,
+            "/balance",
+            json!({"income": 125000, "expense": 45000}),
+        )
+        .unwrap();
+        assert!(rendered.html.contains("class=\"topbar\""));
+        assert!(rendered.html.contains("dashboard kit"));
+        assert!(rendered.html.contains("-apple-system"));
     }
 
     #[test]
@@ -1069,7 +1658,7 @@ flow EchoClienti unit -> text
         assert!(
             rendered
                 .html
-                .contains(r#"<form method="post" action="/clienti">"#)
+                .contains(r#"<form method="post" action="/clienti" class="stack-form">"#)
         );
         assert!(rendered.html.contains(r#"name="nome""#));
         assert!(
@@ -1077,8 +1666,14 @@ flow EchoClienti unit -> text
                 .html
                 .contains(r#"<option value="attivo">attivo</option>"#)
         );
-        assert!(rendered.html.contains("/clienti/new (form)"));
-        assert!(rendered.html.contains(r#"<a href="/clienti">/clienti</a>"#));
+        assert!(
+            rendered
+                .html
+                .contains(r#"class="btn btn-primary">Salva</button>"#)
+        );
+        assert!(rendered.html.contains("Clienti"));
+        assert!(rendered.html.contains(r#"href="/clienti""#));
+        assert!(rendered.html.contains("form-card"));
     }
 
     const ACTION_UI: &str = r#"axl 4

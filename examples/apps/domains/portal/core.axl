@@ -1,0 +1,19 @@
+// Portal framework core: session + RBAC middleware (Axum-style guards in AXL).
+axl 4
+app PortalCore
+
+entity SessionePermessoInput
+  session_id: uuid required
+  permesso: text required
+
+flow RequireSession uuid -> Result<Utente>
+  run utente = UtenteDaSessione(input)?
+  return utente
+
+flow RequireSessionPermesso SessionePermessoInput -> Result<Utente>
+  run utente = UtenteDaSessione(input.session_id)?
+  make check: PermessoCheck
+    utente_id = utente.id
+    codice = input.permesso
+  run _ = RichiediPermesso(check)?
+  return utente

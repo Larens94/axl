@@ -1377,12 +1377,9 @@ fn form_demo_manifest_render_and_serve_get_are_executable() {
     assert_eq!(manifest["uis"][0]["forms"][0]["flow"], "CreaCliente");
 
     let rendered = axl_compiler::next::ui::render_form(&compiled.graph, "/clienti/new").unwrap();
-    assert!(
-        rendered
-            .html
-            .contains(r#"<form method="post" action="/clienti">"#)
-    );
-    assert!(rendered.html.contains("Navigation"));
+    assert!(rendered.html.contains(r#"action="/clienti""#));
+    assert!(rendered.html.contains("sidebar-nav"));
+    assert!(rendered.html.contains("app-shell"));
     assert!(rendered.html.contains(r#"name="stato""#));
 
     let get_form = axl_compiler::next::http::dispatch(
