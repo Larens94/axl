@@ -3796,6 +3796,9 @@ fn compatible_make_assignment(found: &str, expected: &str) -> bool {
         (
             "text" | "string",
             "uuid" | "datetime" | "email" | "duration"
+        ) | (
+            "uuid" | "datetime" | "email" | "duration",
+            "text" | "string"
         ) | ("int", "money" | "float")
             | ("float", "money")
     )

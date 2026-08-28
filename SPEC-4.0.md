@@ -50,6 +50,7 @@ Rules:
 - imported modules are ordinary AXL files with their own `axl`/`app` headers;
 - imported declarations merge before local declarations in import order;
 - duplicate declaration names across merged modules are rejected (`AXL-N002`);
+- **diamond imports** (A→B, A→C, B→D, C→D) merge D once; true cycles still report `AXL-P932`;
 - missing paths report `AXL-P931`; circular imports report `AXL-P932`;
 - `compile_source` without a base file rejects programs that contain imports
   (`AXL-P933`); use `compile_file` or `compile_source_at`.
@@ -448,7 +449,9 @@ skill AuthDemoJwtIssuer provides JwtIssuer
 The IR stores `secret_ref` metadata with a null value; `provider_config` resolves
 the environment variable at invoke time. Provider manifests redact the value.
 Demo plaintext skill config remains allowed for fixtures that have not migrated.
-OAuth adapters are not implemented.
+OAuth adapters are not implemented. `examples/apps/oauth-boundary.axl` documents
+the intended `OAuthClient` capacity; eval fails with
+`unsupported provider implementation 'rust::axl::auth::oauth'`.
 
 Routes may also declare **per-route guards** that call AXL flows (no application
 logic in Rust). Guards run after API middleware and before bearer auth:
@@ -1165,7 +1168,10 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/catalog/software-foundation.axl` — primary open block contracts
   including transactions and migrations.
 - `examples/apps/import-demo.axl` — multi-file import of a shared module.
+- `examples/apps/import-diamond-demo.axl` — diamond import merges shared email once.
+- `examples/apps/oauth-boundary.axl` — OAuth capacity shape; runtime provider missing.
 - `examples/modules/math-lib.axl` — imported balance helpers.
+- `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.
 - `docs/blocks.md` — construction guide and current limitations.
 - `docs/executable-flows.md` — executable syntax, commands and current boundary.

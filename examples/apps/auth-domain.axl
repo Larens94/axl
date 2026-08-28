@@ -1,6 +1,7 @@
 // Auth domain: users, dynamic roles, permissions and sessions (IAM in AXL).
 axl 4
 app AuthDomain
+import "./domains/shared/email.axl"
 
 capacity PasswordHasher
   op hash text -> Result<text>
@@ -156,7 +157,6 @@ entity ReimpostaPasswordInput
   password_conferma: text required
 
 entity ResetPasswordResult
-  token: uuid required
   messaggio: text required
 
 entity TokenResetPassword
@@ -302,6 +302,7 @@ flow LoginUtente LoginInput -> Result<LoginResult>
 flow RichiediResetPassword RichiestaResetPasswordInput -> Result<ResetPasswordResult>
   in utenti: ArchivioUtenti = MemoriaUtenti
   in token_store: ArchivioTokenReset = MemoriaTokenReset
+  in mailer: EmailSender = MemoriaEmail
   let email_presente = input.email != ""
   require email_presente else "email_obbligatoria"
   make lookup: UtenteLookup
@@ -313,9 +314,13 @@ flow RichiediResetPassword RichiestaResetPasswordInput -> Result<ResetPasswordRe
     utente_id = utente.id
     attivo = true
   call salvato = token_store.save(token_reset)?
+  make email: EmailMessage
+    to = utente.email
+    subject = "Reset password AXL Portal"
+    body = salvato.id
+  call _inviata = mailer.send(email)?
   make result: ResetPasswordResult
-    token = salvato.id
-    messaggio = "Token generato. Inseriscilo nel form reimposta password (demo: email non inviata)."
+    messaggio = "Se l'account esiste, riceverai un'email con il token di reset."
   return result
 
 flow ReimpostaPassword ReimpostaPasswordInput -> Result<Utente>
@@ -751,12 +756,14 @@ flow CreaRuoloDinamicoDemoUnit unit -> Result<Ruolo>
 
 flow ResetPasswordDemoUnit unit -> Result<Utente>
   in utenti: ArchivioUtenti = MemoriaUtenti
+  in mailer: EmailSender = MemoriaEmail
   run _seed = SeedUtentiDemo(input)?
   make richiesta: RichiestaResetPasswordInput
     email = "admin@example.com"
-  run reset_req = RichiediResetPassword(richiesta)?
+  run _reset_req = RichiediResetPassword(richiesta)?
+  call mail = mailer.latest(input)?
   make reimposta: ReimpostaPasswordInput
-    token = reset_req.token
+    token = mail.body
     password = "nuova-admin-123"
     password_conferma = "nuova-admin-123"
   run aggiornato = ReimpostaPassword(reimposta)?
@@ -765,3 +772,10 @@ flow ResetPasswordDemoUnit unit -> Result<Utente>
     password = "nuova-admin-123"
   run _login = LoginUtente(login)?
   return aggiornato
+
+flow RichiediResetPasswordMessaggioDemoUnit unit -> Result<ResetPasswordResult>
+  run _seed = SeedUtentiDemo(input)?
+  make richiesta: RichiestaResetPasswordInput
+    email = "admin@example.com"
+  run result = RichiediResetPassword(richiesta)?
+  return result

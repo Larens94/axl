@@ -2406,6 +2406,12 @@ fn memory_email_call(
                 .collect::<Vec<_>>();
             Ok(Value::Array(summaries))
         }
+        "latest" => {
+            if !call.input.is_null() {
+                return Err("email latest requires unit".into());
+            }
+            mailbox.last().cloned().ok_or_else(|| "email mailbox is empty".to_string())
+        }
         operation => Err(format!(
             "email does not implement operation '{operation}' for {}",
             call.capacity

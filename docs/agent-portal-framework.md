@@ -82,16 +82,20 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 - UI **composite page binding** (`cookie.sid` + `path.id`) is available for session-gated detail routes.
 - **Per-route HTTP guards** (`session` / `can` / `guest`) protect Auth admin and VenditeApi mutations.
 - **React codegen** emits routes/layouts/registry from `axl-ui/1` (`experiment` → `targets/react/`).
+- **Vite host** `hosts/portal-web` consumes codegen and proxies to `axl-compiler serve` (same-origin `sid` cookies).
 - **Gate 8 secret refs** (`secret("ENV")`) used by portal auth/vendite demo skills.
+- **Password reset** sends token via `EmailSender` (`MemoriaEmail`); API returns only `messaggio`.
 - Nested `List<>` form rows still use flat workaround forms.
-- Full React host (Vite + shared cookie origin) remains a host integration, not AXL product logic.
-- OAuth and package registry remain open Gate 8 items.
+- OAuth remains open: `examples/apps/oauth-boundary.axl` proves missing `rust::axl::auth::oauth`.
+- Package registry/lockfile remain open Gate 8 items.
 
 ## Verify
 
 ```sh
 ./scripts/verify-portal.sh
 ./scripts/demo-portal.sh
+# optional React host (same-origin cookies):
+#   cd hosts/portal-web && npm install && npm run dev
 ```
 
 Demo login: `admin@example.com` / `admin123` → `/home` → `/clienti` (requires session).

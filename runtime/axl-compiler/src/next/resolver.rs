@@ -8,7 +8,8 @@ use super::parser;
 pub fn resolve_imports(program: &Program, base_file: &Path) -> Result<Program, Vec<Diagnostic>> {
     let mut diagnostics = Vec::new();
     let base_dir = base_file.parent().unwrap_or_else(|| Path::new("."));
-    let mut visited = BTreeSet::new();
+    let mut visiting = BTreeSet::new();
+    let mut done = BTreeSet::new();
     let mut merged = Vec::new();
 
     for import in &program.imports {
@@ -16,7 +17,8 @@ pub fn resolve_imports(program: &Program, base_file: &Path) -> Result<Program, V
             import,
             base_dir,
             base_file,
-            &mut visited,
+            &mut visiting,
+            &mut done,
             &mut merged,
             &mut diagnostics,
         );
@@ -40,7 +42,8 @@ fn merge_import(
     import: &Import,
     base_dir: &Path,
     owner_file: &Path,
-    visited: &mut BTreeSet<PathBuf>,
+    visiting: &mut BTreeSet<PathBuf>,
+    done: &mut BTreeSet<PathBuf>,
     merged: &mut Vec<Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
@@ -75,7 +78,12 @@ fn merge_import(
         }
     };
 
-    if !visited.insert(canonical.clone()) {
+    // Diamond imports: already fully merged → no-op (do not re-extend declarations).
+    if done.contains(&canonical) {
+        return;
+    }
+
+    if !visiting.insert(canonical.clone()) {
         diagnostics.push(
             Diagnostic::error(
                 "AXL-P932",
@@ -101,7 +109,7 @@ fn merge_import(
                 )
                 .at_path(&owner),
             );
-            visited.remove(&canonical);
+            visiting.remove(&canonical);
             return;
         }
     };
@@ -115,17 +123,26 @@ fn merge_import(
                 }
             }
             diagnostics.extend(parse_errors);
-            visited.remove(&canonical);
+            visiting.remove(&canonical);
             return;
         }
     };
 
     let import_dir = canonical.parent().unwrap_or(base_dir);
     for nested in &imported.imports {
-        merge_import(nested, import_dir, &canonical, visited, merged, diagnostics);
+        merge_import(
+            nested,
+            import_dir,
+            &canonical,
+            visiting,
+            done,
+            merged,
+            diagnostics,
+        );
     }
     merged.extend(imported.declarations);
-    visited.remove(&canonical);
+    visiting.remove(&canonical);
+    done.insert(canonical);
 }
 
 fn resolve_import_path(path: &str, base_dir: &Path) -> Option<PathBuf> {
@@ -199,6 +216,32 @@ import "./missing-module.axl"
             diagnostics
                 .iter()
                 .any(|diagnostic| diagnostic.code == "AXL-P931")
+        );
+    }
+
+    #[test]
+    fn diamond_imports_merge_shared_module_once() {
+        let path = fixture("import-diamond-demo.axl");
+        let source = std::fs::read_to_string(&path).unwrap();
+        let program = parser::parse(&source).unwrap();
+        let merged = resolve_imports(&program, &path).expect("diamond imports resolve");
+        let email_count = merged
+            .declarations
+            .iter()
+            .filter(|declaration| declaration.name() == "EmailMessage")
+            .count();
+        assert_eq!(email_count, 1, "shared email module must merge once");
+        assert!(
+            merged
+                .declarations
+                .iter()
+                .any(|declaration| declaration.name() == "LeftUsesEmail")
+        );
+        assert!(
+            merged
+                .declarations
+                .iter()
+                .any(|declaration| declaration.name() == "RightUsesEmail")
         );
     }
 }

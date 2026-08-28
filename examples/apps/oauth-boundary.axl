@@ -1,0 +1,30 @@
+// OAuth boundary sample — capacity shape for steward review.
+// Check succeeds (syntax/types). Runtime invoke fails: no rust::axl::auth::oauth provider.
+//
+// Missing ABI (do not hide in Axum/React):
+// - Syntax: native rust axl::auth::oauth (+ optional axl-http/1 auth kind "oauth")
+// - Types: OAuthStart { provider, redirect_uri, state }, OAuthCode { code, state },
+//   OAuthToken { access_token, token_type, expires_in, refresh_token?, sub? }
+// - Capacity ops: authorize_url OAuthStart -> Result<text>; exchange OAuthCode -> Result<OAuthToken>
+// - IR: skill configs with secret_ref for client_id/client_secret; authorize/token URLs
+// - Runtime: redirect + callback route; AXL flow maps token → Sessione (no app logic in Rust)
+// - Manifest: provider metadata redacting secrets
+axl 4
+app OAuthBoundary
+
+capacity OAuthClient
+  op authorize_url text -> Result<text> idempotent
+  op exchange text -> Result<text>
+
+skill MissingOAuthProvider provides OAuthClient
+  native rust axl::auth::oauth
+  config client_id: text = secret("AXL_OAUTH_CLIENT_ID")
+  config client_secret: text = secret("AXL_OAUTH_CLIENT_SECRET")
+  config authorize_url: text = "https://example.invalid/oauth/authorize"
+  config token_url: text = "https://example.invalid/oauth/token"
+  capability auth.oauth
+
+flow OAuthAuthorizeUrlDemo text -> Result<text>
+  in oauth: OAuthClient = MissingOAuthProvider
+  call url = oauth.authorize_url(input)?
+  return url

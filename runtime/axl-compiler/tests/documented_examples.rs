@@ -1360,6 +1360,11 @@ fn import_invalid_examples_report_stable_codes() {
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("../../examples/invalid/import-duplicate.axl"),
         ),
+        (
+            "AXL-P932",
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../examples/invalid/import-circular.axl"),
+        ),
     ];
 
     for (code, path) in cases {

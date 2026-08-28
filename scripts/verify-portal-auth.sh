@@ -36,11 +36,25 @@ echo "== eval CreaRuoloDinamicoDemoUnit (dynamic role + permission) =="
 echo "== eval PaginaHome =="
 "${BIN[@]}" eval "$PORTAL" PaginaHome examples/apps/inputs/unit.json | jq -e '.ok.titolo == "AXL Portal"'
 
-echo "== eval ResetPasswordDemoUnit (richiesta + reset + login) =="
+echo "== eval ResetPasswordDemoUnit (email outbox, no token in API result) =="
 "${BIN[@]}" eval "$PORTAL" ResetPasswordDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.email == "admin@example.com"'
+"${BIN[@]}" eval "$PORTAL" RichiediResetPasswordMessaggioDemoUnit examples/apps/inputs/unit.json \
+  | jq -e '.ok.messaggio != null and (.ok | has("token") | not)'
 
 echo "== eval PaginaClientiRbacDemoUnit (RBAC + vendite list) =="
 "${BIN[@]}" eval "$PORTAL" PaginaClientiRbacDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.total >= 0'
+
+echo "== diamond imports (shared email merged once) =="
+"${BIN[@]}" check examples/apps/import-diamond-demo.axl --json | jq -e '.ok == true'
+
+echo "== OAuth boundary (provider missing at runtime) =="
+"${BIN[@]}" check examples/apps/oauth-boundary.axl --json | jq -e '.ok == true'
+set +e
+OAUTH_OUT=$(AXL_OAUTH_CLIENT_ID=demo AXL_OAUTH_CLIENT_SECRET=demo \
+  "${BIN[@]}" eval examples/apps/oauth-boundary.axl OAuthAuthorizeUrlDemo examples/apps/inputs/oauth-start.json 2>&1)
+OAUTH_EC=$?
+set -e
+echo "$OAUTH_OUT" | grep -q "unsupported provider implementation 'rust::axl::auth::oauth'"
 
 echo "== route guards in HTTP manifest (session + can on VenditeApi POST /clienti) =="
 "${BIN[@]}" blocks "$PORTAL" >/dev/null
@@ -70,6 +84,12 @@ grep -q 'axl-ui/1' "$TMP_REACT/targets/react/axl_routes.tsx"
 grep -q 'GuestLayout' "$TMP_REACT/targets/react/axl_layouts.tsx"
 grep -q 'axlProductionRoutes' "$TMP_REACT/targets/react/axl_routes.tsx"
 rm -rf "$TMP_REACT"
+
+echo "== React host sync (hosts/portal-web consumes codegen) =="
+bash hosts/portal-web/scripts/sync-codegen.sh
+test -f hosts/portal-web/src/generated/axl_routes.tsx
+grep -q 'axlProductionRoutes' hosts/portal-web/src/generated/axl_routes.tsx
+grep -q 'GuestLayout' hosts/portal-web/src/generated/axl_layouts.tsx
 
 echo "== HTTP route guard smoke (401 without session, 200 with session) =="
 GPORT=18088

@@ -1,6 +1,8 @@
-// Sales shared: auth demos, email and PDF capacities
+// Sales shared: auth demos, PDF capacities; email from domains/shared/email.axl
 axl 4
 app SalesShared
+import "../shared/email.axl"
+
 capacity HttpAuth
   op authorize text -> Result<bool> idempotent
 
@@ -16,27 +18,14 @@ skill VenditeDemoJwt provides HttpAuth
   config issuer: text = "axl-vendite"
   capability auth.verify
 
-entity EmailMessage
-  to: email required
-  subject: text required
-  body: text required
-  attachment_id: text optional
-
 entity PdfDocument
   id: uuid required
   title: text required
   totale: money required
 
-capacity EmailSender
-  op send EmailMessage -> Result<text> idempotent
-  op list unit -> Result<List<text>> idempotent
-
 capacity PdfRenderer
   op render PdfDocument -> Result<text> idempotent
   op get text -> Result<text> idempotent
-
-skill MemoriaEmail provides EmailSender
-  native rust axl::email::memory
 
 skill MemoriaPdf provides PdfRenderer
   native rust axl::pdf::memory

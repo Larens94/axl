@@ -1,0 +1,17 @@
+// Shared email capacity (open): used by auth reset and sales notifications.
+axl 4
+app SharedEmail
+
+entity EmailMessage
+  to: email required
+  subject: text required
+  body: text required
+  attachment_id: text optional
+
+capacity EmailSender
+  op send EmailMessage -> Result<text> idempotent
+  op list unit -> Result<List<text>> idempotent
+  op latest unit -> Result<EmailMessage> idempotent
+
+skill MemoriaEmail provides EmailSender
+  native rust axl::email::memory

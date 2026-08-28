@@ -470,7 +470,7 @@
         statusLabel: "In cantiere",
         title: "Il bancone dei messaggi",
         kid: "Le richieste arrivano, AXL le controlla e chiama i flow. Auth e middleware sono guardie al cancello.",
-        truth: "Axum, body/path/query/header/cookie, bearer auth statico + JWT HS256 (demo config), middleware request/response, rate-limit (429), CORS (Access-Control-* + OPTIONS), eventi, job (enqueue/tick), Cache get/put/invalidate, Logger/Metrics/Tracer, SQLite durevole, document/JSON-file, transazioni, migrazioni e query filter/order/page funzionano. Secret references vere (Gate 8) e OAuth no.",
+        truth: "Axum, body/path/query/header/cookie, bearer auth statico + JWT HS256 (secret refs Gate 8), middleware request/response, rate-limit (429), CORS (Access-Control-* + OPTIONS), eventi, job (enqueue/tick), Cache get/put/invalidate, Logger/Metrics/Tracer, EmailSender send/list/latest, SQLite durevole, document/JSON-file, transazioni, migrazioni e query filter/order/page funzionano. OAuth no (boundary: rust::axl::auth::oauth).",
         angle: 45,
         radius: 250,
         y: 30

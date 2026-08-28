@@ -1,0 +1,12 @@
+axl 4
+app DiamondRight
+import "./email.axl"
+
+flow RightUsesEmail unit -> Result<text>
+  in mailer: EmailSender = MemoriaEmail
+  make email: EmailMessage
+    to = "right@example.com"
+    subject = "right"
+    body = "from-right"
+  call id = mailer.send(email)?
+  return id
