@@ -1,0 +1,16 @@
+{
+  "id": "preventivo-listino-001",
+  "cliente_id": "cliente-001",
+  "righe": [
+    {
+      "listino_id": "listino-001",
+      "prodotto_id": "prodotto-001",
+      "quantita": 2
+    },
+    {
+      "listino_id": "listino-001",
+      "prodotto_id": "prodotto-002",
+      "quantita": 3
+    }
+  ]
+}

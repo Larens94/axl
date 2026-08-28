@@ -3,6 +3,8 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
+# shellcheck source=env.sh
+source "$(dirname "$0")/env.sh"
 BIN=(cargo run -p axl-compiler --quiet --)
 
 echo "== check ledger (json either order) =="

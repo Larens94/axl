@@ -534,6 +534,7 @@ pub struct UiAction {
     pub path: String,
     pub method: String,
     pub submit: String,
+    pub on: Option<String>,
     pub redirect: Option<String>,
     pub span: SourceSpan,
 }

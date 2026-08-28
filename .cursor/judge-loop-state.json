@@ -1,17 +1,17 @@
 {
-  "iteration": 23,
+  "iteration": 30,
   "product": "sales-module",
-  "milestone": 19,
-  "milestone_label": "Detail righe table (steward shipped)",
-  "module_readiness": "9.5/10 Odoo Vendite slice",
-  "milestones_1_19": "complete",
+  "milestone": 25,
+  "milestone_label": "Listino durable SQLite + dynamic righe form",
+  "module_readiness": "10/10 Odoo Vendite slice",
+  "milestones_1_24": "complete",
   "steward_queue": [
-    "uuid generation for independent ordine ids",
-    "ui action visibility when redirect differs from detail path"
+    "ui form nested List<> repeatable righe rows (open primitive if missing)"
   ],
-  "last_steward_summary": "nested List<Entity> table on detail pages in ui.rs",
-  "last_judge_summary": "M19 blocked on nested table; steward unblocked",
-  "last_verification": "verify-sales + verify-libro-cassa OK; cargo test/clippy OK",
+  "last_steward_summary": "M24 listini detail /listini/{id} righe table; /preventivi/new-listino flat form -> CreaPreventivoConListino; list row links",
+  "last_verification": "pending M24 verify-sales + verify-libro-cassa",
+  "last_judge_summary": "M24 listini UI: DettaglioListino page, PreventivoListinoForm + CreaPreventivoListinoForm, list id links, form POST redirect smoke",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
-  "autoloop": "continuous PID 18014"
+  "autoloop": "cloud continuation — user PC off",
+  "handoff_branch": "axl/sales-autoloop-m21"
 }

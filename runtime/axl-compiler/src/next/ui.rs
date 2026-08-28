@@ -101,6 +101,7 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "path": action.metadata.get("path"),
                         "method": action.metadata.get("method"),
                         "submit": action.metadata.get("submit"),
+                        "on": action.metadata.get("on"),
                         "redirect": action.metadata.get("redirect"),
                     })
                 }).collect::<Vec<_>>(),
@@ -265,8 +266,9 @@ fn render_page_actions(graph: &GraphIr, page_path: &str, page_data: &Value) -> S
         .filter(|action| {
             action
                 .metadata
-                .get("redirect")
-                .is_some_and(|redirect| path_template_matches(redirect, &normalized))
+                .get("on")
+                .or_else(|| action.metadata.get("redirect"))
+                .is_some_and(|target| path_template_matches(target, &normalized))
         })
         .collect::<Vec<_>>();
     actions.sort_by_key(|action| {
@@ -295,7 +297,8 @@ fn render_action_form(
 ) -> String {
     let submit_template = action.metadata.get("submit").cloned().unwrap_or_default();
     let redirect = action.metadata.get("redirect").cloned();
-    let path_params = action_page_path_parameters(page_path, redirect.as_deref());
+    let on = action.metadata.get("on").map(String::as_str);
+    let path_params = action_page_path_parameters(page_path, on, redirect.as_deref());
     let submit = if submit_template.contains('{') {
         substitute_path_template(&submit_template, &path_params)
             .unwrap_or_else(|| submit_template.clone())
@@ -336,9 +339,10 @@ fn render_action_form(
 
 fn action_page_path_parameters(
     page_path: &str,
+    on: Option<&str>,
     redirect: Option<&str>,
 ) -> BTreeMap<String, String> {
-    redirect
+    on.or(redirect)
         .and_then(|template| match_http_path(template, page_path))
         .unwrap_or_default()
 }
@@ -1147,6 +1151,48 @@ ui PreventivoScreen
                 .contains(r#"name="id" value="preventivo-001""#)
         );
         assert!(rendered.html.contains(">invia</button>"));
+    }
+
+    const ON_ACTION_UI: &str = r#"axl 4
+app OnActionUI
+
+entity Preventivo
+  id: uuid key
+  stato: text required
+
+flow CercaPreventivo uuid -> Result<Preventivo>
+  make p: Preventivo
+    id = input
+    stato = "confermato"
+  return p
+
+flow CreaOrdine uuid -> Result<Preventivo>
+  make p: Preventivo
+    id = input
+    stato = "confermato"
+  return p
+
+api OrdineApi
+  post /ordini/da-preventivo/{id} uuid -> Result<Preventivo> = CreaOrdine from path.id
+
+ui PreventivoScreen
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+  page /ordini/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+  action /preventivi/ordine POST /ordini/da-preventivo/{id} on /preventivi/{id} redirect /ordini/{id}
+"#;
+
+    #[test]
+    fn render_page_embeds_actions_on_explicit_on_path() {
+        let graph = compile_source(ON_ACTION_UI).unwrap().graph;
+        let rendered = render_page(&graph, "/preventivi/preventivo-001", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"actions\""));
+        assert!(
+            rendered
+                .html
+                .contains(r#"action="/ordini/da-preventivo/preventivo-001""#)
+        );
+        let ordine_detail = render_page(&graph, "/ordini/preventivo-001", json!(null)).unwrap();
+        assert!(!ordine_detail.html.contains("ordini/da-preventivo"));
     }
 
     const TEMPLATED_LIST_UI: &str = r#"axl 4

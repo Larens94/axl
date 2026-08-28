@@ -85,6 +85,15 @@ pub fn parse(source: &str) -> Result<Expr, String> {
 pub fn evaluate(expression: &Expr, values: &BTreeMap<String, Value>) -> Result<Value, String> {
     match expression {
         Expr::Path(path) => {
+            if is_uuid_v4_builtin(path) {
+                return Ok(Value::String(uuid::Uuid::new_v4().to_string()));
+            }
+            if path.first().is_some_and(|first| first == "uuid") {
+                return Err(format!(
+                    "unknown uuid builtin '{}'",
+                    path.get(1).map(String::as_str).unwrap_or("")
+                ));
+            }
             let mut value = values
                 .get(&path[0])
                 .ok_or_else(|| format!("unknown runtime value '{}'", path[0]))?;
@@ -484,6 +493,10 @@ impl Parser {
     }
 }
 
+fn is_uuid_v4_builtin(path: &[String]) -> bool {
+    path.len() == 2 && path[0] == "uuid" && path[1] == "v4"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -524,6 +537,15 @@ mod tests {
             serde_json::json!({"income": 120, "expense": 45}),
         )]);
         assert_eq!(evaluate(&expression, &values).unwrap(), 120);
+    }
+
+    #[test]
+    fn evaluates_uuid_v4_builtin() {
+        let expression = parse("uuid.v4").unwrap();
+        let first = evaluate(&expression, &BTreeMap::new()).unwrap();
+        let second = evaluate(&expression, &BTreeMap::new()).unwrap();
+        assert_ne!(first, second);
+        assert!(first.as_str().unwrap().contains('-'));
     }
 
     #[test]

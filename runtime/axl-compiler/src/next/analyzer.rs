@@ -1034,8 +1034,7 @@ fn check_flow(
                             "AXL-X817",
                             "execution",
                             format!(
-                                "call '{}.{}' receives the wrong argument type",
-                                dependency, operation
+                                "call '{dependency}.{operation}' receives the wrong argument type",
                             ),
                             span.clone(),
                         )
@@ -3285,7 +3284,7 @@ fn check_ui(
                 Diagnostic::error(
                     "AXL-U902",
                     "ui",
-                    format!("invalid UI action redirect path '{}'", redirect),
+                    format!("invalid UI action redirect path '{redirect}'"),
                     action.span.clone(),
                 )
                 .expected("absolute path without query or fragment", redirect),
@@ -3493,6 +3492,10 @@ fn infer_expression(
     }
 }
 
+fn is_uuid_v4_path(path: &[String]) -> bool {
+    path.len() == 2 && path[0] == "uuid" && path[1] == "v4"
+}
+
 fn infer_path(
     path: &[String],
     variables: &BTreeMap<String, String>,
@@ -3501,6 +3504,15 @@ fn infer_path(
     let Some(first) = path.first() else {
         return Err("empty value path".into());
     };
+    if is_uuid_v4_path(path) {
+        return Ok("uuid".into());
+    }
+    if first == "uuid" {
+        return Err(format!(
+            "unknown uuid builtin '{}'",
+            path.get(1).map(String::as_str).unwrap_or("")
+        ));
+    }
     if let Some(Declaration::Enum(value)) = declarations.get(first.as_str()) {
         if path.len() == 2 && value.variants.iter().any(|variant| variant.name == path[1]) {
             return Ok(value.name.clone());
@@ -4867,6 +4879,9 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             .metadata
             .insert("submit".into(), action.submit.clone());
         value.metadata.insert("order".into(), index.to_string());
+        if let Some(on) = &action.on {
+            value.metadata.insert("on".into(), on.clone());
+        }
         if let Some(redirect) = &action.redirect {
             value.metadata.insert("redirect".into(), redirect.clone());
         }

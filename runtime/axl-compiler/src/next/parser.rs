@@ -2678,26 +2678,43 @@ fn parse_ui_action(
     actions: &mut Vec<UiAction>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    let remainder = line.text["action ".len()..].trim();
-    let (remainder, redirect) =
-        if let Some((rest, redirect_path)) = remainder.rsplit_once(" redirect ") {
-            let redirect_path = redirect_path.trim();
-            if !redirect_path.starts_with('/') {
-                diagnostics.push(
-                    Diagnostic::error(
-                        "AXL-P974",
-                        "parse",
-                        "a UI action redirect path must be absolute",
-                        span(line),
-                    )
-                    .expected("redirect /absolute/path", redirect_path),
-                );
-                return;
-            }
-            (rest.trim(), Some(redirect_path.into()))
-        } else {
-            (remainder, None)
-        };
+    let mut remainder = line.text["action ".len()..].trim();
+    let mut redirect = None;
+    let mut on = None;
+    if let Some((rest, redirect_path)) = remainder.rsplit_once(" redirect ") {
+        let redirect_path = redirect_path.trim();
+        if !redirect_path.starts_with('/') {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P974",
+                    "parse",
+                    "a UI action redirect path must be absolute",
+                    span(line),
+                )
+                .expected("redirect /absolute/path", redirect_path),
+            );
+            return;
+        }
+        remainder = rest.trim();
+        redirect = Some(redirect_path.into());
+    }
+    if let Some((rest, on_path)) = remainder.rsplit_once(" on ") {
+        let on_path = on_path.trim();
+        if !on_path.starts_with('/') {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P975",
+                    "parse",
+                    "a UI action on path must be absolute",
+                    span(line),
+                )
+                .expected("on /absolute/path", on_path),
+            );
+            return;
+        }
+        remainder = rest.trim();
+        on = Some(on_path.into());
+    }
     let mut tokens = remainder.split_whitespace();
     let (Some(path), Some(method), Some(submit), None) =
         (tokens.next(), tokens.next(), tokens.next(), tokens.next())
@@ -2753,6 +2770,7 @@ fn parse_ui_action(
         path: path.into(),
         method: method.to_ascii_uppercase(),
         submit: submit.into(),
+        on,
         redirect,
         span: span(line),
     });
