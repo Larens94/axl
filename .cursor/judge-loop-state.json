@@ -14,5 +14,5 @@
   "last_verification": "verify-sales + verify-libro-cassa OK; M25 complete",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
   "autoloop": "local only",
-  "active_branch": "axl/sales-autoloop-m21"
+  "active_branch": "main"
 }
