@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use super::ir::GraphIr;
 use super::runtime;
 use super::runtime::{BuiltinRuntime, ProviderCall, ProviderRuntime};
+use super::ui;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HttpResult {
@@ -81,6 +82,11 @@ pub fn dispatch_with_headers(
 ) -> HttpResult {
     let method = method.to_ascii_lowercase();
     let (request_path, query) = path.split_once('?').unwrap_or((path, ""));
+    if method == "get"
+        && let Some(result) = dispatch_ui_get(graph, request_path)
+    {
+        return result;
+    }
     if method == "options" {
         return dispatch_cors_preflight(graph, runtime, request_path, headers)
             .unwrap_or_else(|| HttpResult::new(404, json!({ "error": "route_not_found" })));
@@ -141,6 +147,24 @@ pub fn dispatch_with_headers(
     };
     apply_response_middleware(graph, runtime, route, &mut result);
     result
+}
+
+fn dispatch_ui_get(graph: &GraphIr, request_path: &str) -> Option<HttpResult> {
+    if let Ok(rendered) = ui::render_form(graph, request_path) {
+        let mut result = HttpResult::new(200, Value::String(rendered.html));
+        result
+            .headers
+            .insert("content-type".into(), "text/html; charset=utf-8".into());
+        return Some(result);
+    }
+    if let Ok(rendered) = ui::render_page(graph, request_path, Value::Null) {
+        let mut result = HttpResult::new(200, Value::String(rendered.html));
+        result
+            .headers
+            .insert("content-type".into(), "text/html; charset=utf-8".into());
+        return Some(result);
+    }
+    None
 }
 
 fn match_http_path(pattern: &str, request: &str) -> Option<BTreeMap<String, String>> {
@@ -849,7 +873,19 @@ async fn handle(
         Err(_) => HttpResult::new(500, json!({ "error": "provider_runtime_unavailable" })),
     };
     let status = StatusCode::from_u16(result.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let mut response = (status, Json(result.body)).into_response();
+    let mut response = if result.headers.get("content-type").map(String::as_str)
+        == Some("text/html; charset=utf-8")
+    {
+        let html = result.body.as_str().unwrap_or("");
+        (
+            status,
+            [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            html.to_string(),
+        )
+            .into_response()
+    } else {
+        (status, Json(result.body)).into_response()
+    };
     for (name, value) in result.headers {
         let Ok(name) = axum::http::HeaderName::try_from(name) else {
             continue;

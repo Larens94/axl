@@ -1,0 +1,44 @@
+// Sales module: HTTP API and UI over the sales domain.
+axl 4
+app Vendite
+import "./sales-domain.axl"
+
+api VenditeApi
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+  get /clienti/{id} uuid -> Result<Cliente> = CercaCliente from path.id
+  get /clienti unit -> Result<List<Cliente>> = ElencaClienti
+  post /clienti/query ClienteQuery -> Result<ClientePage> = InterrogaClienti
+  post /clienti/search ClienteQuery -> Result<ClientePage> = CercaClientiAttivi
+  post /prodotti Prodotto -> Result<Prodotto> = CreaProdotto
+  get /prodotti/{id} uuid -> Result<Prodotto> = CercaProdotto from path.id
+  get /prodotti unit -> Result<List<Prodotto>> = ElencaProdotti
+  post /prodotti/query ProdottoQuery -> Result<ProdottoPage> = InterrogaProdotti
+  post /prodotti/search ProdottoQuery -> Result<ProdottoPage> = CercaProdottiPerSku
+  post /preventivi Preventivo -> Result<Preventivo> = CreaPreventivo
+  get /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+  get /preventivi unit -> Result<List<Preventivo>> = ElencaPreventivi
+  post /preventivi/query PreventivoQuery -> Result<PreventivoPage> = InterrogaPreventivi
+  post /preventivi/search PreventivoQuery -> Result<PreventivoPage> = CercaPreventiviPerStato
+  post /preventivi/{id}/invia uuid -> Result<Preventivo> = InviaPreventivo from path.id
+  post /preventivi/{id}/conferma uuid -> Result<Preventivo> = ConfermaPreventivo from path.id
+  post /preventivi/{id}/annulla uuid -> Result<Preventivo> = AnnullaPreventivo from path.id
+  post /clienti/durable Cliente -> Result<Cliente> = CreaClienteSqlite
+  get /clienti/durable/{id} uuid -> Result<Cliente> = CercaClienteSqlite from path.id
+  post /clienti/durable/query ClienteQuery -> Result<ClientePage> = InterrogaClientiSqlite
+  post /prodotti/durable Prodotto -> Result<Prodotto> = CreaProdottoSqlite
+  get /prodotti/durable/{id} uuid -> Result<Prodotto> = CercaProdottoSqlite from path.id
+  post /prodotti/durable/query ProdottoQuery -> Result<ProdottoPage> = InterrogaProdottiSqlite
+  post /preventivi/durable Preventivo -> Result<Preventivo> = CreaPreventivoSqlite
+  get /preventivi/durable/{id} uuid -> Result<Preventivo> = CercaPreventivoSqlite from path.id
+  post /preventivi/durable/query PreventivoQuery -> Result<PreventivoPage> = InterrogaPreventiviSqlite
+  post /preventivi/durable/{id}/invia uuid -> Result<Preventivo> = InviaPreventivoSqlite from path.id
+  post /preventivi/durable/{id}/conferma uuid -> Result<Preventivo> = ConfermaPreventivoSqlite from path.id
+  post /preventivi/durable/{id}/annulla uuid -> Result<Preventivo> = AnnullaPreventivoSqlite from path.id
+
+ui VenditeUi
+  page /clienti unit -> Result<ClientePage> = PaginaClientiDemoUnit
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+  page /prodotti unit -> Result<ProdottoPage> = PaginaProdottiDemoUnit
+  form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdotto submit /prodotti
+  page /preventivi unit -> Result<PreventivoPage> = PaginaPreventiviDemoUnit
+  form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivo submit /preventivi

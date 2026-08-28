@@ -17,16 +17,23 @@
   "$defs": {
     "ui": {
       "type": "object",
-      "required": ["name", "pages"],
+      "required": ["name", "pages", "forms"],
       "additionalProperties": false,
       "properties": {
         "name": { "type": "string", "minLength": 1 },
         "pages": {
           "type": "array",
-          "items": { "$ref": "#/$defs/page" },
-          "minItems": 1
+          "items": { "$ref": "#/$defs/page" }
+        },
+        "forms": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/form" }
         }
-      }
+      },
+      "anyOf": [
+        { "properties": { "pages": { "minItems": 1 } } },
+        { "properties": { "forms": { "minItems": 1 } } }
+      ]
     },
     "page": {
       "type": "object",
@@ -37,6 +44,18 @@
         "input": { "type": "string", "minLength": 1 },
         "output": { "type": "string", "minLength": 1 },
         "flow": { "type": "string", "minLength": 1 }
+      }
+    },
+    "form": {
+      "type": "object",
+      "required": ["path", "entity", "output", "flow", "submit"],
+      "additionalProperties": false,
+      "properties": {
+        "path": { "type": "string", "pattern": "^/" },
+        "entity": { "type": "string", "minLength": 1 },
+        "output": { "type": "string", "minLength": 1 },
+        "flow": { "type": "string", "minLength": 1 },
+        "submit": { "type": "string", "pattern": "^/" }
       }
     }
   }

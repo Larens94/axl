@@ -383,6 +383,12 @@ fn reconstruct_id(
             })?;
             Ok(format!("{parent}.page.{order}"))
         }
+        Some(parent) if kind == "form" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("form node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.form.{order}"))
+        }
         Some(parent)
             if matches!(
                 kind,
@@ -470,6 +476,7 @@ fn node_kind_code(kind: &str) -> &str {
         "enqueue" => "53",
         "ui" => "54",
         "page" => "55",
+        "form" => "56",
         other => other,
     }
 }
@@ -532,6 +539,7 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "53" => "enqueue",
         "54" => "ui",
         "55" => "page",
+        "56" => "form",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

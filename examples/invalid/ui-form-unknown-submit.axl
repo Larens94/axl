@@ -1,0 +1,14 @@
+axl 4
+app BadSubmitUI
+
+entity Cliente
+  nome: text required
+
+flow CreaCliente Cliente -> Result<Cliente>
+  return input
+
+api ClienteApi
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+
+ui BrokenSubmit
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /missing

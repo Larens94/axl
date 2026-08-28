@@ -502,6 +502,7 @@ pub struct ApiRoute {
 pub struct Ui {
     pub name: String,
     pub pages: Vec<UiPage>,
+    pub forms: Vec<UiForm>,
     pub span: SourceSpan,
 }
 
@@ -511,6 +512,16 @@ pub struct UiPage {
     pub input: String,
     pub output: String,
     pub flow: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiForm {
+    pub path: String,
+    pub entity: String,
+    pub output: String,
+    pub flow: String,
+    pub submit: Option<String>,
     pub span: SourceSpan,
 }
 

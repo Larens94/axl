@@ -1,0 +1,28 @@
+// Minimal Gate 4 form slice: entity form bound to a POST api route.
+axl 4
+app FormDemo
+
+enum ClienteStato
+  attivo
+  inattivo
+
+entity Cliente
+  nome: text required
+  email: email required
+  budget: money required
+  priorita: int optional
+  stato: ClienteStato required
+
+flow CreaCliente Cliente -> Result<Cliente>
+  require input.nome != "" else "nome_required"
+  return input
+
+flow ListaClienti unit -> text
+  return "clienti"
+
+api ClienteApi
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+
+ui ClienteScreen
+  page /clienti unit -> text = ListaClienti
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti

@@ -1,0 +1,14 @@
+axl 4
+app BadFormUI
+
+entity Cliente
+  nome: text required
+
+flow CreaCliente Cliente -> Result<Cliente>
+  return input
+
+api ClienteApi
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+
+ui BrokenForm
+  form /clienti/new Cliente -> Result<Cliente>

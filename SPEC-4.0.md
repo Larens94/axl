@@ -844,9 +844,9 @@ requests for the lifetime of the server process. Memory and unconfigured SQLite
 state survive consecutive requests only; a configured SQLite file also survives
 server and CLI restarts.
 
-### UI pages
+### UI pages and forms
 
-UI declarations compile to `axl-ui/1` and lower to `ui` / `page` nodes in Graph
+UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` nodes in Graph
 IR. A page binds an absolute path to a flow with an exact input/output signature:
 
 ```axl
@@ -854,9 +854,21 @@ ui BalanceScreen
   page /balance BalanceInput -> money = CalculateBalance
 ```
 
+A form binds an absolute path to an entity type and flow. The optional `submit` clause
+names the POST api route that receives the entity JSON; when omitted, the analyzer
+infers a POST route at the same path as the form:
+
+```axl
+ui ClienteScreen
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+```
+
 `axl-compiler ui` emits the manifest. `axl-compiler render` evaluates the bound
 flow with JSON input and emits HTML that displays typed scalar or entity fields
-from the eval result. Application logic stays in AXL; the renderer only reads
+from the eval result. `render_form` emits an HTML form with inputs derived from
+entity fields (text, money, int, enum as select, optional fields) and a navigation
+shell linking all `page` and `form` paths. `serve` returns `text/html` on GET for
+matching page and form paths. Application logic stays in AXL; the renderer only reads
 Graph IR and manifest metadata. Duplicate paths inside one `ui` block and
 conflicts across `ui` blocks are rejected.
 
@@ -868,14 +880,20 @@ Implemented UI diagnostics:
 | `AXL-P951` | page missing flow binding |
 | `AXL-P952` | page missing output type |
 | `AXL-P953` | page missing path and input type |
-| `AXL-U901` | `ui` requires at least one page |
-| `AXL-U902` | invalid page path |
+| `AXL-P960` | form missing flow binding |
+| `AXL-P961` | form missing output type |
+| `AXL-P962` | form missing path and entity type |
+| `AXL-P963` | form submit path must be absolute |
+| `AXL-U901` | `ui` requires at least one page or form |
+| `AXL-U902` | invalid page or form path |
 | `AXL-U903` | duplicate page path in one `ui` |
-| `AXL-U904` | unknown or non-flow page target |
-| `AXL-U905` | page signature does not match flow |
-| `AXL-U906` | page path conflicts across `ui` blocks |
+| `AXL-U904` | unknown or non-flow page/form target |
+| `AXL-U905` | page or form signature does not match flow |
+| `AXL-U906` | page or form path conflicts across `ui` blocks |
+| `AXL-U907` | duplicate form path in one `ui` |
+| `AXL-U908` | unknown submit route for form |
 
-Packed IR opcodes: `ui` = `54`, `page` = `55`.
+Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`.
 
 ## 3. Type system
 
@@ -1047,6 +1065,7 @@ shell, component registry and admin UI kit are not implemented yet.
 ## 10. Verified examples and guides
 
 - `examples/apps/balance-ui.axl` — minimal UI page bound to a flow (`axl-ui/1`).
+- `examples/apps/form-demo.axl` — minimal UI form bound to a POST api route with nav shell.
 - `examples/blocks/01-store.axl` — capacity, Rust skill and explicit binding.
 - `examples/blocks/02-ui-slot.axl` — typed React slot with a default provider.
 - `examples/blocks/03-hook.axl` — typed lifecycle hook and recorded contracts.

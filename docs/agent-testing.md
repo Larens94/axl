@@ -333,11 +333,32 @@ cargo run -p axl-compiler -- \
 cargo run -p axl-compiler -- \
   render examples/apps/balance-ui.axl /balance \
   examples/apps/inputs/balance.json > /tmp/balance-ui.html
+
+cargo run -p axl-compiler -- \
+  check examples/apps/form-demo.axl --json
+
+cargo run -p axl-compiler -- \
+  ui examples/apps/form-demo.axl
+
+cargo run -p axl-compiler -- \
+  serve examples/apps/form-demo.axl 127.0.0.1:8080
+```
+
+Open `http://127.0.0.1:8080/clienti/new` in a browser or curl it; the response
+must be `text/html` with a `<form method="post" action="/clienti">` and a nav
+shell linking `/clienti` and `/clienti/new`. POST JSON to `/clienti` still goes
+through the api route unchanged.
+
+```sh
+curl -s -X POST http://127.0.0.1:8080/clienti \
+  -H 'content-type: application/json' \
+  -d '{"nome":"Alice","email":"a@example.com","budget":1000,"stato":"attivo"}'
 ```
 
 The manifest must use protocol `axl-ui/1` and bind `/balance` to
 `CalculateBalance`. The rendered HTML must contain `80000`. Invalid UI
-declarations must report stable codes (`AXL-P951`, `AXL-U904`, `AXL-U905`).
+declarations must report stable codes (`AXL-P951`, `AXL-U904`, `AXL-U905`,
+`AXL-P960`, `AXL-U908`).
 
 ## 7. Verify the HTTP backend
 

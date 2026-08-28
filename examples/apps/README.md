@@ -4,6 +4,10 @@
 `CalculateBalance`, lowered to Graph IR, emitted as `axl-ui/1` and rendered to
 HTML through `axl-compiler render`.
 
+`form-demo.axl` extends Gate 4 with a `form` bound to a POST api route,
+`render_form` HTML inputs from entity fields, a navigation shell across pages and
+forms, and `serve` GET responses as `text/html`.
+
 `cashflow-core.axl` is the first AXL example that executes application behavior
 instead of stopping at contracts. It implements eight deliberately narrow flows:
 
@@ -239,3 +243,30 @@ Durable SQLite routes (`/voci/durable`, `/voci/durable/query`) persist across
 process restarts via `./build/libro-cassa.db`. The UI demo uses in-memory
 `MemoriaVoci` only; each eval/render starts a fresh store unless the seed flow
 registers voci in the same evaluation (as `PaginaVociDemo` does).
+
+## Vendite (`sales.axl`)
+
+Odoo-like sales slice: domain module (`sales-domain.axl`), HTTP API and UI for
+`Cliente`, `Prodotto`, and `Preventivo` with workflow transitions. Memory routes
+are process-local; durable SQLite routes share `./build/vendite.db` and survive
+process restarts.
+
+```sh
+./scripts/demo-sales.sh
+
+cargo run -p axl-compiler -- \
+  eval examples/apps/sales.axl CreaCliente examples/apps/inputs/sales-cliente.json
+
+cargo run -p axl-compiler -- \
+  render examples/apps/sales.axl /clienti examples/apps/inputs/unit.json
+
+./scripts/verify-sales.sh
+```
+
+Expected results:
+
+- `./scripts/demo-sales.sh` serves `examples/apps/sales.axl` on `127.0.0.1:8080`;
+- memory eval/render gates pass for clienti, prodotti, preventivi;
+- durable eval save/find and HTTP POST/GET survive a server restart;
+- workflow transitions work on both memory and durable stores;
+- verify script passes check, eval, render, UI manifest, serve GET and durable gates.

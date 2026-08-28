@@ -1,0 +1,9 @@
+{
+  "filter": {
+    "stato": "attivo"
+  },
+  "order_by": "nome",
+  "direction": "asc",
+  "limit": 10,
+  "offset": 0
+}

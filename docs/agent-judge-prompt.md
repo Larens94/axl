@@ -1,37 +1,21 @@
-# Judge prompt — iteration 5 (unit seed flow)
+# Judge prompt — sales milestone 7 (UI actions + form POST)
 
 Repo: `/Users/fabriziocorpora/Desktop/workspaces/axl`
 
-You are the **judge agent**.
+Judge agent. Milestones 1–6 done.
 
-## Steward change (new)
+## Milestone 7
 
-Analyzer now allows typed `make` assignments:
-- `text` literal → `uuid`, `datetime`, `email`, `duration`
-- `int` literal → `money`, `float`
+If steward added **form POST** handling in `serve` (application/x-www-form-urlencoded → JSON entity), prove:
+- Browser-style POST to `/clienti` from form fields creates cliente via HTTP in same server session
+- List page shows new record after POST+redirect or GET refresh
 
-Runtime already accepts these at eval time.
+Add to sales:
+- `page /preventivi/{id}` **only if** UI path templates exist — else add **action links** on list HTML via steward `ui action` primitive if available
+- Or: flows `DettaglioPreventivo` + render page with buttons linking to POST `/preventivi/durable/{id}/invia` (document curl)
 
-## Milestone 5
+Steward may have added `serve` form POST decode — use it.
 
-Add **`PaginaVociDemoUnit unit -> Result<VocePage>`** in `ledger-domain.axl` that:
-1. Builds two demo voci with inline `make` (no JSON pair input)
-2. Saves both via store in the same flow
-3. Queries with a default filter/order inside the flow
+Extend verify-sales.sh with form POST smoke if supported.
 
-Wire a **second UI page** `/voci/demo` to this flow OR switch `/voci` demo to accept `unit` input if the UI binder supports it.
-
-Prove:
-
-```sh
-cargo run -p axl-compiler -- check examples/apps/ledger.axl --json
-cargo run -p axl-compiler -- eval examples/apps/ledger.axl PaginaVociDemoUnit null
-cargo run -p axl-compiler -- render examples/apps/ledger.axl /voci/demo null
-./scripts/verify-libro-cassa.sh
-```
-
-Update README one-liner if the demo command changes.
-
-If UI cannot bind `unit` input, report the exact missing syntax and STOP.
-
-Report A–F. Do not commit.
+Report A–F. No commit.

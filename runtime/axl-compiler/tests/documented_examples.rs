@@ -1,6 +1,6 @@
 use axl_compiler::compile_source;
 
-const EXAMPLES: [(&str, &str); 10] = [
+const EXAMPLES: [(&str, &str); 11] = [
     (
         "store",
         include_str!("../../../examples/blocks/01-store.axl"),
@@ -34,6 +34,10 @@ const EXAMPLES: [(&str, &str); 10] = [
     (
         "balance-ui",
         include_str!("../../../examples/apps/balance-ui.axl"),
+    ),
+    (
+        "form-demo",
+        include_str!("../../../examples/apps/form-demo.axl"),
     ),
 ];
 
@@ -540,6 +544,14 @@ fn documented_invalid_examples_report_stable_codes() {
         (
             "AXL-U905",
             include_str!("../../../examples/invalid/ui-flow-mismatch.axl"),
+        ),
+        (
+            "AXL-P960",
+            include_str!("../../../examples/invalid/ui-form-syntax.axl"),
+        ),
+        (
+            "AXL-U908",
+            include_str!("../../../examples/invalid/ui-form-unknown-submit.axl"),
         ),
     ];
 
@@ -1349,6 +1361,51 @@ fn balance_ui_manifest_and_render_are_executable() {
     assert_eq!(rendered.data, serde_json::json!(80000));
     assert!(rendered.html.contains("80000"));
     assert!(rendered.html.contains("axl-ui/1"));
+}
+
+#[test]
+fn form_demo_manifest_render_and_serve_get_are_executable() {
+    let compiled = compile_source(include_str!("../../../examples/apps/form-demo.axl"))
+        .unwrap_or_else(|diagnostics| panic!("form-demo failed: {diagnostics:#?}"));
+    let manifest = axl_compiler::next::ui::ui_manifest(&compiled.graph);
+    assert_eq!(manifest["uis"][0]["forms"][0]["submit"], "/clienti");
+    assert_eq!(manifest["uis"][0]["forms"][0]["flow"], "CreaCliente");
+
+    let rendered = axl_compiler::next::ui::render_form(&compiled.graph, "/clienti/new").unwrap();
+    assert!(
+        rendered
+            .html
+            .contains(r#"<form method="post" action="/clienti">"#)
+    );
+    assert!(rendered.html.contains("Navigation"));
+    assert!(rendered.html.contains(r#"name="stato""#));
+
+    let get_form = axl_compiler::next::http::dispatch(
+        &compiled.graph,
+        "GET",
+        "/clienti/new",
+        serde_json::Value::Null,
+    );
+    assert_eq!(get_form.status, 200);
+    assert_eq!(
+        get_form.headers.get("content-type").map(String::as_str),
+        Some("text/html; charset=utf-8")
+    );
+    assert!(get_form.body.as_str().unwrap().contains("<form"));
+
+    let post_api = axl_compiler::next::http::dispatch(
+        &compiled.graph,
+        "POST",
+        "/clienti",
+        serde_json::json!({
+            "nome": "Alice",
+            "email": "alice@example.com",
+            "budget": 1000,
+            "stato": "attivo"
+        }),
+    );
+    assert_eq!(post_api.status, 200);
+    assert_eq!(post_api.body["ok"]["nome"], "Alice");
 }
 
 #[test]

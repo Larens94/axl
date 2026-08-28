@@ -1,0 +1,8 @@
+{
+  "id": "cliente-003",
+  "nome": "Carla Verdi",
+  "email": "carla@example.com",
+  "budget": 320000,
+  "priorita": 2,
+  "stato": "attivo"
+}

@@ -54,7 +54,8 @@ store is executable: the same `MovementStore` save/find/query contract runs
 through `rust::axl::store::document` with durable `config path`; cashflow and
 conformance tests switch Memory, Sqlite and Document by skill binding only.
 Next Gate 3 target: PostgreSQL/MySQL and document tx/migrate behind the same
-capacities. Gate 4 has started: `ui` / `page` nodes lower to Graph IR, emit
-`axl-ui/1`, and `render` evaluates a bound flow into HTML that displays typed
-fields (`examples/apps/balance-ui.axl`). Routing shell, component registry,
-forms, tables and responsive admin UI remain open.
+capacities. Gate 4 has started: `ui` / `page` / `form` nodes lower to Graph IR, emit
+`axl-ui/1`, and `render` / `render_form` evaluate bound flows or entity fields into
+HTML with a navigation shell; `serve` returns `text/html` on GET for page and form
+paths (`examples/apps/balance-ui.axl`, `examples/apps/form-demo.axl`). Component
+registry, tables and responsive admin UI remain open.

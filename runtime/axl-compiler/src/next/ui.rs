@@ -14,6 +14,15 @@ pub struct UiRenderResult {
     pub html: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UiFormRenderResult {
+    pub path: String,
+    pub entity: String,
+    pub flow: String,
+    pub submit: String,
+    pub html: String,
+}
+
 pub fn ui_manifest(graph: &GraphIr) -> Value {
     let uis = graph
         .nodes
@@ -23,6 +32,13 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
             let mut pages = children(graph, &ui.id, "page");
             pages.sort_by_key(|page| {
                 page.metadata
+                    .get("order")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
+            let mut forms = children(graph, &ui.id, "form");
+            forms.sort_by_key(|form| {
+                form.metadata
                     .get("order")
                     .and_then(|value| value.parse::<usize>().ok())
                     .unwrap_or(usize::MAX)
@@ -38,6 +54,18 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "input": input,
                         "output": output,
                         "flow": page.metadata.get("flow"),
+                    })
+                }).collect::<Vec<_>>(),
+                "forms": forms.into_iter().map(|form| {
+                    let (entity, output) = form.type_name.as_deref()
+                        .and_then(|value| value.split_once("->"))
+                        .unwrap_or(("", ""));
+                    json!({
+                        "path": form.metadata.get("path"),
+                        "entity": entity,
+                        "output": output,
+                        "flow": form.metadata.get("flow"),
+                        "submit": form.metadata.get("submit"),
                     })
                 }).collect::<Vec<_>>(),
             })
@@ -74,7 +102,8 @@ pub fn render_page(graph: &GraphIr, path: &str, input: Value) -> Result<UiRender
         .and_then(|value| value.split_once("->").map(|(_, output)| output.to_string()))
         .unwrap_or_else(|| "text".to_string());
     let data = runtime::evaluate_flow(graph, &flow, input).map_err(|error| error.0)?;
-    let html = render_html(graph, &graph.app, path, &output_type, &data);
+    let nav = render_nav(graph);
+    let html = render_page_html(graph, &graph.app, path, &output_type, &data, &nav);
     Ok(UiRenderResult {
         path: path.into(),
         flow,
@@ -84,34 +113,94 @@ pub fn render_page(graph: &GraphIr, path: &str, input: Value) -> Result<UiRender
     })
 }
 
-fn render_html(graph: &GraphIr, app: &str, path: &str, output_type: &str, data: &Value) -> String {
+pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, String> {
+    let normalized = normalize_path(path);
+    let form = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "form")
+        .find(|node| {
+            node.metadata
+                .get("path")
+                .is_some_and(|value| normalize_path(value) == normalized)
+        })
+        .ok_or_else(|| format!("ui_form_not_found:{path}"))?;
+    let entity = form
+        .metadata
+        .get("entity")
+        .cloned()
+        .or_else(|| {
+            form.type_name
+                .as_deref()
+                .and_then(|value| value.split_once("->").map(|(entity, _)| entity.to_string()))
+        })
+        .ok_or_else(|| "ui_form_has_no_entity".to_string())?;
+    let flow = form
+        .metadata
+        .get("flow")
+        .cloned()
+        .ok_or_else(|| "ui_form_has_no_flow".to_string())?;
+    let submit = form
+        .metadata
+        .get("submit")
+        .cloned()
+        .ok_or_else(|| "ui_form_has_no_submit".to_string())?;
+    let nav = render_nav(graph);
+    let html = render_form_html(graph, &graph.app, path, &entity, &submit, &nav);
+    Ok(UiFormRenderResult {
+        path: path.into(),
+        entity,
+        flow,
+        submit,
+        html,
+    })
+}
+
+fn render_nav(graph: &GraphIr) -> String {
+    let mut links = Vec::new();
+    for node in &graph.nodes {
+        if node.kind != "page" && node.kind != "form" {
+            continue;
+        }
+        let Some(path) = node.metadata.get("path") else {
+            continue;
+        };
+        let label = if node.kind == "form" {
+            format!("{path} (form)")
+        } else {
+            path.clone()
+        };
+        links.push((path.clone(), label));
+    }
+    links.sort_by(|left, right| left.0.cmp(&right.0));
+    if links.is_empty() {
+        return String::new();
+    }
+    let items = links
+        .into_iter()
+        .map(|(path, label)| format!(r#"    <a href="{path}">{label}</a>"#))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!(
+        r#"  <nav class="nav">
+    <strong>Navigation</strong>
+{items}
+  </nav>
+"#
+    )
+}
+
+fn render_page_html(
+    graph: &GraphIr,
+    app: &str,
+    path: &str,
+    output_type: &str,
+    data: &Value,
+    nav: &str,
+) -> String {
     let title = format!("{app}{path}");
     if let Some(table) = render_items_table(graph, output_type, data) {
-        return format!(
-            r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{title}</title>
-  <style>
-    :root {{ color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }}
-    body {{ margin: 2rem auto; max-width: 56rem; line-height: 1.5; }}
-    h1 {{ font-size: 1.5rem; margin-bottom: 1rem; }}
-    table {{ width: 100%; border-collapse: collapse; }}
-    th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }}
-    th {{ background: #f4f4f4; }}
-    .meta {{ color: #666; font-size: 0.875rem; margin-bottom: 1.5rem; }}
-  </style>
-</head>
-<body>
-  <h1>{title}</h1>
-  <p class="meta">Rendered from AXL UI IR (axl-ui/1)</p>
-{table}
-</body>
-</html>
-"#
-        );
+        return wrap_html(&title, nav, &table);
     }
     let fields = collect_fields(graph, output_type, data);
     let rows = fields
@@ -119,6 +208,115 @@ fn render_html(graph: &GraphIr, app: &str, path: &str, output_type: &str, data: 
         .map(|(label, value)| format!("    <dt>{label}</dt>\n    <dd>{value}</dd>"))
         .collect::<Vec<_>>()
         .join("\n");
+    wrap_html(
+        &title,
+        nav,
+        &format!(
+            r#"  <dl>
+{rows}
+  </dl>"#
+        ),
+    )
+}
+
+fn render_form_html(
+    graph: &GraphIr,
+    app: &str,
+    path: &str,
+    entity: &str,
+    submit: &str,
+    nav: &str,
+) -> String {
+    let title = format!("{app}{path}");
+    let fields = entity_fields(graph, entity);
+    let inputs = fields
+        .iter()
+        .map(|field| render_form_field(graph, field))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let body = format!(
+        r#"  <p class="meta">Submit entity JSON to <code>{submit}</code> via POST API.</p>
+  <form method="post" action="{submit}">
+{inputs}
+    <button type="submit">Submit</button>
+  </form>"#
+    );
+    wrap_html(&title, nav, &body)
+}
+
+fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
+    let name = &field.name;
+    let type_name = field.type_name.as_deref().unwrap_or("text");
+    let optional = field_optional(field);
+    let required = if optional { "" } else { " required" };
+    let label = format!(r#"    <label for="{name}">{name}</label>"#);
+    if let Some(variants) = enum_variants(graph, type_name) {
+        let options = variants
+            .iter()
+            .map(|variant| format!(r#"      <option value="{variant}">{variant}</option>"#))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return format!(
+            r#"  <div class="field">
+{label}
+    <select id="{name}" name="{name}"{required}>
+{options}
+    </select>
+  </div>"#
+        );
+    }
+    let input_type = match type_name {
+        "int" | "float" | "money" => "number",
+        "bool" => "checkbox",
+        "email" => "email",
+        _ => "text",
+    };
+    format!(
+        r#"  <div class="field">
+{label}
+    <input id="{name}" name="{name}" type="{input_type}"{required}>
+  </div>"#
+    )
+}
+
+fn field_optional(field: &super::ir::GraphNode) -> bool {
+    field
+        .metadata
+        .get("qualifiers")
+        .is_some_and(|values| values.split(',').any(|value| value == "optional"))
+        || field
+            .type_name
+            .as_deref()
+            .is_some_and(|type_name| type_name.starts_with("Option<"))
+}
+
+fn enum_variants(graph: &GraphIr, type_name: &str) -> Option<Vec<String>> {
+    let enum_node = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "enum" && node.name == type_name)?;
+    let mut variants = children(graph, &enum_node.id, "variant")
+        .into_iter()
+        .map(|variant| variant.name.clone())
+        .collect::<Vec<_>>();
+    variants.sort();
+    Some(variants)
+}
+
+fn entity_fields<'a>(graph: &'a GraphIr, entity_name: &str) -> Vec<&'a super::ir::GraphNode> {
+    graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "entity" && node.name == entity_name)
+        .map(|entity| {
+            let mut fields = children(graph, &entity.id, "field");
+            fields.sort_by(|left, right| left.name.cmp(&right.name));
+            fields
+        })
+        .unwrap_or_default()
+}
+
+fn wrap_html(title: &str, nav: &str, body: &str) -> String {
     format!(
         r#"<!DOCTYPE html>
 <html lang="en">
@@ -128,20 +326,27 @@ fn render_html(graph: &GraphIr, app: &str, path: &str, output_type: &str, data: 
   <title>{title}</title>
   <style>
     :root {{ color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }}
-    body {{ margin: 2rem auto; max-width: 40rem; line-height: 1.5; }}
+    body {{ margin: 2rem auto; max-width: 56rem; line-height: 1.5; }}
     h1 {{ font-size: 1.5rem; margin-bottom: 1rem; }}
+    .nav {{ display: flex; flex-wrap: wrap; gap: 0.75rem; margin-bottom: 1.5rem; padding-bottom: 1rem; border-bottom: 1px solid #ccc; }}
+    .nav a {{ color: inherit; }}
+    table {{ width: 100%; border-collapse: collapse; }}
+    th, td {{ border: 1px solid #ccc; padding: 0.4rem 0.6rem; text-align: left; }}
+    th {{ background: #f4f4f4; }}
     dl {{ display: grid; grid-template-columns: minmax(8rem, 30%) 1fr; gap: 0.5rem 1rem; }}
     dt {{ font-weight: 600; color: #555; }}
     dd {{ margin: 0; }}
+    .field {{ margin-bottom: 1rem; }}
+    .field label {{ display: block; font-weight: 600; margin-bottom: 0.25rem; }}
+    .field input, .field select {{ width: 100%; padding: 0.4rem 0.6rem; }}
     .meta {{ color: #666; font-size: 0.875rem; margin-bottom: 1.5rem; }}
+    button {{ margin-top: 0.5rem; padding: 0.5rem 1rem; }}
   </style>
 </head>
 <body>
   <h1>{title}</h1>
   <p class="meta">Rendered from AXL UI IR (axl-ui/1)</p>
-  <dl>
-{rows}
-  </dl>
+{nav}{body}
 </body>
 </html>
 "#
@@ -374,13 +579,49 @@ ui MovementScreen
   page /view Movement -> MovementView = BuildMovementView
 "#;
 
+    const FORM_UI: &str = r#"axl 4
+app FormUI
+
+enum ClienteStato
+  attivo
+  inattivo
+
+entity Cliente
+  nome: text required
+  email: email required
+  budget: money required
+  priorita: int optional
+  stato: ClienteStato required
+
+flow CreaCliente Cliente -> Result<Cliente>
+  require input.nome != "" else "nome_required"
+  return input
+
+api ClienteApi
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+
+ui ClienteScreen
+  page /clienti unit -> text = EchoClienti
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+
+flow EchoClienti unit -> text
+  return "clienti"
+"#;
+
     #[test]
     fn ui_manifest_lists_declared_pages() {
         let graph = compile_source(BALANCE_UI).unwrap().graph;
         let manifest = ui_manifest(&graph);
         assert_eq!(manifest["protocol"], "axl-ui/1");
-        assert_eq!(manifest["uis"][0]["pages"][0]["path"], "/balance");
         assert_eq!(manifest["uis"][0]["pages"][0]["flow"], "CalculateBalance");
+    }
+
+    #[test]
+    fn ui_manifest_lists_declared_forms() {
+        let graph = compile_source(FORM_UI).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(manifest["uis"][0]["forms"][0]["submit"], "/clienti");
+        assert_eq!(manifest["uis"][0]["forms"][0]["entity"], "Cliente");
     }
 
     #[test]
@@ -416,5 +657,25 @@ ui MovementScreen
         assert!(rendered.html.contains("<dt>direction</dt>"));
         assert!(rendered.html.contains("Entrata"));
         assert!(rendered.html.contains("<dt>signed_amount</dt>"));
+    }
+
+    #[test]
+    fn render_form_emits_inputs_and_nav() {
+        let graph = compile_source(FORM_UI).unwrap().graph;
+        let rendered = render_form(&graph, "/clienti/new").unwrap();
+        assert_eq!(rendered.submit, "/clienti");
+        assert!(
+            rendered
+                .html
+                .contains(r#"<form method="post" action="/clienti">"#)
+        );
+        assert!(rendered.html.contains(r#"name="nome""#));
+        assert!(
+            rendered
+                .html
+                .contains(r#"<option value="attivo">attivo</option>"#)
+        );
+        assert!(rendered.html.contains("/clienti/new (form)"));
+        assert!(rendered.html.contains(r#"<a href="/clienti">/clienti</a>"#));
     }
 }

@@ -2471,71 +2471,158 @@ fn parse_ui(
         return;
     }
     let mut pages = Vec::new();
+    let mut forms = Vec::new();
     for line in body {
-        if !line.text.starts_with("page ") {
+        if line.text.starts_with("page ") {
+            parse_ui_page(line, &mut pages, diagnostics);
+        } else if line.text.starts_with("form ") {
+            parse_ui_form(line, &mut forms, diagnostics);
+        } else {
             diagnostics.push(Diagnostic::error(
                 "AXL-P950",
                 "parse",
                 format!("unknown ui declaration '{}'", line.text),
                 span(line),
             ));
-            continue;
         }
-        let remainder = line.text["page ".len()..].trim();
-        let Some((signature, flow)) = remainder.rsplit_once('=') else {
-            diagnostics.push(
-                Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
-                    .expected("page /path Input -> Output = Flow", &line.text),
-            );
-            continue;
-        };
-        let Some((request, output)) = signature.split_once("->") else {
-            diagnostics.push(
-                Diagnostic::error(
-                    "AXL-P952",
-                    "parse",
-                    "a UI page requires an output type",
-                    span(line),
-                )
-                .expected("page /path Input -> Output = Flow", &line.text),
-            );
-            continue;
-        };
-        let mut request = request.split_whitespace();
-        let (Some(path), Some(input), None) = (request.next(), request.next(), request.next())
-        else {
-            diagnostics.push(
-                Diagnostic::error(
-                    "AXL-P953",
-                    "parse",
-                    "a UI page requires one path and input type",
-                    span(line),
-                )
-                .expected("page /path Input -> Output = Flow", &line.text),
-            );
-            continue;
-        };
-        let flow = flow.trim();
-        if flow.is_empty() {
-            diagnostics.push(
-                Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
-                    .expected("page /path Input -> Output = Flow", &line.text),
-            );
-            continue;
-        }
-        pages.push(UiPage {
-            path: path.into(),
-            input: input.into(),
-            output: output.trim().into(),
-            flow: flow.into(),
-            span: span(line),
-        });
     }
     declarations.push(Declaration::Ui(Ui {
         name: name.into(),
         pages,
+        forms,
         span: span(header),
     }));
+}
+
+fn parse_ui_page(line: &SourceLine, pages: &mut Vec<UiPage>, diagnostics: &mut Vec<Diagnostic>) {
+    let remainder = line.text["page ".len()..].trim();
+    let Some((signature, flow)) = remainder.rsplit_once('=') else {
+        diagnostics.push(
+            Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
+                .expected("page /path Input -> Output = Flow", &line.text),
+        );
+        return;
+    };
+    let Some((request, output)) = signature.split_once("->") else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P952",
+                "parse",
+                "a UI page requires an output type",
+                span(line),
+            )
+            .expected("page /path Input -> Output = Flow", &line.text),
+        );
+        return;
+    };
+    let mut request = request.split_whitespace();
+    let (Some(path), Some(input), None) = (request.next(), request.next(), request.next()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P953",
+                "parse",
+                "a UI page requires one path and input type",
+                span(line),
+            )
+            .expected("page /path Input -> Output = Flow", &line.text),
+        );
+        return;
+    };
+    let flow = flow.trim();
+    if flow.is_empty() {
+        diagnostics.push(
+            Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
+                .expected("page /path Input -> Output = Flow", &line.text),
+        );
+        return;
+    }
+    pages.push(UiPage {
+        path: path.into(),
+        input: input.into(),
+        output: output.trim().into(),
+        flow: flow.into(),
+        span: span(line),
+    });
+}
+
+fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut Vec<Diagnostic>) {
+    let remainder = line.text["form ".len()..].trim();
+    let Some((signature, binding)) = remainder.rsplit_once('=') else {
+        diagnostics.push(
+            Diagnostic::error("AXL-P960", "parse", "a UI form binds a flow", span(line)).expected(
+                "form /path Entity -> Output = Flow [submit /post]",
+                &line.text,
+            ),
+        );
+        return;
+    };
+    let binding = binding.trim();
+    let (flow, submit) = if let Some((flow, submit_path)) = binding.rsplit_once(" submit ") {
+        let submit_path = submit_path.trim();
+        if !submit_path.starts_with('/') {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P963",
+                    "parse",
+                    "a UI form submit path must be absolute",
+                    span(line),
+                )
+                .expected("submit /absolute/path", submit_path),
+            );
+            return;
+        }
+        (flow.trim(), Some(submit_path.into()))
+    } else {
+        (binding, None)
+    };
+    if flow.is_empty() {
+        diagnostics.push(
+            Diagnostic::error("AXL-P960", "parse", "a UI form binds a flow", span(line)).expected(
+                "form /path Entity -> Output = Flow [submit /post]",
+                &line.text,
+            ),
+        );
+        return;
+    }
+    let Some((request, output)) = signature.split_once("->") else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P961",
+                "parse",
+                "a UI form requires an output type",
+                span(line),
+            )
+            .expected(
+                "form /path Entity -> Output = Flow [submit /post]",
+                &line.text,
+            ),
+        );
+        return;
+    };
+    let mut request = request.split_whitespace();
+    let (Some(path), Some(entity), None) = (request.next(), request.next(), request.next()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P962",
+                "parse",
+                "a UI form requires one path and entity type",
+                span(line),
+            )
+            .expected(
+                "form /path Entity -> Output = Flow [submit /post]",
+                &line.text,
+            ),
+        );
+        return;
+    };
+    forms.push(UiForm {
+        path: path.into(),
+        entity: entity.into(),
+        output: output.trim().into(),
+        flow: flow.into(),
+        submit,
+        span: span(line),
+    });
 }
 
 fn parse_request_source(value: &str) -> Option<(String, Option<String>)> {

@@ -1,0 +1,20 @@
+{
+  "id": "preventivo-002",
+  "cliente_id": "cliente-003",
+  "stato": "bozza",
+  "righe": [
+    {
+      "prodotto_id": "prodotto-001",
+      "quantita": 1,
+      "prezzo_unitario": 129900,
+      "importo": 129900
+    },
+    {
+      "prodotto_id": "prodotto-002",
+      "quantita": 2,
+      "prezzo_unitario": 2990,
+      "importo": 5980
+    }
+  ],
+  "totale": 135880
+}

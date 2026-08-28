@@ -1,0 +1,6 @@
+{
+  "order_by": "id",
+  "direction": "asc",
+  "limit": 10,
+  "offset": 0
+}

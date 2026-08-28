@@ -1,14 +1,11 @@
 {
-  "iteration": 5,
-  "product": "libro-cassa",
-  "milestone": 6,
-  "milestone_label": "Product polish: HTTP-only durable demo path or UI navigation",
-  "steward_queue": [],
-  "last_verification": "verify-libro-cassa OK; PaginaVociDemoUnit + /voci/demo; eval/render accept null token",
-  "last_judge_summary": "Judge b154c15d: unit seed flow 5/5; CLI null gap reported",
-  "steward_done": [
-    "compatible_make_assignment",
-    "CLI null literal for eval/render"
-  ],
-  "judge_prompt_file": "docs/agent-judge-prompt.md"
+  "iteration": 10,
+  "product": "sales-module",
+  "milestone": 5,
+  "milestone_label": "Durable SQLite + demo-sales.sh",
+  "steward_done": ["WP-04 ui form + serve GET"],
+  "last_judge_summary": "M4 workflow stati via match+require; M3 preventivo+righe",
+  "last_verification": "verify-sales OK through milestone 4",
+  "judge_prompt_file": "docs/agent-judge-prompt.md",
+  "autoloop": "continuous — loop PID 18014"
 }

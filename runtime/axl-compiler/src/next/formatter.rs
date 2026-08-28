@@ -401,6 +401,17 @@ pub fn format(program: &Program) -> String {
                         page.path, page.input, page.output, page.flow
                     ));
                 }
+                for form in &ui.forms {
+                    let submit = form
+                        .submit
+                        .as_deref()
+                        .map(|path| format!(" submit {path}"))
+                        .unwrap_or_default();
+                    output.push(format!(
+                        "  form {} {} -> {} = {}{}",
+                        form.path, form.entity, form.output, form.flow, submit
+                    ));
+                }
             }
             Declaration::Agent(agent) => {
                 output.push(format!("agent {}", agent.name));

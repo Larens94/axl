@@ -62,7 +62,7 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
     }
     check_subscriptions(program, &declarations, &mut diagnostics);
     check_global_api_routes(program, &mut diagnostics);
-    check_global_ui_pages(program, &mut diagnostics);
+    check_global_ui_paths(program, &mut diagnostics);
 
     if !diagnostics.is_empty() {
         return Err(diagnostics);
@@ -2980,8 +2980,8 @@ fn check_global_api_routes(program: &Program, diagnostics: &mut Vec<Diagnostic>)
     }
 }
 
-fn check_global_ui_pages(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
-    let mut pages = BTreeMap::new();
+fn check_global_ui_paths(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let mut paths = BTreeMap::new();
     for ui in program
         .declarations
         .iter()
@@ -2992,15 +2992,29 @@ fn check_global_ui_pages(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
     {
         for page in &ui.pages {
             let key = normalized_http_path(&page.path);
-            if pages
-                .insert(key, ui.name.as_str())
-                .is_some_and(|owner| owner != ui.name)
+            if paths
+                .insert(key, (ui.name.as_str(), "page", page.path.as_str()))
+                .is_some_and(|(owner, _, _)| owner != ui.name)
             {
                 diagnostics.push(Diagnostic::error(
                     "AXL-U906",
                     "ui",
                     format!("UI page '{}' conflicts across declarations", page.path),
                     page.span.clone(),
+                ));
+            }
+        }
+        for form in &ui.forms {
+            let key = normalized_http_path(&form.path);
+            if paths
+                .insert(key, (ui.name.as_str(), "form", form.path.as_str()))
+                .is_some_and(|(owner, _, _)| owner != ui.name)
+            {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-U906",
+                    "ui",
+                    format!("UI form '{}' conflicts across declarations", form.path),
+                    form.span.clone(),
                 ));
             }
         }
@@ -3012,15 +3026,15 @@ fn check_ui(
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if ui.pages.is_empty() {
+    if ui.pages.is_empty() && ui.forms.is_empty() {
         diagnostics.push(Diagnostic::error(
             "AXL-U901",
             "ui",
-            format!("ui '{}' requires at least one page", ui.name),
+            format!("ui '{}' requires at least one page or form", ui.name),
             ui.span.clone(),
         ));
     }
-    let mut pages = BTreeSet::new();
+    let mut paths = BTreeSet::new();
     for page in &ui.pages {
         if !valid_http_path(&page.path) {
             diagnostics.push(
@@ -3033,7 +3047,7 @@ fn check_ui(
                 .expected("absolute path without query or fragment", &page.path),
             );
         }
-        if !pages.insert(normalized_http_path(&page.path)) {
+        if !paths.insert(normalized_http_path(&page.path)) {
             diagnostics.push(Diagnostic::error(
                 "AXL-U903",
                 "ui",
@@ -3083,6 +3097,93 @@ fn check_ui(
             ),
         }
     }
+    for form in &ui.forms {
+        if !valid_http_path(&form.path) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI path '{}'", form.path),
+                    form.span.clone(),
+                )
+                .expected("absolute path without query or fragment", &form.path),
+            );
+        }
+        if !paths.insert(normalized_http_path(&form.path)) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U907",
+                "ui",
+                format!(
+                    "ui '{}' declares form '{}' more than once",
+                    ui.name, form.path
+                ),
+                form.span.clone(),
+            ));
+        }
+        check_type(&form.entity, &form.span, declarations, diagnostics);
+        check_type(&form.output, &form.span, declarations, diagnostics);
+        match declarations.get(form.flow.as_str()) {
+            Some(Declaration::Flow(flow)) => {
+                if flow.input != form.entity || flow.output != form.output {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-U905",
+                            "ui",
+                            format!("form '{}' does not match flow '{}'", form.path, form.flow),
+                            form.span.clone(),
+                        )
+                        .expected(
+                            format!("{} -> {}", flow.input, flow.output),
+                            format!("{} -> {}", form.entity, form.output),
+                        ),
+                    );
+                }
+            }
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U904",
+                    "ui",
+                    format!("form target '{}' is not a flow", form.flow),
+                    form.span.clone(),
+                )
+                .expected("flow", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U904",
+                    "ui",
+                    format!("form references unknown flow '{}'", form.flow),
+                    form.span.clone(),
+                )
+                .expected("declared flow", &form.flow),
+            ),
+        }
+        let submit = form.submit.as_deref().unwrap_or(form.path.as_str());
+        if !post_route_exists(declarations, submit) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U908",
+                "ui",
+                format!(
+                    "form '{}' submit path '{}' has no matching POST api route",
+                    form.path, submit
+                ),
+                form.span.clone(),
+            ));
+        }
+    }
+}
+
+fn post_route_exists(declarations: &BTreeMap<&str, &Declaration>, path: &str) -> bool {
+    let normalized = normalized_http_path(path);
+    declarations.values().any(|declaration| {
+        let Declaration::Api(api) = declaration else {
+            return false;
+        };
+        api.routes.iter().any(|route| {
+            route.method.eq_ignore_ascii_case("post")
+                && normalized_http_path(&route.path) == normalized
+        })
+    })
 }
 
 fn valid_http_path(path: &str) -> bool {
@@ -3397,12 +3498,12 @@ fn compatible_make_assignment(found: &str, expected: &str) -> bool {
     if same_type(found, expected) {
         return true;
     }
-    match (found, expected) {
-        ("text" | "string", "uuid" | "datetime" | "email" | "duration") => true,
-        ("int", "money" | "float") => true,
-        ("float", "money") => true,
-        _ => false,
-    }
+    matches!(
+        (found, expected),
+        ("text" | "string", "uuid" | "datetime" | "email" | "duration")
+            | ("int", "money" | "float")
+            | ("float", "money")
+    )
 }
 
 fn generic_inner<'a>(value: &'a str, name: &str) -> Option<&'a str> {
@@ -4602,6 +4703,25 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             &format!("flow.{}", page.flow),
             "dispatch",
             Some(&format!("{}->{}", page.input, page.output)),
+        ));
+    }
+    for (index, form) in ui.forms.iter().enumerate() {
+        let id = format!("{ui_id}.form.{index}");
+        let mut value = node(&id, "form", &form.path);
+        value.type_name = Some(format!("{}->{}", form.entity, form.output));
+        value.metadata.insert("path".into(), form.path.clone());
+        value.metadata.insert("entity".into(), form.entity.clone());
+        value.metadata.insert("flow".into(), form.flow.clone());
+        value.metadata.insert("order".into(), index.to_string());
+        let submit = form.submit.as_deref().unwrap_or(form.path.as_str());
+        value.metadata.insert("submit".into(), submit.into());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&ui_id, &id, "owns", None));
+        graph.edges.push(edge(
+            &id,
+            &format!("flow.{}", form.flow),
+            "dispatch",
+            Some(&format!("{}->{}", form.entity, form.output)),
         ));
     }
 }
