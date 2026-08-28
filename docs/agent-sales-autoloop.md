@@ -44,8 +44,9 @@ Evolves toward an Odoo-like **Vendite** slice: backend + frontend in AXL.
 | 22 | PDF + email on `InviaPreventivo` (`PdfRenderer` + `EmailSender` capacities) | done |
 | 23 | `Listino` + righe store + `RisolviPrezzo` / `CreaPreventivoConListino` pricing hook | done |
 | 24 | Listini UI: `/listini/{id}` detail righe table + `/preventivi/new-listino` form via `CreaPreventivoConListino` | done |
+| 25 | Listino durable SQLite HTTP restart + eval gates; nested `List<>` form **blocked** (steward queue) | done |
 
-Milestones 1–24 complete for the **Odoo Vendite slice** demo. Readiness **10/10**. Next wave: listino durable SQLite HTTP + dynamic righe form primitive.
+Milestones 1–25 complete. Readiness **10/10**. Next steward: `ui form` nested repeatable righe + dynamic listino picker.
 
 ## Files
 

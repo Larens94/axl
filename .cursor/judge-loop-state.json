@@ -1,17 +1,18 @@
 {
-  "iteration": 30,
+  "iteration": 31,
   "product": "sales-module",
-  "milestone": 25,
-  "milestone_label": "Listino durable SQLite + dynamic righe form",
+  "milestone": 26,
+  "milestone_label": "ui form nested List righe + listino picker",
   "module_readiness": "10/10 Odoo Vendite slice",
-  "milestones_1_24": "complete",
+  "milestones_1_25": "complete",
   "steward_queue": [
-    "ui form nested List<> repeatable righe rows (open primitive if missing)"
+    "ui form nested List<> repeatable righe rows",
+    "ui form select from store query (dynamic listino picker)"
   ],
-  "last_steward_summary": "M24 listini detail /listini/{id} righe table; /preventivi/new-listino flat form -> CreaPreventivoConListino; list row links",
-  "last_verification": "pending M24 verify-sales + verify-libro-cassa",
-  "last_judge_summary": "M24 listini UI: DettaglioListino page, PreventivoListinoForm + CreaPreventivoListinoForm, list id links, form POST redirect smoke",
+  "last_steward_summary": "M25 listino durable SQLite eval + HTTP restart smoke",
+  "last_judge_summary": "M25 done; nested List form blocked — flat PreventivoListinoForm workaround remains",
+  "last_verification": "verify-sales + verify-libro-cassa OK; M25 complete",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
-  "autoloop": "cloud continuation — user PC off",
-  "handoff_branch": "axl/sales-autoloop-m21"
+  "autoloop": "local only",
+  "active_branch": "axl/sales-autoloop-m21"
 }

@@ -326,6 +326,11 @@ with hidden `id` inputs; `serve` returns `303` to `/preventivi/{id}` after succe
 (`<table class="nested-table">` with `prodotto_id`, `quantita`, `prezzo_unitario`, `importo`
 columns) on `/preventivi/{id}` and `/ordini/{id}` detail pages.
 
+**Listini:** `/listini/demo`, detail at `/listini/{id}` with righe table; `/preventivi/new-listino`
+uses flat scalar fields (`PreventivoListinoForm`) because `ui form` does not yet render
+nested `List<>` / repeatable righe rows — see steward queue in `.cursor/judge-loop-state.json`.
+Listino durable routes: `POST/GET /listini/durable/*` (same SQLite db as preventivi).
+
 Expected results:
 
 - `./scripts/demo-sales.sh` serves `examples/apps/sales.axl` on `127.0.0.1:8080`;
