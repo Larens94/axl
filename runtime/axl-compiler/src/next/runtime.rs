@@ -55,6 +55,8 @@ pub struct BuiltinRuntime {
     caches: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     event_logs: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
     loggers: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
+    emails: Arc<Mutex<BTreeMap<String, Vec<Value>>>>,
+    pdfs: Arc<Mutex<BTreeMap<String, Value>>>,
     metrics: Arc<Mutex<BTreeMap<String, BTreeMap<String, i64>>>>,
     tracers: Arc<Mutex<BTreeMap<String, TracerState>>>,
     rate_limits: Arc<Mutex<BTreeMap<String, BTreeMap<String, RateWindow>>>>,
@@ -86,6 +88,8 @@ impl BuiltinRuntime {
             caches: Arc::new(Mutex::new(BTreeMap::new())),
             event_logs: Arc::new(Mutex::new(BTreeMap::new())),
             loggers: Arc::new(Mutex::new(BTreeMap::new())),
+            emails: Arc::new(Mutex::new(BTreeMap::new())),
+            pdfs: Arc::new(Mutex::new(BTreeMap::new())),
             metrics: Arc::new(Mutex::new(BTreeMap::new())),
             tracers: Arc::new(Mutex::new(BTreeMap::new())),
             rate_limits: Arc::new(Mutex::new(BTreeMap::new())),
@@ -280,6 +284,20 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "logger provider state is unavailable".to_string())?;
                 memory_logger_call(&mut loggers, call)
+            }
+            "rust::axl::email::memory" => {
+                let mut emails = self
+                    .emails
+                    .lock()
+                    .map_err(|_| "email provider state is unavailable".to_string())?;
+                memory_email_call(&mut emails, call)
+            }
+            "rust::axl::pdf::memory" => {
+                let mut pdfs = self
+                    .pdfs
+                    .lock()
+                    .map_err(|_| "pdf provider state is unavailable".to_string())?;
+                memory_pdf_call(&mut pdfs, call)
             }
             "rust::axl::telemetry::metrics" => {
                 let mut metrics = self
@@ -2161,6 +2179,99 @@ fn memory_logger_call(
     }
 }
 
+fn memory_email_call(
+    emails: &mut BTreeMap<String, Vec<Value>>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let mailbox = emails.entry(call.provider.to_string()).or_default();
+    match call.operation {
+        "send" => {
+            let message = call
+                .input
+                .as_object()
+                .ok_or_else(|| "email send requires EmailMessage object".to_string())?
+                .clone();
+            let to = message
+                .get("to")
+                .and_then(Value::as_str)
+                .ok_or_else(|| "email send requires field 'to'".to_string())?;
+            if to.is_empty() {
+                return Err("email send requires non-empty 'to'".into());
+            }
+            let id = format!("email-{}", mailbox.len() + 1);
+            let mut stored = message;
+            stored.insert("id".into(), Value::String(id.clone()));
+            mailbox.push(Value::Object(stored));
+            Ok(Value::String(id))
+        }
+        "list" => {
+            if !call.input.is_null() {
+                return Err("email list requires unit".into());
+            }
+            let summaries = mailbox
+                .iter()
+                .filter_map(|entry| {
+                    entry.as_object().map(|message| {
+                        Value::String(format!(
+                            "{}:{}",
+                            message.get("to").and_then(Value::as_str).unwrap_or(""),
+                            message.get("subject").and_then(Value::as_str).unwrap_or("")
+                        ))
+                    })
+                })
+                .collect::<Vec<_>>();
+            Ok(Value::Array(summaries))
+        }
+        operation => Err(format!(
+            "email does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn memory_pdf_call(
+    pdfs: &mut BTreeMap<String, Value>,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    match call.operation {
+        "render" => {
+            let document = call
+                .input
+                .as_object()
+                .ok_or_else(|| "pdf render requires PdfDocument object".to_string())?;
+            let id = document
+                .get("id")
+                .map(json_scalar_to_string)
+                .ok_or_else(|| "pdf render requires field 'id'".to_string())?;
+            if id.is_empty() {
+                return Err("pdf render requires non-empty 'id'".into());
+            }
+            let title = document
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or("document");
+            let totale = document
+                .get("totale")
+                .map(json_scalar_to_string)
+                .unwrap_or_default();
+            let reference = format!("pdf-{id}");
+            let rendered = format!("%PDF-1.4 stub\n% {title}\n{totale}");
+            pdfs.insert(reference.clone(), Value::String(rendered));
+            Ok(Value::String(reference))
+        }
+        "get" => {
+            let reference = string_input(&call.input, "get")?;
+            pdfs.get(reference)
+                .cloned()
+                .ok_or_else(|| "pdf_not_found".to_string())
+        }
+        operation => Err(format!(
+            "pdf does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
 fn memory_metrics_call(
     metrics: &mut BTreeMap<String, BTreeMap<String, i64>>,
     call: ProviderCall<'_>,
@@ -2610,6 +2721,13 @@ fn record_id(value: &Value) -> Result<String, String> {
         .and_then(Value::as_str)
         .map(str::to_string)
         .ok_or_else(|| "store save requires a string 'id' field".into())
+}
+
+fn json_scalar_to_string(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
 }
 
 fn string_input<'a>(value: &'a Value, operation: &str) -> Result<&'a str, String> {

@@ -46,6 +46,16 @@ api VenditeApi
   post /ordini/durable/{id}/conferma uuid -> Result<Ordine> = ConfermaOrdineSqlite from path.id
   post /ordini/durable/{id}/annulla uuid -> Result<Ordine> = AnnullaOrdineSqlite from path.id
 
+api VenditeSecureApi
+  auth bearer: HttpAuth = VenditeDemoBearer
+  get /secure/clienti unit -> Result<List<Cliente>> = ElencaClienti
+  get /secure/preventivi unit -> Result<List<Preventivo>> = ElencaPreventivi
+  get /secure/ordini unit -> Result<List<Ordine>> = ElencaOrdini
+
+api VenditeJwtApi
+  auth bearer: HttpAuth = VenditeDemoJwt
+  get /jwt/preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+
 ui VenditeUi
   page /clienti unit -> Result<ClientePage> = PaginaClienti
   page /clienti/demo unit -> Result<ClientePage> = PaginaClientiDemoUnit

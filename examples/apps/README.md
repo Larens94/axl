@@ -336,4 +336,6 @@ Expected results:
 - workflow actions on detail POST to `/preventivi/{id}/invia` and `/preventivi/{id}/conferma` with `303` redirect to `/preventivi/{id}` (`accept: text/html`);
 - list pages link `id` uuid fields to `/preventivi/{id}` (path template substitution);
 - preventivo workflow (`bozza` → `inviato` → `confermato`) via JSON POST after create on memory and durable routes;
-- verify script passes check, eval, render, UI manifest, serve GET and durable gates.
+- `InviaPreventivo` renders a PDF stub and sends email via open `PdfRenderer` / `EmailSender` capacities (memory skills);
+- `GET /secure/clienti` requires `Authorization: Bearer axl-vendite-demo` (401/403/200); `GET /jwt/preventivi/{id}` validates HS256 JWT (`iss=axl-vendite`);
+- verify script passes check, eval, render, UI manifest, serve GET, auth smoke and durable gates.

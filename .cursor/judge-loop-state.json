@@ -1,16 +1,16 @@
 {
-  "iteration": 26,
+  "iteration": 28,
   "product": "sales-module",
-  "milestone": 21,
-  "milestone_label": "Auth stub on VenditeApi",
+  "milestone": 23,
+  "milestone_label": "Listini (price lists)",
   "module_readiness": "10/10 Odoo Vendite slice",
-  "milestones_1_20": "complete",
+  "milestones_1_22": "complete",
   "steward_queue": [
-    "auth stub on VenditeApi (m21)",
-    "PDF/email on InviaPreventivo"
+    "listini entity + store + pricing hook on Prodotto/preventivo righe (m23)"
   ],
-  "last_steward_summary": "uuid.v4 + ui action on; M20 complete",
-  "last_verification": "verify-sales + verify-libro-cassa OK",
+  "last_steward_summary": "M21 auth stub (VenditeSecureApi/JwtApi); M22 PdfRenderer+EmailSender on InviaPreventivo",
+  "last_verification": "verify-sales + verify-libro-cassa OK; cargo fmt/test/clippy OK",
+  "last_judge_summary": "M21–22 green; Vendite demo routes stay open for UI form POST; secured /secure/* and /jwt/* prove bearer+JWT",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
   "autoloop": "cloud continuation — user PC off",
   "handoff_branch": "axl/sales-autoloop-m21"

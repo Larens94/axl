@@ -77,6 +77,9 @@ echo "== eval CercaPreventivo =="
 echo "== eval InviaPreventivoDemoUnit (bozza -> inviato) =="
 "${BIN[@]}" eval examples/apps/sales.axl InviaPreventivoDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.stato == "inviato" and .ok.id == "preventivo-001"'
 
+echo "== eval InviaPreventivoConNotificaDemoUnit (pdf+email on invia) =="
+"${BIN[@]}" eval examples/apps/sales.axl InviaPreventivoConNotificaDemoUnit examples/apps/inputs/unit.json | jq -e '(.ok | length) == 1 and (.ok[0] | test("alice@example.com:Preventivo inviato"))'
+
 echo "== eval ConfermaPreventivoDemoUnit (inviato -> confermato) =="
 "${BIN[@]}" eval examples/apps/sales.axl ConfermaPreventivoDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.stato == "confermato" and .ok.totale == 268770'
 
@@ -255,6 +258,10 @@ PORT=18082
     sleep 0.2
   done
   test "$ready" -eq 1
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/clienti" \
+    -H 'content-type: application/json' \
+    -d '{"id":"cliente-003","nome":"Carla Verdi","email":"carla@example.com","budget":300000,"stato":"attivo"}' \
+    | jq -e '.ok.id == "cliente-003"'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/clienti/new" | grep -q '<form method="post" action="/clienti">'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/clienti/new" | grep -q 'name="stato"'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/clienti/demo" | grep -q 'cliente-001'
@@ -411,6 +418,10 @@ DPORT=18085
     sleep 0.2
   done
   test "$ready" -eq 1
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/clienti/durable" \
+    -H 'content-type: application/json' \
+    -d '{"id":"cliente-003","nome":"Carla Verdi","email":"carla@example.com","budget":300000,"stato":"attivo"}' \
+    | jq -e '.ok.id == "cliente-003"'
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/preventivi/durable" \
     -H 'content-type: application/json' \
     -d @examples/apps/inputs/sales-preventivo.json | jq -e '.ok.id == "preventivo-002"'
@@ -435,6 +446,66 @@ DPORT=18085
   DURABLE_ORDINE_ID=$(echo "$DURABLE_ORDINE" | jq -r '.ok.id')
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/ordini/durable/${DURABLE_ORDINE_ID}/conferma" | jq -e '.ok.stato == "confermato"'
   curl -sf --max-time 2 "http://127.0.0.1:${DPORT}/ordini/durable/${DURABLE_ORDINE_ID}" | jq -e '.ok.stato == "confermato" and .ok.preventivo_id == "preventivo-002"'
+)
+
+echo "== auth stub bearer (401/403/200 on VenditeSecureApi) =="
+AUTH_PORT=18086
+VENDITE_BEARER="axl-vendite-demo"
+(
+  "${BIN[@]}" serve examples/apps/sales.axl "127.0.0.1:${AUTH_PORT}" &
+  APID=$!
+  cleanup() { kill "$APID" 2>/dev/null; wait "$APID" 2>/dev/null || true; }
+  trap cleanup EXIT
+  ready=0
+  for _ in $(seq 1 50); do
+    if curl -sf --max-time 1 "http://127.0.0.1:${AUTH_PORT}/clienti/demo" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.2
+  done
+  test "$ready" -eq 1
+  curl -s --max-time 2 "http://127.0.0.1:${AUTH_PORT}/secure/clienti" | jq -e '.error == "authorization_required"'
+  curl -s --max-time 2 -H "Authorization: Bearer wrong-token" "http://127.0.0.1:${AUTH_PORT}/secure/clienti" | jq -e '.error == "authorization_denied"'
+  curl -sf --max-time 2 -H "Authorization: Bearer ${VENDITE_BEARER}" "http://127.0.0.1:${AUTH_PORT}/secure/clienti" | jq -e '.ok | type == "array"'
+  curl -sf --max-time 2 -H "Authorization: Bearer ${VENDITE_BEARER}" "http://127.0.0.1:${AUTH_PORT}/secure/preventivi" | jq -e '.ok | type == "array"'
+  curl -sf --max-time 2 -H "Authorization: Bearer ${VENDITE_BEARER}" "http://127.0.0.1:${AUTH_PORT}/secure/ordini" | jq -e '.ok | type == "array"'
+  curl -sf --max-time 2 "http://127.0.0.1:${AUTH_PORT}/clienti" | grep -q 'cliente'
+)
+
+echo "== auth stub jwt (401/403/200 on VenditeJwtApi) =="
+JWT_PORT=18087
+(
+  "${BIN[@]}" serve examples/apps/sales.axl "127.0.0.1:${JWT_PORT}" &
+  JP=$!
+  cleanup() { kill "$JP" 2>/dev/null; wait "$JP" 2>/dev/null || true; }
+  trap cleanup EXIT
+  ready=0
+  for _ in $(seq 1 50); do
+    if curl -sf --max-time 1 "http://127.0.0.1:${JWT_PORT}/clienti/demo" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.2
+  done
+  test "$ready" -eq 1
+  curl -s --max-time 2 "http://127.0.0.1:${JWT_PORT}/jwt/preventivi/preventivo-001" | jq -e '.error == "authorization_required"'
+  curl -s --max-time 2 -H "Authorization: Bearer not-a-jwt" "http://127.0.0.1:${JWT_PORT}/jwt/preventivi/preventivo-001" | jq -e '.error == "authorization_denied"'
+  JWT_TOKEN=$(python3 - <<'PY'
+import base64, hashlib, hmac, json
+
+def b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+secret = b"axl-vendite-demo-jwt"
+header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+payload = b64url(json.dumps({"sub": "vendite-demo", "iss": "axl-vendite"}, separators=(",", ":")).encode())
+signing = f"{header}.{payload}".encode()
+signature = b64url(hmac.new(secret, signing, hashlib.sha256).digest())
+print(f"{header}.{payload}.{signature}")
+PY
+)
+  curl -s --max-time 2 -H "Authorization: Bearer ${JWT_TOKEN}" "http://127.0.0.1:${JWT_PORT}/jwt/preventivi/preventivo-001" | jq -e '.error == "not_found" or .ok.id == "preventivo-001"'
 )
 
 echo "OK: verify-sales"
