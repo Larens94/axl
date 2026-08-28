@@ -72,6 +72,57 @@ flow PaginaOrdiniSessione uuid -> Result<OrdinePage>
   call pagina = store.query(query)?
   return pagina
 
+flow DettaglioListinoSessione DettaglioSessioneInput -> Result<Listino>
+  make gate: SessionePermessoInput
+    session_id = input.session_id
+    permesso = "vendite.listini.read"
+  run _ = RequireSessionPermesso(gate)?
+  run trovato = CercaListino(input.id)?
+  return trovato
+
+flow DettaglioPreventivoSessione DettaglioSessioneInput -> Result<Preventivo>
+  make gate: SessionePermessoInput
+    session_id = input.session_id
+    permesso = "vendite.preventivi.read"
+  run _ = RequireSessionPermesso(gate)?
+  run trovato = CercaPreventivo(input.id)?
+  return trovato
+
+flow DettaglioOrdineSessione DettaglioSessioneInput -> Result<Ordine>
+  make gate: SessionePermessoInput
+    session_id = input.session_id
+    permesso = "vendite.ordini.read"
+  run _ = RequireSessionPermesso(gate)?
+  run trovato = CercaOrdine(input.id)?
+  return trovato
+
+flow DettaglioListinoSessioneDemoUnit unit -> Result<Listino>
+  run login = LoginAdminDemoUnit(input)?
+  run _seed = SeedListinoDemoUnit(input)?
+  make gate: DettaglioSessioneInput
+    session_id = login.session_id
+    id = "listino-001"
+  run trovato = DettaglioListinoSessione(gate)?
+  return trovato
+
+flow DettaglioPreventivoSessioneDemoUnit unit -> Result<Preventivo>
+  run login = LoginAdminDemoUnit(input)?
+  run _seed = SeedPreventivoDemoUnit(input)?
+  make gate: DettaglioSessioneInput
+    session_id = login.session_id
+    id = "preventivo-001"
+  run trovato = DettaglioPreventivoSessione(gate)?
+  return trovato
+
+flow DettaglioOrdineSessioneDemoUnit unit -> Result<Ordine>
+  run login = LoginAdminDemoUnit(input)?
+  run ordine = CreaOrdineDaPreventivoDemoUnit(input)?
+  make gate: DettaglioSessioneInput
+    session_id = login.session_id
+    id = ordine.id
+  run trovato = DettaglioOrdineSessione(gate)?
+  return trovato
+
 flow PaginaClientiRbacDemoUnit unit -> Result<ClientePage>
   run _init = InizializzaAuthDemo(input)?
   make check: PermessoCheck

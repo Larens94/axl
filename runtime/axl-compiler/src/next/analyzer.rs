@@ -2809,6 +2809,87 @@ fn check_page_bindings(
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
+    if page.input_source == "composite" {
+        let Some(Declaration::Entity(entity)) = declarations.get(page.input.as_str()) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U915",
+                    "ui",
+                    format!("composite UI page requires entity input '{}'", page.input),
+                    page.span.clone(),
+                )
+                .expected("declared entity", &page.input),
+            );
+            return;
+        };
+        let mut targets = BTreeSet::new();
+        for binding in &page.bindings {
+            let target = binding.target.as_deref().unwrap_or_default();
+            if !valid_name(target, false) {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-U913",
+                    "ui",
+                    format!("invalid UI page target '{target}'"),
+                    binding.span.clone(),
+                ));
+            }
+            let Some(field) = entity.fields.iter().find(|field| field.name == target) else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U916",
+                        "ui",
+                        format!("unknown composite UI page field '{}.{target}'", entity.name),
+                        binding.span.clone(),
+                    )
+                    .expected("declared entity field", target),
+                );
+                continue;
+            };
+            if !targets.insert(target) {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-U916",
+                    "ui",
+                    format!(
+                        "duplicate composite UI page field '{}.{target}'",
+                        entity.name
+                    ),
+                    binding.span.clone(),
+                ));
+            }
+            let name = binding.name.as_deref().unwrap_or_default();
+            if binding.source == "path"
+                && !page
+                    .path
+                    .split('/')
+                    .any(|segment| segment == format!("{{{name}}}"))
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U914",
+                        "ui",
+                        format!("page path binding '{name}' has no matching placeholder"),
+                        binding.span.clone(),
+                    )
+                    .expected(format!("{{{name}}}"), &page.path),
+                );
+            }
+            if !http_binding_type(&field.type_name, declarations) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U915",
+                        "ui",
+                        format!(
+                            "page binding cannot construct field type '{}'",
+                            field.type_name
+                        ),
+                        binding.span.clone(),
+                    )
+                    .expected("scalar or enum field type", field.name.as_str()),
+                );
+            }
+        }
+        return;
+    }
     if page.input_source == "body" {
         return;
     }
@@ -4839,6 +4920,25 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         value.metadata.insert("order".into(), index.to_string());
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));
+        for (binding_index, binding) in page.bindings.iter().enumerate() {
+            let binding_id = format!("{id}.request_binding.{binding_index}");
+            let mut value = node(
+                &binding_id,
+                "request_binding",
+                binding.target.as_deref().unwrap_or("$"),
+            );
+            value
+                .metadata
+                .insert("source".into(), binding.source.clone());
+            if let Some(name) = &binding.name {
+                value.metadata.insert("name".into(), name.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), binding_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &binding_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", page.flow),
@@ -4884,6 +4984,9 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         }
         if let Some(redirect) = &action.redirect {
             value.metadata.insert("redirect".into(), redirect.clone());
+        }
+        if let Some(cookie) = &action.clear_cookie {
+            value.metadata.insert("clear_cookie".into(), cookie.clone());
         }
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));

@@ -344,7 +344,7 @@ fn bind_request_input(
     parse_bound_scalar(input_type, &raw)
 }
 
-fn bind_composite_input(
+pub(crate) fn bind_composite_input(
     graph: &GraphIr,
     route: &super::ir::GraphNode,
     body: Value,
@@ -669,6 +669,22 @@ fn form_redirect_location(graph: &GraphIr, submit_path: &str) -> Option<String> 
         .and_then(|path| form_parent_path(path))
 }
 
+fn form_clear_cookie(graph: &GraphIr, submit_path: &str) -> Option<String> {
+    graph.nodes.iter().find_map(|node| {
+        if node.kind != "ui_action" {
+            return None;
+        }
+        let matches = node
+            .metadata
+            .get("submit")
+            .is_some_and(|value| submit_path_matches(value, submit_path));
+        if !matches {
+            return None;
+        }
+        node.metadata.get("clear_cookie").cloned()
+    })
+}
+
 fn apply_form_post_redirect(
     graph: &GraphIr,
     submit_path: &str,
@@ -699,6 +715,12 @@ fn apply_form_post_redirect(
         result.headers.insert(
             "set-cookie".into(),
             format!("sid={session_id}; Path=/; HttpOnly; SameSite=Lax"),
+        );
+    }
+    if let Some(cookie_name) = form_clear_cookie(graph, submit_path) {
+        result.headers.insert(
+            "set-cookie".into(),
+            format!("{cookie_name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"),
         );
     }
 }

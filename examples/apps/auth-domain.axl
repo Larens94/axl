@@ -104,6 +104,19 @@ entity Permesso
   id: text key
   descrizione: text required
 
+entity PermessoPage
+  items: List<Permesso> required
+  total: int required
+  limit: int required
+  offset: int required
+
+entity PermessoQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
 entity RuoloPermesso
   id: uuid key
   ruolo_id: uuid required
@@ -178,6 +191,7 @@ capacity ArchivioPermessi
   op save Permesso -> Result<Permesso>
   op find text -> Result<Permesso> idempotent
   op list unit -> Result<List<Permesso>> idempotent
+  op query PermessoQuery -> Result<PermessoPage> idempotent
 
 capacity ArchivioRuoloPermessi
   op save RuoloPermesso -> Result<RuoloPermesso>
@@ -452,6 +466,9 @@ flow SeedPermessiBase unit -> Result<List<Permesso>>
   make p2: Permesso
     id = "admin.ruoli.read"
     descrizione = "Leggere ruoli"
+  make p2b: Permesso
+    id = "admin.permessi.read"
+    descrizione = "Leggere permessi IAM"
   make p3: Permesso
     id = "admin.ruoli.write"
     descrizione = "Gestire ruoli e permessi"
@@ -475,6 +492,7 @@ flow SeedPermessiBase unit -> Result<List<Permesso>>
     descrizione = "Leggere ordini"
   call s1 = store.save(p1)?
   call s2 = store.save(p2)?
+  call s2b = store.save(p2b)?
   call s3 = store.save(p3)?
   call s4 = store.save(p4)?
   call s5 = store.save(p5)?
@@ -482,13 +500,14 @@ flow SeedPermessiBase unit -> Result<List<Permesso>>
   call s7 = store.save(p7)?
   call s8 = store.save(p8)?
   call s9 = store.save(p9)?
-  return [s1, s2, s3, s4, s5, s6, s7, s8, s9]
+  return [s1, s2, s2b, s3, s4, s5, s6, s7, s8, s9]
 
 flow SeedRuoliBase unit -> Result<List<Ruolo>>
   in store: ArchivioRuoli = MemoriaRuoli
   let permessi_admin = [
     "admin.utenti.read",
     "admin.ruoli.read",
+    "admin.permessi.read",
     "admin.ruoli.write",
     "vendite.clienti.read",
     "vendite.prodotti.read",
@@ -526,6 +545,7 @@ flow SeedUtentiDemo unit -> Result<List<Utente>>
   let permessi_admin = [
     "admin.utenti.read",
     "admin.ruoli.read",
+    "admin.permessi.read",
     "admin.ruoli.write",
     "vendite.clienti.read",
     "vendite.prodotti.read",
@@ -632,6 +652,41 @@ flow PaginaRuoliAdminSessione uuid -> Result<RuoloPage>
     offset = 0
   call pagina = store.query(query)?
   return pagina
+
+flow PaginaPermessiAdmin unit -> Result<PermessoPage>
+  in store: ArchivioPermessi = MemoriaPermessi
+  make query: PermessoQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 50
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaPermessiAdminSessione uuid -> Result<PermessoPage>
+  run utente = UtenteDaSessione(input)?
+  make check: PermessoCheck
+    utente_id = utente.id
+    codice = "admin.permessi.read"
+  run _ = RichiediPermesso(check)?
+  in store: ArchivioPermessi = MemoriaPermessi
+  make query: PermessoQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 50
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow LogoutUtente uuid -> Result<Sessione>
+  in sessioni: ArchivioSessioni = MemoriaSessioni
+  call sessione = sessioni.find(input)?
+  make spenta: Sessione
+    id = sessione.id
+    utente_id = sessione.utente_id
+    attiva = false
+  call spenta_salvata = sessioni.save(spenta)?
+  return spenta_salvata
 
 flow UtenteIdDaAuthorization text -> Result<uuid>
   in decoder: JwtDecoder = AuthDemoJwtDecoder

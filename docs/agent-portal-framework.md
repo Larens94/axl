@@ -14,6 +14,14 @@ Modular portal aligned with the **ledger.axl** pattern: domain modules + thin sh
 
 Domain files must **not** declare `api` or `ui` (except isolated eval stubs).
 
+## Rule: AXL only for product logic
+
+Portal IAM, vendite, admin and UI behavior are expressed **only in `.axl`**
+(`auth-domain.axl`, `sales-domain.axl`, `domains/portal/*`, `portal.axl`).
+Rust (`ui.rs`, `http.rs`) and React are **targets**: bindings, middleware slots,
+HTML shell primitives, manifest → codegen. Never implement login, RBAC, CRUD or
+page rules directly in Rust or React — add an AXL primitive and bind it from flows.
+
 ## API surfaces (portal.axl)
 
 | Block | Prefix | Purpose |
@@ -55,7 +63,7 @@ UI binding: `page /clienti uuid -> ... = PaginaClientiSessione from cookie.sid`
 
 ## Known boundaries (steward queue)
 
-- UI pages cannot bind **cookie + path** on the same page → detail `{id}` routes are not session-gated yet.
+- UI **composite page binding** (`cookie.sid` + `path.id`) is available for session-gated detail routes.
 - Form POST and JSON API routes are not session-wrapped (HTTP middleware per-route auth TBD).
 - Nested `List<>` form rows still use flat workaround forms.
 

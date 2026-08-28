@@ -515,6 +515,7 @@ pub struct UiPage {
     pub flow: String,
     pub input_source: String,
     pub input_name: Option<String>,
+    pub bindings: Vec<HttpRequestBinding>,
     pub span: SourceSpan,
 }
 
@@ -536,6 +537,7 @@ pub struct UiAction {
     pub submit: String,
     pub on: Option<String>,
     pub redirect: Option<String>,
+    pub clear_cookie: Option<String>,
     pub span: SourceSpan,
 }
 

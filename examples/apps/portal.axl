@@ -20,15 +20,26 @@ flow PaginaClientiRbac text -> Result<ClientePage>
   call pagina = store.query(query)?
   return pagina
 
+flow BootstrapPortal unit -> Result<HomePage>
+  run _auth = InizializzaAuthDemo(input)?
+  run _cliente = SeedClienteDemoUnit(input)?
+  run _listino = SeedListinoDemoUnit(input)?
+  run _preventivo = SeedPreventivoDemoUnit(input)?
+  run home = PaginaHome(input)?
+  return home
+
 api AuthApi
   post /auth/register RegistrazioneInput -> Result<Utente> = RegistraUtente
   post /auth/login LoginInput -> Result<LoginResult> = LoginUtente
+  post /auth/logout uuid -> Result<Sessione> = LogoutUtente from cookie.sid
   post /auth/password/reset-request RichiestaResetPasswordInput -> Result<ResetPasswordResult> = RichiediResetPassword
   post /auth/password/reset ReimpostaPasswordInput -> Result<Utente> = ReimpostaPassword
   get /auth/home unit -> Result<HomePage> = PaginaHome
   post /auth/init-demo unit -> Result<UtentePage> = InizializzaAuthDemo
+  post /auth/bootstrap unit -> Result<HomePage> = BootstrapPortal
   get /auth/admin/utenti unit -> Result<UtentePage> = PaginaUtentiAdmin
   get /auth/admin/ruoli unit -> Result<RuoloPage> = PaginaRuoliAdmin
+  get /auth/admin/permessi unit -> Result<PermessoPage> = PaginaPermessiAdmin
   post /auth/admin/ruoli CreaRuoloInput -> Result<Ruolo> = CreaRuolo
   post /auth/admin/ruoli/permesso AssegnaPermessoInput -> Result<Ruolo> = AssegnaPermessoARuolo
   post /auth/admin/utenti/ruolo AssegnaRuoloInput -> Result<Utente> = AssegnaRuoloUtente
@@ -111,7 +122,9 @@ ui AuthUi
   form /reimposta-password ReimpostaPasswordInput -> Result<Utente> = ReimpostaPassword submit /auth/password/reset redirect /login
   page /admin/utenti uuid -> Result<UtentePage> = PaginaUtentiAdminSessione from cookie.sid
   page /admin/ruoli uuid -> Result<RuoloPage> = PaginaRuoliAdminSessione from cookie.sid
+  page /admin/permessi uuid -> Result<PermessoPage> = PaginaPermessiAdminSessione from cookie.sid
   form /admin/ruoli/new CreaRuoloInput -> Result<Ruolo> = CreaRuolo submit /auth/admin/ruoli redirect /admin/ruoli
+  action /logout POST /auth/logout redirect /login clear_cookie sid
 
 ui VenditeUi
   page /clienti uuid -> Result<ClientePage> = PaginaClientiSessione from cookie.sid
@@ -119,17 +132,23 @@ ui VenditeUi
   page /prodotti uuid -> Result<ProdottoPage> = PaginaProdottiSessione from cookie.sid
   form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdotto submit /prodotti
   page /listini uuid -> Result<ListinoPage> = PaginaListiniSessione from cookie.sid
-  page /listini/{id} uuid -> Result<Listino> = DettaglioListino from path.id
+  page /listini/{id} DettaglioSessioneInput -> Result<Listino> = DettaglioListinoSessione
+    bind session_id = cookie.sid
+    bind id = path.id
   form /listini/new Listino -> Result<Listino> = CreaListino submit /listini
   page /preventivi uuid -> Result<PreventivoPage> = PaginaPreventiviSessione from cookie.sid
-  page /preventivi/{id} uuid -> Result<Preventivo> = DettaglioPreventivo from path.id
+  page /preventivi/{id} DettaglioSessioneInput -> Result<Preventivo> = DettaglioPreventivoSessione
+    bind session_id = cookie.sid
+    bind id = path.id
   form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivo submit /preventivi redirect /preventivi
   form /preventivi/new-listino PreventivoListinoForm -> Result<Preventivo> = CreaPreventivoListinoForm submit /preventivi/listino-form redirect /preventivi
   action /preventivi/invia POST /preventivi/{id}/invia redirect /preventivi/{id}
   action /preventivi/conferma POST /preventivi/{id}/conferma redirect /preventivi/{id}
   action /preventivi/ordine POST /ordini/da-preventivo/{id} on /preventivi/{id} redirect /ordini/{id}
   page /ordini uuid -> Result<OrdinePage> = PaginaOrdiniSessione from cookie.sid
-  page /ordini/{id} uuid -> Result<Ordine> = DettaglioOrdine from path.id
+  page /ordini/{id} DettaglioSessioneInput -> Result<Ordine> = DettaglioOrdineSessione
+    bind session_id = cookie.sid
+    bind id = path.id
   action /ordini/conferma POST /ordini/{id}/conferma redirect /ordini/{id}
   action /ordini/annulla POST /ordini/{id}/annulla redirect /ordini/{id}
 

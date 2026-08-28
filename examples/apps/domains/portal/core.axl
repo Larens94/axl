@@ -6,6 +6,10 @@ entity SessionePermessoInput
   session_id: uuid required
   permesso: text required
 
+entity DettaglioSessioneInput
+  session_id: uuid required
+  id: uuid required
+
 flow RequireSession uuid -> Result<Utente>
   run utente = UtenteDaSessione(input)?
   return utente

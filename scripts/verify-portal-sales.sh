@@ -201,11 +201,10 @@ echo "== render listini list (seeded demo) =="
 "${BIN[@]}" render "$PORTAL" /listini/demo examples/apps/inputs/unit.json | grep -q 'href="/listini/listino-001"'
 
 echo "== render listino detail (templated path manifest) =="
-"${BIN[@]}" ui "$PORTAL" | jq -e '.uis[] | select(.name=="VenditeUi") | .pages[] | select(.path=="/listini/{id}") | .template == "/listini/{id}" and .input_source == "path" and .input_name == "id"'
+"${BIN[@]}" ui "$PORTAL" | jq -e '.uis[] | select(.name=="VenditeUi") | .pages[] | select(.path=="/listini/{id}") | .template == "/listini/{id}" and .input_source == "composite" and .input == "DettaglioSessioneInput"'
 
-echo "== render listino detail (templated path /listini/listino-001) =="
-# render CLI uses a fresh store; eval DettaglioListinoDemoUnit proves seed+lookup.
-"${BIN[@]}" render "$PORTAL" /listini/listino-001 null | grep -q 'listini/listino-001'
+echo "== render listino detail (session-gated flow via eval) =="
+"${BIN[@]}" eval "$PORTAL" DettaglioListinoSessioneDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.id == "listino-001"'
 
 echo "== render preventivi list (seeded demo) =="
 "${BIN[@]}" render "$PORTAL" /preventivi/demo examples/apps/inputs/unit.json | grep -q 'preventivo-001'
@@ -218,13 +217,10 @@ echo "== render ordini list (seeded demo) =="
 "${BIN[@]}" render "$PORTAL" /ordini/demo examples/apps/inputs/unit.json | grep -qE 'href="/ordini/[^"]+"'
 
 echo "== render ordine detail (templated path manifest) =="
-"${BIN[@]}" ui "$PORTAL" | jq -e '.uis[] | select(.name=="VenditeUi") | .pages[] | select(.path=="/ordini/{id}") | .template == "/ordini/{id}" and .input_source == "path" and .input_name == "id"'
+"${BIN[@]}" ui "$PORTAL" | jq -e '.uis[] | select(.name=="VenditeUi") | .pages[] | select(.path=="/ordini/{id}") | .template == "/ordini/{id}" and .input_source == "composite" and .input == "DettaglioSessioneInput"'
 
-echo "== render ordine detail (templated path with dynamic ordine id) =="
-"${BIN[@]}" render "$PORTAL" "/ordini/${ORDINE_RENDER_ID}" null | grep -q "ordini/${ORDINE_RENDER_ID}"
-"${BIN[@]}" render "$PORTAL" "/ordini/${ORDINE_RENDER_ID}" null | grep -q "action=\"/ordini/${ORDINE_RENDER_ID}/conferma\""
-"${BIN[@]}" render "$PORTAL" "/ordini/${ORDINE_RENDER_ID}" null | grep -q "action=\"/ordini/${ORDINE_RENDER_ID}/annulla\""
-"${BIN[@]}" render "$PORTAL" "/ordini/${ORDINE_RENDER_ID}" null | grep -q "name=\"id\" value=\"${ORDINE_RENDER_ID}\""
+echo "== render ordine detail (session-gated flow via eval) =="
+"${BIN[@]}" eval "$PORTAL" DettaglioOrdineSessioneDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.id != .ok.preventivo_id'
 
 echo "== render ordine detail actions (templated workflow) =="
 "${BIN[@]}" ui "$PORTAL" | jq -e '.uis[] | select(.name=="VenditeUi") | .actions[] | select(.path=="/ordini/conferma") | .submit == "/ordini/{id}/conferma"'
@@ -233,16 +229,10 @@ echo "== render ordine detail actions (templated workflow) =="
 "${BIN[@]}" ui "$PORTAL" | jq -e '.uis[] | select(.name=="VenditeUi") | .actions[] | select(.path=="/ordini/annulla") | .redirect == "/ordini/{id}"'
 
 echo "== render preventivo detail (templated path manifest) =="
-"${BIN[@]}" ui "$PORTAL" | jq -e '.uis[] | select(.name=="VenditeUi") | .pages[] | select(.path=="/preventivi/{id}") | .template == "/preventivi/{id}" and .input_source == "path" and .input_name == "id"'
+"${BIN[@]}" ui "$PORTAL" | jq -e '.uis[] | select(.name=="VenditeUi") | .pages[] | select(.path=="/preventivi/{id}") | .template == "/preventivi/{id}" and .input_source == "composite" and .input == "DettaglioSessioneInput"'
 
-echo "== render preventivo detail (templated path /preventivi/preventivo-001) =="
-# render CLI uses a fresh store; eval RenderDettaglioPreventivoDemoUnit proves seed+lookup.
-# This gate proves path binding and templated action submit on the detail page.
-"${BIN[@]}" render "$PORTAL" /preventivi/preventivo-001 null | grep -q 'preventivi/preventivo-001'
-"${BIN[@]}" render "$PORTAL" /preventivi/preventivo-001 null | grep -q 'action="/preventivi/preventivo-001/invia"'
-"${BIN[@]}" render "$PORTAL" /preventivi/preventivo-001 null | grep -q 'action="/preventivi/preventivo-001/conferma"'
-"${BIN[@]}" render "$PORTAL" /preventivi/preventivo-001 null | grep -q 'action="/ordini/da-preventivo/preventivo-001"'
-"${BIN[@]}" render "$PORTAL" /preventivi/preventivo-001 null | grep -q 'name="id" value="preventivo-001"'
+echo "== render preventivo detail (session-gated flow via eval) =="
+"${BIN[@]}" eval "$PORTAL" DettaglioPreventivoSessioneDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.id == "preventivo-001"'
 
 echo "== render preventivo detail actions (templated workflow) =="
 # render uses a fresh runtime (empty store); prove action wiring via manifest + serve below
@@ -330,9 +320,6 @@ PORT=18082
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/listini/new" | grep -q 'action="/listini"'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/listini/demo" | grep -q 'listino-001'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/listini/demo" | grep -q 'href="/listini/listino-001"'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q 'Promo estate'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q '<th>prodotto_id</th>'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q '119900'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/preventivi/new-listino" | grep -q 'action="/preventivi/listino-form"'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/preventivi/new-listino" | grep -q 'name="listino_id"'
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/prodotti" \
@@ -347,6 +334,9 @@ PORT=18082
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/listini/prezzo" \
     -H 'content-type: application/json' \
     -d @examples/apps/inputs/sales-prezzo-listino.json | jq -e '.ok == 119900'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q 'Promo estate'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q '<th>prodotto_id</th>'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/listini/listino-001" | grep -q '119900'
   curl -sf "${AUTH[@]}" --max-time 2 -X POST "http://127.0.0.1:${PORT}/clienti" \
     -H 'content-type: application/json' \
     -d '{"id":"cliente-001","nome":"Alice Rossi","email":"alice@example.com","budget":250000,"stato":"attivo"}'
@@ -370,28 +360,28 @@ PORT=18082
   echo "$LISTINO_FORM_HEADERS" | grep -qi '^location: /preventivi'
   curl -sf "${AUTH[@]}" --max-time 2 "http://127.0.0.1:${PORT}/preventivi" | grep -q 'preventivo-listino-form-smoke'
   curl -sf --max-time 2 "http://127.0.0.1:${PORT}/preventivi/demo" | grep -q 'preventivo-001'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'preventivo-001'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q '268770'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q '<th>prodotto_id</th>'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q '<th>quantita</th>'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'prodotto-001'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'action="/preventivi/preventivo-001/invia"'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'action="/preventivi/preventivo-001/conferma"'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'preventivo-001'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q '268770'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q '<th>prodotto_id</th>'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q '<th>quantita</th>'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'prodotto-001'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'action="/preventivi/preventivo-001/invia"'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'action="/preventivi/preventivo-001/conferma"'
   INVIA_001_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/preventivo-001/invia" \
     -H 'content-type: application/x-www-form-urlencoded' \
     -H 'accept: text/html' \
     --data-urlencode 'id=preventivo-001')
   echo "$INVIA_001_HEADERS" | grep -qi '^HTTP/.* 303'
   echo "$INVIA_001_HEADERS" | grep -qi '^location: /preventivi/preventivo-001'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'inviato'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'inviato'
   CONFERMA_001_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/preventivo-001/conferma" \
     -H 'content-type: application/x-www-form-urlencoded' \
     -H 'accept: text/html' \
     --data-urlencode 'id=preventivo-001')
   echo "$CONFERMA_001_HEADERS" | grep -qi '^HTTP/.* 303'
   echo "$CONFERMA_001_HEADERS" | grep -qi '^location: /preventivi/preventivo-001'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'confermato'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'action="/ordini/da-preventivo/preventivo-001"'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'confermato'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-001" | grep -q 'action="/ordini/da-preventivo/preventivo-001"'
   ORDINE_001_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 -X POST "http://127.0.0.1:${PORT}/ordini/da-preventivo/preventivo-001" \
     -H 'content-type: application/x-www-form-urlencoded' \
     -H 'accept: text/html' \
@@ -405,42 +395,42 @@ PORT=18082
   curl -sf "${AUTH[@]}" --max-time 2 "http://127.0.0.1:${PORT}/ordini" | grep -q '268770'
   curl -sf "${AUTH[@]}" --max-time 2 "http://127.0.0.1:${PORT}/ordini" | grep -q "href=\"/ordini/${ORDINE_001_ID}\""
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/ordini/da-preventivo/preventivo-001" | jq -e '.ok.stato == "bozza" and .ok.id != .ok.preventivo_id and .ok.totale == 268770'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q 'preventivo-001'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q '268770'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q '<th>prodotto_id</th>'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q 'prodotto-002'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q 'cliente-001'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q "action=\"/ordini/${ORDINE_001_ID}/conferma\""
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q "action=\"/ordini/${ORDINE_001_ID}/annulla\""
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q 'preventivo-001'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q '268770'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q '<th>prodotto_id</th>'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q 'prodotto-002'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q 'cliente-001'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q "action=\"/ordini/${ORDINE_001_ID}/conferma\""
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q "action=\"/ordini/${ORDINE_001_ID}/annulla\""
   ORDINE_CONFERMA_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 -X POST "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}/conferma" \
     -H 'content-type: application/x-www-form-urlencoded' \
     -H 'accept: text/html' \
     --data-urlencode "id=${ORDINE_001_ID}")
   echo "$ORDINE_CONFERMA_HEADERS" | grep -qi '^HTTP/.* 303'
   echo "$ORDINE_CONFERMA_HEADERS" | grep -qi "^location: /ordini/${ORDINE_001_ID}"
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q 'confermato'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}" | grep -q 'confermato'
   curl -s --max-time 2 -X POST "http://127.0.0.1:${PORT}/ordini/${ORDINE_001_ID}/conferma" | jq -e '.error == "stato_non_confermable"'
   curl -sf "${AUTH[@]}" --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi" \
     -H 'content-type: application/json' \
     -d @examples/apps/inputs/sales-preventivo.json | jq -e '.ok.id == "preventivo-002" and .ok.stato == "bozza"'
   curl -sf "${AUTH[@]}" --max-time 2 "http://127.0.0.1:${PORT}/preventivi" | grep -q 'href="/preventivi/preventivo-002"'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'preventivo-002'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'action="/preventivi/preventivo-002/invia"'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'action="/preventivi/preventivo-002/conferma"'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'preventivo-002'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'action="/preventivi/preventivo-002/invia"'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'action="/preventivi/preventivo-002/conferma"'
   INVIA_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/preventivo-002/invia" \
     -H 'content-type: application/x-www-form-urlencoded' \
     -H 'accept: text/html' \
     --data-urlencode 'id=preventivo-002')
   echo "$INVIA_HEADERS" | grep -qi '^HTTP/.* 303'
   echo "$INVIA_HEADERS" | grep -qi '^location: /preventivi/preventivo-002'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'inviato'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'inviato'
   CONFERMA_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/preventivo-002/conferma" \
     -H 'content-type: application/x-www-form-urlencoded' \
     -H 'accept: text/html' \
     --data-urlencode 'id=preventivo-002')
   echo "$CONFERMA_HEADERS" | grep -qi '^HTTP/.* 303'
   echo "$CONFERMA_HEADERS" | grep -qi '^location: /preventivi/preventivo-002'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'confermato'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/preventivi/preventivo-002" | grep -q 'confermato'
   UNIQUE_NOME="Form Smoke Client $(date +%s)"
   POST_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 "${AUTH[@]}" -X POST "http://127.0.0.1:${PORT}/clienti" \
     -H 'content-type: application/x-www-form-urlencoded' \
@@ -465,15 +455,15 @@ PORT=18082
   ORDINE_002_JSON=$(curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/ordini/da-preventivo/preventivo-002")
   echo "$ORDINE_002_JSON" | jq -e '.ok.stato == "bozza" and .ok.id != .ok.preventivo_id and .ok.totale == 135880'
   ORDINE_002_ID=$(echo "$ORDINE_002_JSON" | jq -r '.ok.id')
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_002_ID}" | grep -q 'preventivo-002'
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_002_ID}" | grep -q "action=\"/ordini/${ORDINE_002_ID}/annulla\""
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_002_ID}" | grep -q 'preventivo-002'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_002_ID}" | grep -q "action=\"/ordini/${ORDINE_002_ID}/annulla\""
   ORDINE_ANNULLA_HEADERS=$(curl -s -D - -o /dev/null --max-time 2 -X POST "http://127.0.0.1:${PORT}/ordini/${ORDINE_002_ID}/annulla" \
     -H 'content-type: application/x-www-form-urlencoded' \
     -H 'accept: text/html' \
     --data-urlencode "id=${ORDINE_002_ID}")
   echo "$ORDINE_ANNULLA_HEADERS" | grep -qi '^HTTP/.* 303'
   echo "$ORDINE_ANNULLA_HEADERS" | grep -qi "^location: /ordini/${ORDINE_002_ID}"
-  curl -sf --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_002_ID}" | grep -q 'annullato'
+  curl -sf "${AUTH[@]}" --max-time 2 -H 'accept: text/html' "http://127.0.0.1:${PORT}/ordini/${ORDINE_002_ID}" | grep -q 'annullato'
   curl -s -H 'accept: application/json' --max-time 2 "http://127.0.0.1:${PORT}/ordini/${ORDINE_002_ID}" | jq -e '.ok.stato == "annullato" and .ok.totale == 135880'
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${PORT}/preventivi/query" \
     -H 'content-type: application/json' \

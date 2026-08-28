@@ -153,8 +153,23 @@ fn run(args: &[String]) -> Result<()> {
                 .get(2)
                 .ok_or_else(|| anyhow::anyhow!("render requires a JSON input file or null"))?;
             let input = read_json_input(input_path)?;
-            let rendered = next::ui::render_page(&compilation.graph, page, input)
-                .map_err(|error| anyhow::anyhow!(error))?;
+            let mut headers = std::collections::BTreeMap::new();
+            if let Some(index) = args.iter().position(|argument| argument == "--cookie")
+                && let Some(cookie) = args.get(index + 1)
+            {
+                headers.insert("cookie".into(), cookie.clone());
+            }
+            let mut runtime = next::runtime::BuiltinRuntime::new().map_err(|error| {
+                anyhow::anyhow!("provider_runtime_initialization_failed: {error}")
+            })?;
+            let rendered = next::ui::render_page_with_runtime(
+                &compilation.graph,
+                &mut runtime,
+                page,
+                input,
+                &headers,
+            )
+            .map_err(|error| anyhow::anyhow!(error))?;
             if args.iter().any(|argument| argument == "--json") {
                 println!(
                     "{}",
@@ -192,6 +207,6 @@ fn run(args: &[String]) -> Result<()> {
 
 fn usage() {
     eprintln!(
-        "Usage:\n  axl-compiler check|diagnose <input.axl> [--json]\n  axl-compiler check|diagnose [--json] <input.axl>\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler ui <input.axl>\n  axl-compiler eval <input.axl> <flow> <input.json|null>\n  axl-compiler render <input.axl> <page-path> <input.json|null> [--json]\n  axl-compiler tick <input.axl>\n  axl-compiler serve <input.axl> [address]\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>\n\nFlags such as --json may appear before or after positional arguments."
+        "Usage:\n  axl-compiler check|diagnose <input.axl> [--json]\n  axl-compiler check|diagnose [--json] <input.axl>\n  axl-compiler ir <input.axl>\n  axl-compiler pack <input.axl> [--matrix]\n  axl-compiler fmt <input.axl>\n  axl-compiler blocks <input.axl>\n  axl-compiler ui <input.axl>\n  axl-compiler eval <input.axl> <flow> <input.json|null>\n  axl-compiler render <input.axl> <page-path> <input.json|null> [--cookie 'sid=...'] [--json]\n  axl-compiler tick <input.axl>\n  axl-compiler serve <input.axl> [address]\n  axl-compiler experiment <input.axl> <output-dir>\n  axl-compiler unpack <packed.axl>\n\nFlags such as --json may appear before or after positional arguments."
     );
 }

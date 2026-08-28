@@ -405,6 +405,17 @@ pub fn format(program: &Program) -> String {
                         "  page {} {} -> {} = {}{}",
                         page.path, page.input, page.output, page.flow, binding
                     ));
+                    if page.input_source == "composite" {
+                        for binding in &page.bindings {
+                            let target = binding.target.as_deref().unwrap_or_default();
+                            let source = binding
+                                .name
+                                .as_ref()
+                                .map(|name| format!("{}.{name}", binding.source))
+                                .unwrap_or_else(|| binding.source.clone());
+                            output.push(format!("    bind {target} = {source}"));
+                        }
+                    }
                 }
                 for form in &ui.forms {
                     let submit = form
@@ -433,9 +444,14 @@ pub fn format(program: &Program) -> String {
                         .as_deref()
                         .map(|path| format!(" redirect {path}"))
                         .unwrap_or_default();
+                    let clear_cookie = action
+                        .clear_cookie
+                        .as_deref()
+                        .map(|name| format!(" clear_cookie {name}"))
+                        .unwrap_or_default();
                     output.push(format!(
-                        "  action {} {} {}{}{}",
-                        action.path, action.method, action.submit, on, redirect
+                        "  action {} {} {}{}{}{}",
+                        action.path, action.method, action.submit, on, redirect, clear_cookie
                     ));
                 }
             }
