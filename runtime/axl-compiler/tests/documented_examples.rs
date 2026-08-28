@@ -1,6 +1,6 @@
 use axl_compiler::compile_source;
 
-const EXAMPLES: [(&str, &str); 11] = [
+const EXAMPLES: [(&str, &str); 12] = [
     (
         "store",
         include_str!("../../../examples/blocks/01-store.axl"),
@@ -38,6 +38,10 @@ const EXAMPLES: [(&str, &str); 11] = [
     (
         "form-demo",
         include_str!("../../../examples/apps/form-demo.axl"),
+    ),
+    (
+        "route-guard-demo",
+        include_str!("../../../examples/apps/route-guard-demo.axl"),
     ),
 ];
 
@@ -92,6 +96,18 @@ fn documented_invalid_examples_report_stable_codes() {
         (
             "AXL-P917",
             include_str!("../../../examples/invalid/http-auth-syntax.axl"),
+        ),
+        (
+            "AXL-P922",
+            include_str!("../../../examples/invalid/http-route-guard.axl"),
+        ),
+        (
+            "AXL-P925",
+            include_str!("../../../examples/invalid/http-route-guard.axl"),
+        ),
+        (
+            "AXL-H923",
+            include_str!("../../../examples/invalid/http-route-guard-flow.axl"),
         ),
         (
             "AXL-H908",

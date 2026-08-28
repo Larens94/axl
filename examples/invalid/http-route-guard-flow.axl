@@ -1,0 +1,7 @@
+axl 4
+app InvalidHttpRouteGuardFlow
+flow Identity text -> text
+  return input
+api BrokenGuards
+  post /session text -> text = Identity
+    guard session UnknownFlow from cookie.sid

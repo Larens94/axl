@@ -43,6 +43,8 @@ page rules directly in Rust or React — add an AXL primitive and bind it from f
 
 ## Middleware pattern (Rust-style guards)
 
+Session UI pages still use AXL flows:
+
 ```axl
 flow PaginaClientiSessione uuid -> Result<ClientePage>
   make gate: SessionePermessoInput
@@ -55,6 +57,18 @@ flow PaginaClientiSessione uuid -> Result<ClientePage>
 
 UI binding: `page /clienti uuid -> ... = PaginaClientiSessione from cookie.sid`
 
+**HTTP per-route guards** (open primitive) protect Form/JSON POST without
+duplicating rules in Rust:
+
+```axl
+post /clienti Cliente -> Result<Cliente> = CreaCliente
+  guard session RequireSession from cookie.sid
+  guard can RequireSessionPermesso "vendite.clienti.read" from cookie.sid
+```
+
+Kinds: `session` (401), `can` (403 + permesso), `guest` (reject if already authenticated).
+Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
+
 ## Permissions (seed)
 
 - `admin.*` — IAM admin
@@ -64,8 +78,10 @@ UI binding: `page /clienti uuid -> ... = PaginaClientiSessione from cookie.sid`
 ## Known boundaries (steward queue)
 
 - UI **composite page binding** (`cookie.sid` + `path.id`) is available for session-gated detail routes.
-- Form POST and JSON API routes are not session-wrapped (HTTP middleware per-route auth TBD).
+- **Per-route HTTP guards** (`session` / `can` / `guest`) protect Auth admin and VenditeApi mutations.
 - Nested `List<>` form rows still use flat workaround forms.
+- React codegen from `axl-ui/1` remains Gate 4.
+- Secret refs Gate 8 and real email for password reset remain open.
 
 ## Verify
 

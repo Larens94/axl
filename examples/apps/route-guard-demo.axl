@@ -1,0 +1,54 @@
+// Minimal failing-then-green example for per-route HTTP guards.
+axl 4
+app RouteGuardDemo
+
+entity SessionePermessoInput
+  session_id: uuid required
+  permesso: text required
+
+entity Sessione
+  id: uuid key
+  utente_id: uuid required
+  attiva: bool required
+
+capacity ArchivioSessioni
+  op save Sessione -> Result<Sessione>
+  op find uuid -> Result<Sessione> idempotent
+
+skill MemoriaSessioni provides ArchivioSessioni
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+flow EchoText text -> text
+  return input
+
+flow RequireSession uuid -> Result<uuid>
+  in sessioni: ArchivioSessioni = MemoriaSessioni
+  call sessione = sessioni.find(input)?
+  let attiva = sessione.attiva
+  require attiva else "sessione_scaduta"
+  return sessione.id
+
+flow RequireSessionPermesso SessionePermessoInput -> Result<uuid>
+  run sid = RequireSession(input.session_id)?
+  let ok = input.permesso == "demo.read"
+  require ok else "permesso_negato"
+  return sid
+
+flow SeedSessioneDemo unit -> Result<Sessione>
+  in sessioni: ArchivioSessioni = MemoriaSessioni
+  make sessione: Sessione
+    id = "sessione-demo"
+    utente_id = "utente-demo"
+    attiva = true
+  call salvata = sessioni.save(sessione)?
+  return salvata
+
+api GuardDemoApi
+  post /seed unit -> Result<Sessione> = SeedSessioneDemo
+  post /echo text -> text = EchoText
+    guard session RequireSession from cookie.sid
+  post /secure text -> text = EchoText
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "demo.read" from cookie.sid

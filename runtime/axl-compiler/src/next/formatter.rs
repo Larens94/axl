@@ -391,6 +391,22 @@ pub fn format(program: &Program) -> String {
                             output.push(format!("    bind {target} = {source}"));
                         }
                     }
+                    for guard in &route.guards {
+                        let binding = guard
+                            .name
+                            .as_ref()
+                            .map(|name| format!(" from {}.{name}", guard.source))
+                            .unwrap_or_else(|| format!(" from {}", guard.source));
+                        let param = guard
+                            .param
+                            .as_ref()
+                            .map(|value| format!(" \"{value}\""))
+                            .unwrap_or_default();
+                        output.push(format!(
+                            "    guard {} {}{}{}",
+                            guard.kind, guard.flow, param, binding
+                        ));
+                    }
                 }
             }
             Declaration::Ui(ui) => {

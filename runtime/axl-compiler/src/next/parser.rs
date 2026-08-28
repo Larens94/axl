@@ -2280,6 +2280,22 @@ fn parse_api(
             cursor += 1;
             continue;
         }
+        if line.text.starts_with("guard ") {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P920",
+                    "parse",
+                    "a route guard must be nested under a route",
+                    span(line),
+                )
+                .expected(
+                    "route\n  guard session|guest|can Flow [\"perm\"] from cookie.name",
+                    &line.text,
+                ),
+            );
+            cursor += 1;
+            continue;
+        }
         let Some((method, remainder)) = line.text.split_once(' ') else {
             diagnostics.push(
                 Diagnostic::error(
@@ -2374,19 +2390,27 @@ fn parse_api(
             };
         cursor += 1;
         let mut found_nested = false;
+        let mut guards = Vec::new();
         while cursor < body.len() && body[cursor].indent > line.indent {
-            let binding_line = &body[cursor];
-            let Some(value) = binding_line.text.strip_prefix("bind ") else {
+            let nested = &body[cursor];
+            if let Some(value) = nested.text.strip_prefix("guard ") {
+                if let Some(guard) = parse_route_guard(value, nested, diagnostics) {
+                    guards.push(guard);
+                }
+                cursor += 1;
+                continue;
+            }
+            let Some(value) = nested.text.strip_prefix("bind ") else {
                 diagnostics.push(
                     Diagnostic::error(
                         "AXL-P916",
                         "parse",
                         "unknown nested API route declaration",
-                        span(binding_line),
+                        span(nested),
                     )
                     .expected(
-                        "bind field = body|body.field|path.name|query.name|header.name|cookie.name",
-                        &binding_line.text,
+                        "bind field = source | guard session|guest|can Flow [\"perm\"] from cookie.name",
+                        &nested.text,
                     ),
                 );
                 cursor += 1;
@@ -2403,11 +2427,11 @@ fn parse_api(
                         "AXL-P916",
                         "parse",
                         "invalid composite request binding",
-                        span(binding_line),
+                        span(nested),
                     )
                     .expected(
                         "bind field = body|body.field|path.name|query.name|header.name|cookie.name",
-                        &binding_line.text,
+                        &nested.text,
                     ),
                 );
                 cursor += 1;
@@ -2419,7 +2443,7 @@ fn parse_api(
                         "AXL-P917",
                         "parse",
                         "inline and nested request bindings cannot be combined",
-                        span(binding_line),
+                        span(nested),
                     ));
                 }
                 bindings.clear();
@@ -2429,7 +2453,7 @@ fn parse_api(
                 target: Some(target),
                 source,
                 name,
-                span: span(binding_line),
+                span: span(nested),
             });
             cursor += 1;
         }
@@ -2447,6 +2471,7 @@ fn parse_api(
             input_source,
             input_name,
             bindings,
+            guards,
             span: span(line),
         });
     }
@@ -2915,6 +2940,132 @@ fn parse_ui_action(
         clear_cookie,
         span: span(line),
     });
+}
+
+fn parse_route_guard(
+    value: &str,
+    line: &SourceLine,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<ApiRouteGuard> {
+    let value = value.trim();
+    let (head, binding) = value.split_once(" from ").or_else(|| {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "a route guard requires a request source binding",
+                span(line),
+            )
+            .expected(
+                "guard session|guest|can Flow [\"perm\"] from cookie.name",
+                value,
+            ),
+        );
+        None
+    })?;
+    let Some((source, name)) = parse_request_source(binding.trim()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "a route guard binding needs a source and name",
+                span(line),
+            )
+            .expected("from path.id|query.name|header.name|cookie.name", binding),
+        );
+        return None;
+    };
+    let mut tokens = head.split_whitespace();
+    let Some(kind) = tokens.next() else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P922",
+                "parse",
+                "a route guard requires a kind",
+                span(line),
+            )
+            .expected("session|guest|can", head),
+        );
+        return None;
+    };
+    if !matches!(kind, "session" | "guest" | "can") {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P922",
+                "parse",
+                format!("unsupported route guard kind '{kind}'"),
+                span(line),
+            )
+            .expected("session|guest|can", kind),
+        );
+        return None;
+    }
+    let Some(flow) = tokens.next() else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P923",
+                "parse",
+                "a route guard requires a flow",
+                span(line),
+            )
+            .expected("guard session Flow from cookie.sid", head),
+        );
+        return None;
+    };
+    let param = tokens.next().map(|token| {
+        token
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(token)
+            .to_string()
+    });
+    if tokens.next().is_some() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P924",
+                "parse",
+                "unexpected tokens in route guard",
+                span(line),
+            )
+            .expected(
+                "guard session|guest|can Flow [\"perm\"] from cookie.name",
+                head,
+            ),
+        );
+        return None;
+    }
+    if kind == "can" && param.as_ref().is_none_or(|value| value.is_empty()) {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P925",
+                "parse",
+                "a can guard requires a permission parameter",
+                span(line),
+            )
+            .expected("guard can Flow \"perm.code\" from cookie.sid", value),
+        );
+        return None;
+    }
+    if kind != "can" && param.is_some() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P925",
+                "parse",
+                "only can guards accept a permission parameter",
+                span(line),
+            )
+            .expected("guard session|guest Flow from cookie.sid", value),
+        );
+        return None;
+    }
+    Some(ApiRouteGuard {
+        kind: kind.into(),
+        flow: flow.into(),
+        param,
+        source,
+        name,
+        span: span(line),
+    })
 }
 
 fn parse_request_source(value: &str) -> Option<(String, Option<String>)> {

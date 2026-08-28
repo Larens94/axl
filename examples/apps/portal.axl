@@ -32,50 +32,87 @@ api AuthApi
   post /auth/register RegistrazioneInput -> Result<Utente> = RegistraUtente
   post /auth/login LoginInput -> Result<LoginResult> = LoginUtente
   post /auth/logout uuid -> Result<Sessione> = LogoutUtente from cookie.sid
+    guard session RequireSession from cookie.sid
   post /auth/password/reset-request RichiestaResetPasswordInput -> Result<ResetPasswordResult> = RichiediResetPassword
   post /auth/password/reset ReimpostaPasswordInput -> Result<Utente> = ReimpostaPassword
   get /auth/home unit -> Result<HomePage> = PaginaHome
   post /auth/init-demo unit -> Result<UtentePage> = InizializzaAuthDemo
   post /auth/bootstrap unit -> Result<HomePage> = BootstrapPortal
   get /auth/admin/utenti unit -> Result<UtentePage> = PaginaUtentiAdmin
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.utenti.read" from cookie.sid
   get /auth/admin/ruoli unit -> Result<RuoloPage> = PaginaRuoliAdmin
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.ruoli.read" from cookie.sid
   get /auth/admin/permessi unit -> Result<PermessoPage> = PaginaPermessiAdmin
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.permessi.read" from cookie.sid
   post /auth/admin/ruoli CreaRuoloInput -> Result<Ruolo> = CreaRuolo
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.ruoli.write" from cookie.sid
   post /auth/admin/ruoli/permesso AssegnaPermessoInput -> Result<Ruolo> = AssegnaPermessoARuolo
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.ruoli.write" from cookie.sid
   post /auth/admin/utenti/ruolo AssegnaRuoloInput -> Result<Utente> = AssegnaRuoloUtente
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.ruoli.write" from cookie.sid
 
 api VenditeApi
   post /clienti Cliente -> Result<Cliente> = CreaCliente
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.clienti.read" from cookie.sid
   get /clienti/{id} uuid -> Result<Cliente> = CercaCliente from path.id
   get /clienti unit -> Result<List<Cliente>> = ElencaClienti
   post /clienti/query ClienteQuery -> Result<ClientePage> = InterrogaClienti
   post /clienti/search ClienteQuery -> Result<ClientePage> = CercaClientiAttivi
   post /prodotti Prodotto -> Result<Prodotto> = CreaProdotto
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.prodotti.read" from cookie.sid
   get /prodotti/{id} uuid -> Result<Prodotto> = CercaProdotto from path.id
   get /prodotti unit -> Result<List<Prodotto>> = ElencaProdotti
   post /prodotti/query ProdottoQuery -> Result<ProdottoPage> = InterrogaProdotti
   post /prodotti/search ProdottoQuery -> Result<ProdottoPage> = CercaProdottiPerSku
   post /listini Listino -> Result<Listino> = CreaListino
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.listini.read" from cookie.sid
   get /listini/{id} uuid -> Result<Listino> = CercaListino from path.id
   get /listini unit -> Result<List<Listino>> = ElencaListini
   post /listini/query ListinoQuery -> Result<ListinoPage> = InterrogaListini
   post /listini/prezzo PrezzoListinoQuery -> Result<money> = RisolviPrezzo
   post /preventivi/con-listino PreventivoConListinoInput -> Result<Preventivo> = CreaPreventivoConListino
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
   post /preventivi/listino-form PreventivoListinoForm -> Result<Preventivo> = CreaPreventivoListinoForm
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
   post /preventivi Preventivo -> Result<Preventivo> = CreaPreventivo
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
   get /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
   get /preventivi unit -> Result<List<Preventivo>> = ElencaPreventivi
   post /preventivi/query PreventivoQuery -> Result<PreventivoPage> = InterrogaPreventivi
   post /preventivi/search PreventivoQuery -> Result<PreventivoPage> = CercaPreventiviPerStato
   post /preventivi/{id}/invia uuid -> Result<Preventivo> = InviaPreventivo from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
   post /preventivi/{id}/conferma uuid -> Result<Preventivo> = ConfermaPreventivo from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
   post /preventivi/{id}/annulla uuid -> Result<Preventivo> = AnnullaPreventivo from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
   post /ordini/da-preventivo/{id} uuid -> Result<Ordine> = CreaOrdineDaPreventivo from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.ordini.read" from cookie.sid
   get /ordini/{id} uuid -> Result<Ordine> = CercaOrdine from path.id
   get /ordini unit -> Result<List<Ordine>> = ElencaOrdini
   post /ordini/query OrdineQuery -> Result<OrdinePage> = InterrogaOrdini
   post /ordini/{id}/conferma uuid -> Result<Ordine> = ConfermaOrdine from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.ordini.read" from cookie.sid
   post /ordini/{id}/annulla uuid -> Result<Ordine> = AnnullaOrdine from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.ordini.read" from cookie.sid
 
 api VenditeDurableApi
   post /clienti/durable Cliente -> Result<Cliente> = CreaClienteSqlite

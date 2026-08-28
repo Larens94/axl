@@ -439,6 +439,24 @@ claims. Demo secrets may appear as plaintext skill config (same honesty rule as
 the static bearer fixture). True secret references that never enter Graph or
 manifest plaintext are Gate 8. OAuth adapters are not implemented.
 
+Routes may also declare **per-route guards** that call AXL flows (no application
+logic in Rust). Guards run after API middleware and before bearer auth:
+
+```axl
+post /clienti Cliente -> Result<Cliente> = CreaCliente
+  guard session RequireSession from cookie.sid
+  guard can RequireSessionPermesso "vendite.clienti.read" from cookie.sid
+
+post /auth/login LoginInput -> Result<LoginResult> = LoginUtente
+  guard guest RequireSession from cookie.sid
+```
+
+Kinds:
+
+- `session` — bind a scalar from cookie/header/query/path, evaluate the flow; failure → 401
+- `can` — bind session id + permission string into `{session_id, permesso}`, evaluate the flow; failure → 403
+- `guest` — if the bound session flow succeeds, reject with 403 `already_authenticated`
+
 An API can also attach an ordered open request middleware pipeline. Each entry is
 a capacity over a typed request envelope:
 

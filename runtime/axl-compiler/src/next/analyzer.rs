@@ -2801,6 +2801,85 @@ fn check_api(
                 .expected("declared flow", &route.flow),
             ),
         }
+        check_route_guards(route, declarations, diagnostics);
+    }
+}
+
+fn check_route_guards(
+    route: &ApiRoute,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for guard in &route.guards {
+        if !matches!(guard.kind.as_str(), "session" | "guest" | "can") {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H920",
+                    "http",
+                    format!("unsupported route guard kind '{}'", guard.kind),
+                    guard.span.clone(),
+                )
+                .expected("session|guest|can", &guard.kind),
+            );
+        }
+        let name = guard.name.as_deref().unwrap_or_default();
+        if !valid_name(name, false) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-H921",
+                "http",
+                format!("invalid route guard binding name '{name}'"),
+                guard.span.clone(),
+            ));
+        }
+        if !matches!(
+            guard.source.as_str(),
+            "cookie" | "header" | "query" | "path"
+        ) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H921",
+                    "http",
+                    format!("unsupported route guard source '{}'", guard.source),
+                    guard.span.clone(),
+                )
+                .expected("cookie|header|query|path", &guard.source),
+            );
+        }
+        if guard.kind == "can" && guard.param.as_ref().is_none_or(|value| value.is_empty()) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H922",
+                    "http",
+                    "a can guard requires a permission parameter",
+                    guard.span.clone(),
+                )
+                .expected(
+                    "guard can Flow \"perm.code\" from cookie.sid",
+                    "missing param",
+                ),
+            );
+        }
+        match declarations.get(guard.flow.as_str()) {
+            Some(Declaration::Flow(_)) => {}
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H923",
+                    "http",
+                    format!("route guard target '{}' is not a flow", guard.flow),
+                    guard.span.clone(),
+                )
+                .expected("flow", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H923",
+                    "http",
+                    format!("route guard references unknown flow '{}'", guard.flow),
+                    guard.span.clone(),
+                )
+                .expected("declared flow", &guard.flow),
+            ),
+        }
     }
 }
 
@@ -4892,6 +4971,30 @@ fn lower_api(api: &Api, graph: &mut GraphIr) {
                 .insert("order".into(), binding_index.to_string());
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &binding_id, "owns", None));
+        }
+        for (guard_index, guard) in route.guards.iter().enumerate() {
+            let guard_id = format!("{id}.route_guard.{guard_index}");
+            let mut value = node(&guard_id, "route_guard", &guard.kind);
+            value.metadata.insert("kind".into(), guard.kind.clone());
+            value.metadata.insert("flow".into(), guard.flow.clone());
+            if let Some(param) = &guard.param {
+                value.metadata.insert("param".into(), param.clone());
+            }
+            value.metadata.insert("source".into(), guard.source.clone());
+            if let Some(name) = &guard.name {
+                value.metadata.insert("name".into(), name.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), guard_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &guard_id, "owns", None));
+            graph.edges.push(edge(
+                &guard_id,
+                &format!("flow.{}", guard.flow),
+                "dispatch",
+                None,
+            ));
         }
         graph.edges.push(edge(
             &id,

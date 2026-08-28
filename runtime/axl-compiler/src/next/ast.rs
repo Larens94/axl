@@ -495,6 +495,17 @@ pub struct ApiRoute {
     pub input_source: String,
     pub input_name: Option<String>,
     pub bindings: Vec<HttpRequestBinding>,
+    pub guards: Vec<ApiRouteGuard>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiRouteGuard {
+    pub kind: String,
+    pub flow: String,
+    pub param: Option<String>,
+    pub source: String,
+    pub name: Option<String>,
     pub span: SourceSpan,
 }
 

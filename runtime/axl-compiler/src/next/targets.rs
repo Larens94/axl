@@ -454,6 +454,10 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
                     bindings.sort_by_key(|binding| binding.metadata.get("order")
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(usize::MAX));
+                    let mut guards = children(graph, &route.id, "route_guard");
+                    guards.sort_by_key(|guard| guard.metadata.get("order")
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .unwrap_or(usize::MAX));
                     json!({
                         "method": route.metadata.get("method"),
                         "path": route.metadata.get("path"),
@@ -466,6 +470,13 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
                             "target": (binding.name != "$").then_some(&binding.name),
                             "source": binding.metadata.get("source"),
                             "name": binding.metadata.get("name"),
+                        })).collect::<Vec<_>>(),
+                        "guards": guards.into_iter().map(|guard| json!({
+                            "kind": guard.metadata.get("kind"),
+                            "flow": guard.metadata.get("flow"),
+                            "param": guard.metadata.get("param"),
+                            "source": guard.metadata.get("source"),
+                            "name": guard.metadata.get("name"),
                         })).collect::<Vec<_>>(),
                     })
                 }).collect::<Vec<_>>(),

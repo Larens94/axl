@@ -360,6 +360,7 @@ fn reconstruct_id(
                     | "emit"
                     | "enqueue"
                     | "request_binding"
+                    | "route_guard"
                     | "middleware"
                     | "return"
             ) =>
@@ -484,6 +485,7 @@ fn node_kind_code(kind: &str) -> &str {
         "page" => "55",
         "form" => "56",
         "ui_action" => "57",
+        "route_guard" => "58",
         other => other,
     }
 }
@@ -548,6 +550,7 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "55" => "page",
         "56" => "form",
         "57" => "ui_action",
+        "58" => "route_guard",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

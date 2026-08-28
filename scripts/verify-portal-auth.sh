@@ -42,4 +42,44 @@ echo "== eval ResetPasswordDemoUnit (richiesta + reset + login) =="
 echo "== eval PaginaClientiRbacDemoUnit (RBAC + vendite list) =="
 "${BIN[@]}" eval "$PORTAL" PaginaClientiRbacDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.total >= 0'
 
+echo "== route guards in HTTP manifest (session + can on VenditeApi POST /clienti) =="
+"${BIN[@]}" blocks "$PORTAL" >/dev/null
+"${BIN[@]}" ir "$PORTAL" | jq -e '[.nodes[] | select(.kind=="route_guard")] | length > 0'
+"${BIN[@]}" ir "$PORTAL" | jq -e '[.nodes[] | select(.kind=="route_guard" and .metadata.kind=="session")] | length > 0'
+"${BIN[@]}" ir "$PORTAL" | jq -e '[.nodes[] | select(.kind=="route_guard" and .metadata.kind=="can")] | length > 0'
+
+echo "== HTTP route guard smoke (401 without session, 200 with session) =="
+GPORT=18088
+(
+  "${BIN[@]}" serve "$PORTAL" "127.0.0.1:${GPORT}" &
+  GPID=$!
+  cleanup() { kill "$GPID" 2>/dev/null; wait "$GPID" 2>/dev/null || true; }
+  trap cleanup EXIT
+  ready=0
+  for _ in $(seq 1 50); do
+    if curl -sf --max-time 1 "http://127.0.0.1:${GPORT}/" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.2
+  done
+  test "$ready" -eq 1
+  curl -s --max-time 2 -X POST "http://127.0.0.1:${GPORT}/clienti" \
+    -H 'content-type: application/json' \
+    -d '{"id":"cliente-guard","nome":"Guard","email":"g@example.com","budget":1,"stato":"attivo"}' \
+    | jq -e '.error == "session_required"'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${GPORT}/auth/init-demo" \
+    -H 'content-type: application/json' -d 'null' >/dev/null
+  SID=$(curl -sf --max-time 2 -X POST "http://127.0.0.1:${GPORT}/auth/login" \
+    -H 'content-type: application/json' \
+    -d '{"email":"admin@example.com","password":"admin123"}' | jq -r '.ok.session_id')
+  test -n "$SID"
+  curl -sf --max-time 2 -H "Cookie: sid=${SID}" -X POST "http://127.0.0.1:${GPORT}/clienti" \
+    -H 'content-type: application/json' \
+    -d '{"id":"cliente-guard","nome":"Guard","email":"g@example.com","budget":1,"stato":"attivo"}' \
+    | jq -e '.ok.id == "cliente-guard"'
+  curl -s --max-time 2 -H "Cookie: sid=${SID}" "http://127.0.0.1:${GPORT}/auth/admin/utenti" \
+    | jq -e '.ok.total >= 2'
+)
+
 echo "OK auth gates"
