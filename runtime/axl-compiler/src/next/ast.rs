@@ -503,6 +503,7 @@ pub struct Ui {
     pub name: String,
     pub pages: Vec<UiPage>,
     pub forms: Vec<UiForm>,
+    pub actions: Vec<UiAction>,
     pub span: SourceSpan,
 }
 
@@ -512,6 +513,8 @@ pub struct UiPage {
     pub input: String,
     pub output: String,
     pub flow: String,
+    pub input_source: String,
+    pub input_name: Option<String>,
     pub span: SourceSpan,
 }
 
@@ -522,6 +525,16 @@ pub struct UiForm {
     pub output: String,
     pub flow: String,
     pub submit: Option<String>,
+    pub redirect: Option<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiAction {
+    pub path: String,
+    pub method: String,
+    pub submit: String,
+    pub redirect: Option<String>,
     pub span: SourceSpan,
 }
 

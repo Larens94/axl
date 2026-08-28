@@ -2472,11 +2472,14 @@ fn parse_ui(
     }
     let mut pages = Vec::new();
     let mut forms = Vec::new();
+    let mut actions = Vec::new();
     for line in body {
         if line.text.starts_with("page ") {
             parse_ui_page(line, &mut pages, diagnostics);
         } else if line.text.starts_with("form ") {
             parse_ui_form(line, &mut forms, diagnostics);
+        } else if line.text.starts_with("action ") {
+            parse_ui_action(line, &mut actions, diagnostics);
         } else {
             diagnostics.push(Diagnostic::error(
                 "AXL-P950",
@@ -2490,6 +2493,7 @@ fn parse_ui(
         name: name.into(),
         pages,
         forms,
+        actions,
         span: span(header),
     }));
 }
@@ -2528,19 +2532,43 @@ fn parse_ui_page(line: &SourceLine, pages: &mut Vec<UiPage>, diagnostics: &mut V
         );
         return;
     };
-    let flow = flow.trim();
-    if flow.is_empty() {
-        diagnostics.push(
-            Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
-                .expected("page /path Input -> Output = Flow", &line.text),
-        );
-        return;
-    }
+    let (flow, input_source, input_name) = {
+        let flow = flow.trim();
+        if flow.is_empty() {
+            diagnostics.push(
+                Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
+                    .expected("page /path Input -> Output = Flow", &line.text),
+            );
+            return;
+        }
+        if let Some((flow, binding)) = flow.split_once(" from ") {
+            let Some((source, name)) = parse_request_source(binding) else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P954",
+                        "parse",
+                        "a UI page binding needs a source and name",
+                        span(line),
+                    )
+                    .expected(
+                        "Flow from path.id|query.name|header.name|cookie.name",
+                        binding,
+                    ),
+                );
+                return;
+            };
+            (flow.trim(), source, name)
+        } else {
+            (flow, "body".into(), None)
+        }
+    };
     pages.push(UiPage {
         path: path.into(),
         input: input.into(),
         output: output.trim().into(),
         flow: flow.into(),
+        input_source,
+        input_name,
         span: span(line),
     });
 }
@@ -2557,6 +2585,25 @@ fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut V
         return;
     };
     let binding = binding.trim();
+    let (binding, redirect) = if let Some((rest, redirect_path)) = binding.rsplit_once(" redirect ")
+    {
+        let redirect_path = redirect_path.trim();
+        if !redirect_path.starts_with('/') {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P964",
+                    "parse",
+                    "a UI form redirect path must be absolute",
+                    span(line),
+                )
+                .expected("redirect /absolute/path", redirect_path),
+            );
+            return;
+        }
+        (rest.trim(), Some(redirect_path.into()))
+    } else {
+        (binding, None)
+    };
     let (flow, submit) = if let Some((flow, submit_path)) = binding.rsplit_once(" submit ") {
         let submit_path = submit_path.trim();
         if !submit_path.starts_with('/') {
@@ -2621,6 +2668,92 @@ fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut V
         output: output.trim().into(),
         flow: flow.into(),
         submit,
+        redirect,
+        span: span(line),
+    });
+}
+
+fn parse_ui_action(
+    line: &SourceLine,
+    actions: &mut Vec<UiAction>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let remainder = line.text["action ".len()..].trim();
+    let (remainder, redirect) =
+        if let Some((rest, redirect_path)) = remainder.rsplit_once(" redirect ") {
+            let redirect_path = redirect_path.trim();
+            if !redirect_path.starts_with('/') {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P974",
+                        "parse",
+                        "a UI action redirect path must be absolute",
+                        span(line),
+                    )
+                    .expected("redirect /absolute/path", redirect_path),
+                );
+                return;
+            }
+            (rest.trim(), Some(redirect_path.into()))
+        } else {
+            (remainder, None)
+        };
+    let mut tokens = remainder.split_whitespace();
+    let (Some(path), Some(method), Some(submit), None) =
+        (tokens.next(), tokens.next(), tokens.next(), tokens.next())
+    else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P970",
+                "parse",
+                "a UI action requires path, method and submit route",
+                span(line),
+            )
+            .expected("action /label POST /submit [redirect /page]", &line.text),
+        );
+        return;
+    };
+    if !path.starts_with('/') {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P971",
+                "parse",
+                "a UI action label path must be absolute",
+                span(line),
+            )
+            .expected("absolute path", path),
+        );
+        return;
+    }
+    if !submit.starts_with('/') {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P972",
+                "parse",
+                "a UI action submit path must be absolute",
+                span(line),
+            )
+            .expected("absolute path", submit),
+        );
+        return;
+    }
+    if !matches!(method.to_ascii_uppercase().as_str(), "POST") {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P973",
+                "parse",
+                "a UI action method must be POST",
+                span(line),
+            )
+            .expected("POST", method),
+        );
+        return;
+    }
+    actions.push(UiAction {
+        path: path.into(),
+        method: method.to_ascii_uppercase(),
+        submit: submit.into(),
+        redirect,
         span: span(line),
     });
 }

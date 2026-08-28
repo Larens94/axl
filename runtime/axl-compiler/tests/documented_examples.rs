@@ -553,6 +553,10 @@ fn documented_invalid_examples_report_stable_codes() {
             "AXL-U908",
             include_str!("../../../examples/invalid/ui-form-unknown-submit.axl"),
         ),
+        (
+            "AXL-U914",
+            include_str!("../../../examples/invalid/ui-path-binding.axl"),
+        ),
     ];
 
     for (code, source) in cases {
@@ -1369,6 +1373,7 @@ fn form_demo_manifest_render_and_serve_get_are_executable() {
         .unwrap_or_else(|diagnostics| panic!("form-demo failed: {diagnostics:#?}"));
     let manifest = axl_compiler::next::ui::ui_manifest(&compiled.graph);
     assert_eq!(manifest["uis"][0]["forms"][0]["submit"], "/clienti");
+    assert_eq!(manifest["uis"][0]["forms"][0]["redirect"], "/clienti");
     assert_eq!(manifest["uis"][0]["forms"][0]["flow"], "CreaCliente");
 
     let rendered = axl_compiler::next::ui::render_form(&compiled.graph, "/clienti/new").unwrap();
@@ -1406,6 +1411,31 @@ fn form_demo_manifest_render_and_serve_get_are_executable() {
     );
     assert_eq!(post_api.status, 200);
     assert_eq!(post_api.body["ok"]["nome"], "Alice");
+
+    let form_post = axl_compiler::next::http::dispatch_with_headers(
+        &compiled.graph,
+        &mut axl_compiler::next::runtime::BuiltinRuntime::new().unwrap(),
+        "POST",
+        "/clienti",
+        serde_json::json!({
+            "nome": "Bob Form",
+            "email": "bob@example.com",
+            "budget": "2500",
+            "stato": "attivo"
+        }),
+        &std::collections::BTreeMap::from([(
+            "content-type".into(),
+            "application/x-www-form-urlencoded".into(),
+        )]),
+    );
+    assert_eq!(form_post.status, 303);
+    assert_eq!(
+        form_post.headers.get("location").map(String::as_str),
+        Some("/clienti")
+    );
+    assert_eq!(form_post.body["ok"]["nome"], "Bob Form");
+    assert_eq!(form_post.body["ok"]["budget"].as_f64(), Some(2500.0));
+    assert_eq!(form_post.body["ok"]["stato"], "attivo");
 }
 
 #[test]

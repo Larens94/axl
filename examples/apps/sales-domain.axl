@@ -98,6 +98,16 @@ flow CercaClientiAttiviDemoUnit ClienteQuery -> Result<ClientePage>
   run pagina = CercaClientiAttivi(input)?
   return pagina
 
+flow PaginaClienti unit -> Result<ClientePage>
+  in store: ArchivioClienti = MemoriaClienti
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
 flow PaginaClientiDemoUnit unit -> Result<ClientePage>
   in store: ArchivioClienti = MemoriaClienti
   make cliente1: Cliente
@@ -217,6 +227,16 @@ flow CercaProdottiPerSkuDemoUnit ProdottoQuery -> Result<ProdottoPage>
   run pagina = CercaProdottiPerSku(input)?
   return pagina
 
+flow PaginaProdotti unit -> Result<ProdottoPage>
+  in store: ArchivioProdotti = MemoriaProdotti
+  make query: ProdottoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
 flow PaginaProdottiDemoUnit unit -> Result<ProdottoPage>
   in store: ArchivioProdotti = MemoriaProdotti
   make prodotto1: Prodotto
@@ -273,6 +293,9 @@ entity PreventivoPage
   total: int required
   limit: int required
   offset: int required
+
+entity WorkflowConfirm
+  nota: text optional
 
 capacity ArchivioPreventivi
   op save Preventivo -> Result<Preventivo>
@@ -408,6 +431,16 @@ flow SeedPreventivoDemoUnit unit -> Result<Preventivo>
   call salvato = store.save(valida)?
   return salvato
 
+flow PaginaPreventivi unit -> Result<PreventivoPage>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  make query: PreventivoQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
 flow PaginaPreventiviDemoUnit unit -> Result<PreventivoPage>
   in store: ArchivioPreventivi = MemoriaPreventivi
   run seed = SeedPreventivoDemoUnit(input)?
@@ -480,6 +513,101 @@ flow AnnullaPreventivo uuid -> Result<Preventivo>
   run valida = ValidaPreventivo(aggiornato)?
   call salvato = store.save(valida)?
   return salvato
+
+flow DettaglioPreventivo uuid -> Result<Preventivo>
+  run trovato = CercaPreventivo(input)?
+  return trovato
+
+flow IdentitaPreventivo Preventivo -> Result<Preventivo>
+  return input
+
+flow UltimoPreventivo WorkflowConfirm -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  make query: PreventivoQuery
+    order_by = "id"
+    direction = "desc"
+    limit = 1
+    offset = 0
+  call pagina = store.query(query)?
+  race primo: Preventivo = pagina.items as item
+    run = IdentitaPreventivo(item)?
+  return primo
+
+flow DettaglioPreventivoLive unit -> Result<Preventivo>
+  make confirm: WorkflowConfirm
+  run ultimo = UltimoPreventivo(confirm)?
+  return ultimo
+
+flow InviaPreventivoLive WorkflowConfirm -> Result<Preventivo>
+  run ultimo = UltimoPreventivo(input)?
+  run inviato = InviaPreventivo(ultimo.id)?
+  return inviato
+
+flow ConfermaPreventivoLive WorkflowConfirm -> Result<Preventivo>
+  run ultimo = UltimoPreventivo(input)?
+  run confermato = ConfermaPreventivo(ultimo.id)?
+  return confermato
+
+flow DettaglioPreventivoLiveEval unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  run dettaglio = DettaglioPreventivoLive(input)?
+  return dettaglio
+
+flow InviaPreventivoLiveEval unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  make confirm: WorkflowConfirm
+  run inviato = InviaPreventivoLive(confirm)?
+  return inviato
+
+flow ConfermaPreventivoLiveEval unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  make confirm: WorkflowConfirm
+  run inviato = InviaPreventivoLive(confirm)?
+  run confermato = ConfermaPreventivoLive(confirm)?
+  return confermato
+
+flow DettaglioPreventivoDemoUnit unit -> Result<Preventivo>
+  run seed = SeedPreventivoDemoUnit(input)?
+  run dettaglio = DettaglioPreventivo(seed.id)?
+  return dettaglio
+
+flow RenderDettaglioPreventivoDemoUnit unit -> Result<Preventivo>
+  run dettaglio = DettaglioPreventivoDemoUnit(input)?
+  return dettaglio
+
+flow SeedPreventivoDemoForm WorkflowConfirm -> Result<Preventivo>
+  in store: ArchivioPreventivi = MemoriaPreventivi
+  make riga1: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+    prezzo_unitario = 129900
+    importo = 259800
+  make riga2: RigaPreventivo
+    prodotto_id = "prodotto-002"
+    quantita = 3
+    prezzo_unitario = 2990
+    importo = 8970
+  let righe = [riga1, riga2]
+  make preventivo: Preventivo
+    id = "preventivo-001"
+    cliente_id = "cliente-001"
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 268770
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow InviaPreventivoDemoForm WorkflowConfirm -> Result<Preventivo>
+  run seed = SeedPreventivoDemoForm(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  return inviato
+
+flow ConfermaPreventivoDemoForm WorkflowConfirm -> Result<Preventivo>
+  run seed = SeedPreventivoDemoForm(input)?
+  run inviato = InviaPreventivo(seed.id)?
+  run confermato = ConfermaPreventivo(seed.id)?
+  return confermato
 
 flow InviaPreventivoDemoUnit unit -> Result<Preventivo>
   run seed = SeedPreventivoDemoUnit(input)?

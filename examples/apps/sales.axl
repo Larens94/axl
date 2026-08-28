@@ -36,9 +36,15 @@ api VenditeApi
   post /preventivi/durable/{id}/annulla uuid -> Result<Preventivo> = AnnullaPreventivoSqlite from path.id
 
 ui VenditeUi
-  page /clienti unit -> Result<ClientePage> = PaginaClientiDemoUnit
+  page /clienti unit -> Result<ClientePage> = PaginaClienti
+  page /clienti/demo unit -> Result<ClientePage> = PaginaClientiDemoUnit
   form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
-  page /prodotti unit -> Result<ProdottoPage> = PaginaProdottiDemoUnit
+  page /prodotti unit -> Result<ProdottoPage> = PaginaProdotti
+  page /prodotti/demo unit -> Result<ProdottoPage> = PaginaProdottiDemoUnit
   form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdotto submit /prodotti
-  page /preventivi unit -> Result<PreventivoPage> = PaginaPreventiviDemoUnit
-  form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivo submit /preventivi
+  page /preventivi unit -> Result<PreventivoPage> = PaginaPreventivi
+  page /preventivi/demo unit -> Result<PreventivoPage> = PaginaPreventiviDemoUnit
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+  form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivo submit /preventivi redirect /preventivi
+  action /preventivi/invia POST /preventivi/{id}/invia redirect /preventivi/{id}
+  action /preventivi/conferma POST /preventivi/{id}/conferma redirect /preventivi/{id}

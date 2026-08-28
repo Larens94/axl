@@ -258,15 +258,80 @@ cargo run -p axl-compiler -- \
   eval examples/apps/sales.axl CreaCliente examples/apps/inputs/sales-cliente.json
 
 cargo run -p axl-compiler -- \
-  render examples/apps/sales.axl /clienti examples/apps/inputs/unit.json
+  render examples/apps/sales.axl /clienti/demo examples/apps/inputs/unit.json
+
+# Full browser demo (one serve session; UI GET shares the API memory store):
+#
+# 1. Create cliente (form POST → 303 to /clienti)
+curl -s -D - -o /dev/null -X POST http://127.0.0.1:8080/clienti \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -H 'accept: text/html' \
+  --data-urlencode 'id=cliente-form-001' \
+  --data-urlencode 'nome=Form Client' \
+  --data-urlencode 'email=form@example.com' \
+  --data-urlencode 'budget=5000' \
+  --data-urlencode 'stato=attivo' | grep -i '^location: /clienti'
+curl -s http://127.0.0.1:8080/clienti | grep 'Form Client'
+
+# 2. Create preventivo (JSON POST)
+curl -s -X POST http://127.0.0.1:8080/preventivi \
+  -H 'content-type: application/json' \
+  -d @examples/apps/inputs/sales-preventivo.json
+# → {"ok":{"id":"preventivo-002",...,"stato":"bozza",...}}
+
+# 3. Open templated detail page (list links href="/preventivi/{id}")
+curl -s -H 'accept: text/html' http://127.0.0.1:8080/preventivi/preventivo-002 | grep 'preventivo-002'
+
+# 4. Invia from detail UI (ui action → POST /preventivi/live/invia → 303 /preventivi/{id})
+curl -s -D - -o /dev/null -X POST http://127.0.0.1:8080/preventivi/live/invia \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -H 'accept: text/html' \
+  --data-urlencode 'nota=' | grep -i '^location: /preventivi/preventivo-002'
+curl -s -H 'accept: text/html' http://127.0.0.1:8080/preventivi/preventivo-002 | grep 'inviato'
+
+# 5. Conferma (same live/* pattern)
+curl -s -D - -o /dev/null -X POST http://127.0.0.1:8080/preventivi/live/conferma \
+  -H 'content-type: application/x-www-form-urlencoded' \
+  -H 'accept: text/html' \
+  --data-urlencode 'nota=' | grep -i '^location: /preventivi/preventivo-002'
+curl -s -H 'accept: text/html' http://127.0.0.1:8080/preventivi/preventivo-002 | grep 'confermato'
+
+# JSON API workflow (same session, path-param routes):
+curl -s -X POST http://127.0.0.1:8080/preventivi/preventivo-002/invia | jq '.ok.stato'
+curl -s http://127.0.0.1:8080/preventivi/preventivo-002 | jq '.ok.stato'
+
+# Seeded demo list + templated detail (eval/render companion):
+cargo run -p axl-compiler -- \
+  eval examples/apps/sales.axl RenderDettaglioPreventivoDemoUnit examples/apps/inputs/unit.json
+cargo run -p axl-compiler -- \
+  render examples/apps/sales.axl /preventivi/preventivo-001 null
+# render CLI uses a fresh store (no row data); serve GET after /preventivi/demo seeds in-session.
+
+# Durable workflow survives restart:
+curl -s -X POST http://127.0.0.1:8080/preventivi/durable \
+  -H 'content-type: application/json' \
+  -d @examples/apps/inputs/sales-preventivo.json
+curl -s -X POST http://127.0.0.1:8080/preventivi/durable/preventivo-002/invia
 
 ./scripts/verify-sales.sh
 ```
 
+**Preventivo detail UI** uses `page /preventivi/{id}` with `CercaPreventivo from path.id`.
+List tables link each row `id` to `/preventivi/{id}`. Workflow buttons on the detail
+page are `ui action` forms. Because `ui action` submit paths must be absolute and
+static (`AXL-P972`), actions POST to `/preventivi/live/invia` and
+`/preventivi/live/conferma` (flows resolve the latest preventivo in the store) and
+redirect to `/preventivi/{id}` with the response `ok.id` substituted. Path-param API
+routes `POST /preventivi/{id}/invia` remain for JSON clients.
+
 Expected results:
 
 - `./scripts/demo-sales.sh` serves `examples/apps/sales.axl` on `127.0.0.1:8080`;
-- memory eval/render gates pass for clienti, prodotti, preventivi;
-- durable eval save/find and HTTP POST/GET survive a server restart;
-- workflow transitions work on both memory and durable stores;
+- memory eval/render gates pass for clienti, prodotti, preventivi (seeded pages at `/clienti/demo`, `/prodotti/demo`, `/preventivi/demo`);
+- live list pages (`/clienti`, `/prodotti`, `/preventivi`) query the memory store; `GET /clienti` after form POST shows the new row in HTML (shared `BuiltinRuntime` in serve);
+- form POST (`application/x-www-form-urlencoded`) creates `Cliente` via HTTP; `GET /clienti` and JSON query confirm the record in the same session;
+- preventivo detail at `/preventivi/{id}` (templated path); seeded eval `RenderDettaglioPreventivoDemoUnit` + serve GET after `/preventivi/demo` show `preventivo-001`;
+- workflow actions on detail POST to `/preventivi/live/invia` and `/preventivi/live/conferma` with `303` redirect to `/preventivi/{id}` (`accept: text/html`);
+- list pages link `id` uuid fields to `/preventivi/{id}` (path template substitution);
+- preventivo workflow (`bozza` → `inviato` → `confermato`) via JSON POST after create on memory and durable routes;
 - verify script passes check, eval, render, UI manifest, serve GET and durable gates.

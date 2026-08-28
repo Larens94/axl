@@ -1,0 +1,12 @@
+axl 4
+app InvalidUiPathBinding
+
+entity Preventivo
+  id: uuid key
+  stato: text required
+
+flow CercaPreventivo uuid -> Result<Preventivo>
+  return input
+
+ui BrokenScreen
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.missing

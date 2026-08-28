@@ -82,8 +82,15 @@ pub fn dispatch_with_headers(
 ) -> HttpResult {
     let method = method.to_ascii_lowercase();
     let (request_path, query) = path.split_once('?').unwrap_or((path, ""));
+    let api_match = if method == "options" {
+        None
+    } else {
+        match_http_route(graph, &method, request_path)
+    };
+    let exact_ui = ui::matches_exact_ui_path(graph, request_path);
     if method == "get"
-        && let Some(result) = dispatch_ui_get(graph, request_path)
+        && (exact_ui || accepts_html(headers))
+        && let Some(result) = dispatch_ui_get(graph, runtime, request_path)
     {
         return result;
     }
@@ -91,27 +98,14 @@ pub fn dispatch_with_headers(
         return dispatch_cors_preflight(graph, runtime, request_path, headers)
             .unwrap_or_else(|| HttpResult::new(404, json!({ "error": "route_not_found" })));
     }
-    let mut candidates = graph
-        .nodes
-        .iter()
-        .filter(|node| node.kind == "route" && node.metadata.get("method") == Some(&method));
-    let matched = candidates
-        .clone()
-        .find(|node| {
-            node.metadata
-                .get("path")
-                .is_some_and(|value| value == request_path)
-        })
-        .map(|route| (route, BTreeMap::new()))
-        .or_else(|| {
-            candidates.find_map(|route| {
-                match_http_path(route.metadata.get("path")?, request_path)
-                    .map(|parameters| (route, parameters))
-            })
-        });
-    let Some((route, path_parameters)) = matched else {
+    let Some((route, mut path_parameters)) = api_match else {
         return HttpResult::new(404, json!({ "error": "route_not_found" }));
     };
+    if input.is_object() {
+        if let Some(route_path) = route.metadata.get("path") {
+            prefer_form_path_parameters(&mut path_parameters, route_path, &input);
+        }
+    }
     if let Some(result) =
         apply_request_middleware(graph, runtime, route, &method, request_path, headers)
     {
@@ -146,10 +140,45 @@ pub fn dispatch_with_headers(
         Err(error) => HttpResult::new(400, json!({ "error": error.to_string() })),
     };
     apply_response_middleware(graph, runtime, route, &mut result);
+    if method == "post" {
+        apply_form_post_redirect(graph, request_path, headers, &mut result);
+    }
     result
 }
 
-fn dispatch_ui_get(graph: &GraphIr, request_path: &str) -> Option<HttpResult> {
+fn match_http_route<'a>(
+    graph: &'a GraphIr,
+    method: &str,
+    request_path: &str,
+) -> Option<(&'a super::ir::GraphNode, BTreeMap<String, String>)> {
+    let mut candidates = graph.nodes.iter().filter(|node| {
+        node.kind == "route"
+            && node
+                .metadata
+                .get("method")
+                .is_some_and(|value| value == method)
+    });
+    candidates
+        .clone()
+        .find(|node| {
+            node.metadata
+                .get("path")
+                .is_some_and(|value| value == request_path)
+        })
+        .map(|route| (route, BTreeMap::new()))
+        .or_else(|| {
+            candidates.find_map(|route| {
+                match_http_path(route.metadata.get("path")?, request_path)
+                    .map(|parameters| (route, parameters))
+            })
+        })
+}
+
+fn dispatch_ui_get(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    request_path: &str,
+) -> Option<HttpResult> {
     if let Ok(rendered) = ui::render_form(graph, request_path) {
         let mut result = HttpResult::new(200, Value::String(rendered.html));
         result
@@ -157,7 +186,7 @@ fn dispatch_ui_get(graph: &GraphIr, request_path: &str) -> Option<HttpResult> {
             .insert("content-type".into(), "text/html; charset=utf-8".into());
         return Some(result);
     }
-    if let Ok(rendered) = ui::render_page(graph, request_path, Value::Null) {
+    if let Ok(rendered) = ui::render_page_with_runtime(graph, runtime, request_path, Value::Null) {
         let mut result = HttpResult::new(200, Value::String(rendered.html));
         result
             .headers
@@ -167,7 +196,7 @@ fn dispatch_ui_get(graph: &GraphIr, request_path: &str) -> Option<HttpResult> {
     None
 }
 
-fn match_http_path(pattern: &str, request: &str) -> Option<BTreeMap<String, String>> {
+pub(crate) fn match_http_path(pattern: &str, request: &str) -> Option<BTreeMap<String, String>> {
     let pattern = pattern.split('/').collect::<Vec<_>>();
     let request = request.split('/').collect::<Vec<_>>();
     if pattern.len() != request.len() {
@@ -259,6 +288,15 @@ fn route_has_cors_middleware(graph: &GraphIr, route: &super::ir::GraphNode) -> b
     false
 }
 
+fn field_is_optional(field: &super::ir::GraphNode) -> bool {
+    let field_type = field.type_name.as_deref().unwrap_or("unit");
+    field.metadata.get("qualifiers").is_some_and(|values| {
+        let qualifiers = values.split(',').collect::<Vec<_>>();
+        qualifiers.contains(&"optional")
+            || (qualifiers.contains(&"key") && !qualifiers.contains(&"required"))
+    }) || field_type.starts_with("Option<")
+}
+
 fn bind_request_input(
     graph: &GraphIr,
     route: &super::ir::GraphNode,
@@ -276,7 +314,7 @@ fn bind_request_input(
         return bind_composite_input(graph, route, body, path, query, headers);
     }
     if source == "body" {
-        return Ok(body);
+        return coerce_body_input(graph, route, body);
     }
     let name = route
         .metadata
@@ -351,11 +389,7 @@ fn bind_composite_input(
             .find(|field| field.name == target)
             .ok_or_else(|| format!("unknown_composite_field:{target}"))?;
         let field_type = field.type_name.as_deref().unwrap_or("unit");
-        let optional = field
-            .metadata
-            .get("qualifiers")
-            .is_some_and(|values| values.split(',').any(|value| value == "optional"))
-            || field_type.starts_with("Option<");
+        let optional = field_is_optional(field);
         let source = binding
             .metadata
             .get("source")
@@ -442,12 +476,244 @@ fn percent_decode(value: &str) -> Option<String> {
     String::from_utf8(output).ok()
 }
 
-fn parse_bound_scalar(type_name: &str, value: &str) -> Result<Value, String> {
+fn coerce_body_input(
+    graph: &GraphIr,
+    route: &super::ir::GraphNode,
+    body: Value,
+) -> Result<Value, String> {
+    let input_type = route
+        .type_name
+        .as_deref()
+        .and_then(|value| value.split_once("->"))
+        .map(|value| value.0)
+        .ok_or_else(|| "route_has_no_input_type".to_string())?;
+    let Some(entity) = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "entity" && node.name == input_type)
+    else {
+        return Ok(body);
+    };
+    let Some(body_object) = body.as_object() else {
+        return Ok(body);
+    };
+    let fields = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == entity.id)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .filter(|node| node.kind == "field")
+        .collect::<Vec<_>>();
+    let mut result = serde_json::Map::new();
+    for field in fields {
+        let target = field.name.as_str();
+        let field_type = field.type_name.as_deref().unwrap_or("unit");
+        let optional = field_is_optional(field);
+        match body_object.get(target) {
+            Some(Value::String(raw)) => {
+                result.insert(target.into(), parse_bound_scalar(field_type, raw)?);
+            }
+            Some(value) => {
+                result.insert(target.into(), value.clone());
+            }
+            None if field_type == "bool" && !optional => {
+                result.insert(target.into(), Value::Bool(false));
+            }
+            None if optional => {}
+            None => return Err(format!("missing_body_field:{target}")),
+        }
+    }
+    Ok(Value::Object(result))
+}
+
+fn is_form_urlencoded(content_type: Option<&str>) -> bool {
+    content_type
+        .and_then(|value| value.split(';').next())
+        .is_some_and(|value| {
+            value
+                .trim()
+                .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+        })
+}
+
+fn accepts_html(headers: &BTreeMap<String, String>) -> bool {
+    headers.get("accept").is_some_and(|value| {
+        value.split(',').any(|part| {
+            part.split(';')
+                .next()
+                .is_some_and(|media| media.trim().eq_ignore_ascii_case("text/html"))
+        })
+    })
+}
+
+fn form_parent_path(form_path: &str) -> Option<String> {
+    let trimmed = form_path.trim_end_matches('/');
+    let (parent, _) = trimmed.rsplit_once('/')?;
+    if parent.is_empty() {
+        Some("/".into())
+    } else {
+        Some(parent.into())
+    }
+}
+
+pub(crate) fn substitute_path_template(
+    template: &str,
+    parameters: &BTreeMap<String, String>,
+) -> Option<String> {
+    let mut resolved = template.to_string();
+    for segment in template.split('/') {
+        let Some(name) = segment
+            .strip_prefix('{')
+            .and_then(|value| value.strip_suffix('}'))
+        else {
+            continue;
+        };
+        let value = parameters.get(name)?;
+        resolved = resolved.replace(&format!("{{{name}}}"), value);
+    }
+    if resolved.contains('{') {
+        return None;
+    }
+    Some(resolved)
+}
+
+pub(crate) fn substitute_path_from_value(template: &str, body: &Value) -> Option<String> {
+    let ok = body.get("ok")?;
+    let mut parameters = BTreeMap::new();
+    for segment in template.split('/') {
+        let Some(name) = segment
+            .strip_prefix('{')
+            .and_then(|value| value.strip_suffix('}'))
+        else {
+            continue;
+        };
+        let value = ok.get(name)?.as_str()?.to_string();
+        parameters.insert(name.into(), value);
+    }
+    substitute_path_template(template, &parameters)
+}
+
+pub(crate) fn path_template_matches(template: &str, request: &str) -> bool {
+    if !template.contains('{') {
+        return normalize_http_path(template) == normalize_http_path(request);
+    }
+    match_http_path(template, request).is_some()
+}
+
+fn normalize_http_path(path: &str) -> String {
+    if path == "/" {
+        return "/".into();
+    }
+    path.trim_end_matches('/').to_string()
+}
+
+fn submit_path_matches(template: &str, request_path: &str) -> bool {
+    if template.contains('{') {
+        path_template_matches(template, request_path)
+    } else {
+        normalize_http_path(template) == normalize_http_path(request_path)
+    }
+}
+
+fn prefer_form_path_parameters(
+    path_parameters: &mut BTreeMap<String, String>,
+    route_path_template: &str,
+    body: &Value,
+) {
+    if !body.is_object() {
+        return;
+    }
+    for segment in route_path_template.split('/') {
+        let Some(name) = segment
+            .strip_prefix('{')
+            .and_then(|value| value.strip_suffix('}'))
+        else {
+            continue;
+        };
+        if let Some(Value::String(value)) = body.get(name) {
+            path_parameters.insert(name.into(), value.clone());
+        }
+    }
+}
+
+fn form_redirect_location(graph: &GraphIr, submit_path: &str) -> Option<String> {
+    if let Some(form) = graph.nodes.iter().find(|node| {
+        node.kind == "form"
+            && node
+                .metadata
+                .get("submit")
+                .is_some_and(|value| submit_path_matches(value, submit_path))
+    }) {
+        if let Some(redirect) = form.metadata.get("redirect") {
+            return Some(redirect.clone());
+        }
+        let form_path = form.metadata.get("path")?;
+        return form_parent_path(form_path);
+    }
+    let action = graph.nodes.iter().find(|node| {
+        node.kind == "ui_action"
+            && node
+                .metadata
+                .get("submit")
+                .is_some_and(|value| submit_path_matches(value, submit_path))
+    })?;
+    if let Some(redirect) = action.metadata.get("redirect") {
+        return Some(redirect.clone());
+    }
+    action
+        .metadata
+        .get("path")
+        .and_then(|path| form_parent_path(path))
+}
+
+fn apply_form_post_redirect(
+    graph: &GraphIr,
+    submit_path: &str,
+    headers: &BTreeMap<String, String>,
+    result: &mut HttpResult,
+) {
+    if result.status != 200 || result.body.get("error").is_some() {
+        return;
+    }
+    let wants_redirect = is_form_urlencoded(headers.get("content-type").map(String::as_str))
+        || accepts_html(headers);
+    if !wants_redirect {
+        return;
+    }
+    let Some(location) = form_redirect_location(graph, submit_path) else {
+        return;
+    };
+    let location = substitute_path_from_value(&location, &result.body).unwrap_or(location);
+    result.status = 303;
+    result.headers.insert("location".into(), location);
+}
+
+fn parse_form_urlencoded(body: &[u8]) -> Result<Value, String> {
+    let text = std::str::from_utf8(body)
+        .map_err(|_| "invalid_form_encoding:body_is_not_utf8".to_string())?;
+    let mut object = serde_json::Map::new();
+    for pair in text.split('&') {
+        if pair.is_empty() {
+            continue;
+        }
+        let (key, value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode(key).ok_or_else(|| format!("invalid_form_key:{key}"))?;
+        let value = percent_decode(value).ok_or_else(|| format!("invalid_form_value:{value}"))?;
+        object.insert(key, Value::String(value));
+    }
+    Ok(Value::Object(object))
+}
+
+pub(crate) fn parse_bound_scalar(type_name: &str, value: &str) -> Result<Value, String> {
     match type_name {
-        "bool" => value
-            .parse::<bool>()
-            .map(Value::Bool)
-            .map_err(|_| format!("invalid_bool:{value}")),
+        "bool" => match value {
+            "on" | "true" | "1" => Ok(Value::Bool(true)),
+            "off" | "false" | "0" => Ok(Value::Bool(false)),
+            other => other
+                .parse::<bool>()
+                .map(Value::Bool)
+                .map_err(|_| format!("invalid_bool:{other}")),
+        },
         "int" => value
             .parse::<i64>()
             .map(|value| json!(value))
@@ -834,42 +1100,51 @@ async fn handle(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
+    let headers = headers
+        .iter()
+        .filter_map(|(name, value)| {
+            Some((
+                name.as_str().to_ascii_lowercase(),
+                value.to_str().ok()?.to_string(),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
     let input = if body.is_empty() {
         Value::Null
     } else {
-        match serde_json::from_slice(&body) {
-            Ok(value) => value,
-            Err(error) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": format!("invalid_json: {error}") })),
-                )
-                    .into_response();
+        let content_type = headers.get("content-type").map(String::as_str);
+        if is_form_urlencoded(content_type) {
+            match parse_form_urlencoded(&body) {
+                Ok(value) => value,
+                Err(message) => {
+                    return (StatusCode::BAD_REQUEST, Json(json!({ "error": message })))
+                        .into_response();
+                }
+            }
+        } else {
+            match serde_json::from_slice(&body) {
+                Ok(value) => value,
+                Err(error) => {
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        Json(json!({ "error": format!("invalid_json: {error}") })),
+                    )
+                        .into_response();
+                }
             }
         }
     };
     let result = match state.runtime.lock() {
-        Ok(mut runtime) => {
-            let headers = headers
-                .iter()
-                .filter_map(|(name, value)| {
-                    Some((
-                        name.as_str().to_ascii_lowercase(),
-                        value.to_str().ok()?.to_string(),
-                    ))
-                })
-                .collect::<BTreeMap<_, _>>();
-            dispatch_with_headers(
-                &state.graph,
-                &mut *runtime,
-                method.as_str(),
-                uri.path_and_query()
-                    .map(|value| value.as_str())
-                    .unwrap_or_else(|| uri.path()),
-                input,
-                &headers,
-            )
-        }
+        Ok(mut runtime) => dispatch_with_headers(
+            &state.graph,
+            &mut *runtime,
+            method.as_str(),
+            uri.path_and_query()
+                .map(|value| value.as_str())
+                .unwrap_or_else(|| uri.path()),
+            input,
+            &headers,
+        ),
         Err(_) => HttpResult::new(500, json!({ "error": "provider_runtime_unavailable" })),
     };
     let status = StatusCode::from_u16(result.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
@@ -1288,6 +1563,206 @@ api CorsApi
             )
             .status,
             404
+        );
+    }
+
+    #[test]
+    fn form_post_redirects_to_list_page_for_urlencoded_submit() {
+        let graph = compile_source(
+            r#"axl 4
+app FormRedirectDemo
+enum Stato
+  attivo
+entity Cliente
+  nome: text required
+  email: email required
+  budget: money required
+  stato: Stato required
+flow CreaCliente Cliente -> Result<Cliente>
+  return input
+api ClienteApi
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+ui ClienteScreen
+  page /clienti unit -> text = Echo
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+flow Echo unit -> text
+  return "ok"
+"#,
+        )
+        .unwrap()
+        .graph;
+        let mut headers = BTreeMap::new();
+        headers.insert(
+            "content-type".into(),
+            "application/x-www-form-urlencoded".into(),
+        );
+        let result = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "post",
+            "/clienti",
+            json!({
+                "nome": "Alice",
+                "email": "alice@example.com",
+                "budget": "1000",
+                "stato": "attivo"
+            }),
+            &headers,
+        );
+        assert_eq!(result.status, 303);
+        assert_eq!(
+            result.headers.get("location").map(String::as_str),
+            Some("/clienti")
+        );
+
+        let json_only = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "post",
+            "/clienti",
+            json!({
+                "nome": "Bob",
+                "email": "bob@example.com",
+                "budget": 1000,
+                "stato": "attivo"
+            }),
+            &BTreeMap::new(),
+        );
+        assert_eq!(json_only.status, 200);
+        assert!(!json_only.headers.contains_key("location"));
+    }
+
+    #[test]
+    fn action_post_redirects_to_templated_detail_page() {
+        let graph = compile_source(
+            r#"axl 4
+app TemplatedRedirectDemo
+entity Preventivo
+  id: uuid key
+  stato: text required
+flow InviaPreventivo uuid -> Result<Preventivo>
+  make p: Preventivo
+    id = input
+    stato = "inviato"
+  return p
+api PreventivoApi
+  post /preventivi/{id}/invia uuid -> Result<Preventivo> = InviaPreventivo from path.id
+ui PreventivoScreen
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+  action /preventivi/invia POST /preventivi/{id}/invia redirect /preventivi/{id}
+flow CercaPreventivo uuid -> Result<Preventivo>
+  make p: Preventivo
+    id = input
+    stato = "bozza"
+  return p
+"#,
+        )
+        .unwrap()
+        .graph;
+        let mut headers = BTreeMap::new();
+        headers.insert(
+            "content-type".into(),
+            "application/x-www-form-urlencoded".into(),
+        );
+        headers.insert("accept".into(), "text/html".into());
+        let result = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "post",
+            "/preventivi/preventivo-001/invia",
+            json!({ "id": "preventivo-001" }),
+            &headers,
+        );
+        assert_eq!(result.status, 303);
+        assert_eq!(
+            result.headers.get("location").map(String::as_str),
+            Some("/preventivi/preventivo-001")
+        );
+    }
+
+    #[test]
+    fn serve_get_dispatches_templated_ui_page() {
+        let graph = compile_source(
+            r#"axl 4
+app TemplatedServeDemo
+entity Preventivo
+  id: uuid key
+  stato: text required
+flow CercaPreventivo uuid -> Result<Preventivo>
+  make p: Preventivo
+    id = input
+    stato = "bozza"
+  return p
+ui PreventivoScreen
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+"#,
+        )
+        .unwrap()
+        .graph;
+        let mut headers = BTreeMap::new();
+        headers.insert("accept".into(), "text/html".into());
+        let result = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "get",
+            "/preventivi/preventivo-001",
+            Value::Null,
+            &headers,
+        );
+        assert_eq!(result.status, 200);
+        assert!(
+            result
+                .body
+                .as_str()
+                .is_some_and(|html| html.contains("preventivo-001"))
+        );
+    }
+
+    #[test]
+    fn parses_form_urlencoded_fields() {
+        let body = b"nome=Alice%20Rossi&email=alice%40example.com&budget=1000&stato=attivo";
+        let parsed = parse_form_urlencoded(body).unwrap();
+        assert_eq!(parsed["nome"], "Alice Rossi");
+        assert_eq!(parsed["email"], "alice@example.com");
+        assert_eq!(parsed["budget"], "1000");
+        assert_eq!(parsed["stato"], "attivo");
+    }
+
+    #[test]
+    fn dispatches_form_encoded_entity_body_to_flow() {
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let accepted = dispatch(&graph, "POST", "/validate", json!({ "amount": "10" }));
+        assert_eq!(accepted.status, 200);
+        assert_eq!(accepted.body["ok"]["amount"].as_f64(), Some(10.0));
+
+        let rejected = dispatch(&graph, "post", "/validate", json!({ "amount": "0" }));
+        assert_eq!(rejected.status, 422);
+        assert_eq!(rejected.body["error"], "amount_invalid");
+    }
+
+    #[test]
+    fn form_bool_checkbox_on_off_and_absent() {
+        assert_eq!(parse_bound_scalar("bool", "on").unwrap(), Value::Bool(true));
+        assert_eq!(
+            parse_bound_scalar("bool", "off").unwrap(),
+            Value::Bool(false)
+        );
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let without_verbose = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "put",
+            "/items/item-1?term=ledger",
+            json!({"amount": 25}),
+            &BTreeMap::new(),
+        );
+        assert_eq!(without_verbose.status, 200);
+        assert!(
+            !without_verbose
+                .body
+                .as_object()
+                .unwrap()
+                .contains_key("verbose")
         );
     }
 }

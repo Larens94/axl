@@ -1,21 +1,14 @@
-# Judge prompt — sales milestone 7 (UI actions + form POST)
+# Judge prompt — sales milestone 14
 
 Repo: `/Users/fabriziocorpora/Desktop/workspaces/axl`
 
-Judge agent. Milestones 1–6 done.
+UI path templates work. Sales still uses `/preventivi/live/invia` for actions because `ui action` submit must be static.
 
-## Milestone 7
+## Milestone 14
 
-If steward added **form POST** handling in `serve` (application/x-www-form-urlencoded → JSON entity), prove:
-- Browser-style POST to `/clienti` from form fields creates cliente via HTTP in same server session
-- List page shows new record after POST+redirect or GET refresh
+1. If steward allows action submit with path template OR hidden id field on detail page — wire `POST /preventivi/{id}/invia` from detail UI
+2. Else: document live/* pattern in README; add eval proof `render /preventivi/preventivo-001` after seed flow in same eval (new DemoUnit)
+3. Update `examples/apps/README.md` with full browser demo: create cliente → create preventivo → open `/preventivi/{id}` → invia → conferma
+4. Remove obsolete `/preventivi/detail` if still present in domain
 
-Add to sales:
-- `page /preventivi/{id}` **only if** UI path templates exist — else add **action links** on list HTML via steward `ui action` primitive if available
-- Or: flows `DettaglioPreventivo` + render page with buttons linking to POST `/preventivi/durable/{id}/invia` (document curl)
-
-Steward may have added `serve` form POST decode — use it.
-
-Extend verify-sales.sh with form POST smoke if supported.
-
-Report A–F. No commit.
+verify-sales.sh. Report A–F. No commit.

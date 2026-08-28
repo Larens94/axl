@@ -846,29 +846,70 @@ server and CLI restarts.
 
 ### UI pages and forms
 
-UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` nodes in Graph
-IR. A page binds an absolute path to a flow with an exact input/output signature:
+UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` / `ui_action` nodes in Graph
+IR. A page binds an absolute path to a flow with an exact input/output signature. Pages may
+use path templates with `{param}` placeholders, reusing the same `from path.name` binding
+model as HTTP routes:
 
 ```axl
 ui BalanceScreen
   page /balance BalanceInput -> money = CalculateBalance
+
+ui PreventivoScreen
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
 ```
+
+When a page declares `from path.name`, `serve` GET and `render` bind the matching path
+segment to the flow input (for example `render sales.axl /preventivi/preventivo-001 null`).
+The manifest records the template path in `path` and `template` when placeholders are present.
 
 A form binds an absolute path to an entity type and flow. The optional `submit` clause
 names the POST api route that receives the entity JSON; when omitted, the analyzer
-infers a POST route at the same path as the form:
+infers a POST route at the same path as the form. The optional `redirect` clause
+names the list page returned after a successful browser form POST; when omitted, the
+runtime derives it from the parent path of the form (for example `/clienti/new` →
+`/clienti`):
 
 ```axl
 ui ClienteScreen
-  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti redirect /clienti
 ```
+
+An action binds a label path to a POST api route and optional redirect page. Actions render
+as inline POST forms on the page named by `redirect` (or on pages that declare them).
+Redirect paths may use the same `{param}` templates; after a successful POST the runtime
+substitutes placeholders from the response `ok` object (for example `ok.id`). The action
+`submit` path may also use `{param}` templates when the redirect page binds the same
+parameter from `path` (for example `from path.id`); the renderer resolves placeholders
+from the current page path and evaluated page data, emits a concrete `action` URL, and
+includes hidden inputs for each template parameter (for example `id` from `ok.id`):
+
+```axl
+ui PreventivoScreen
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+  action /preventivi/invia POST /preventivi/{id}/invia redirect /preventivi/{id}
+```
+
+On `serve`, POST to a templated API route binds `path.id` (and other path parameters) from
+the request URL; when the body is `application/x-www-form-urlencoded`, a form field whose
+name matches the template parameter takes precedence over the URL segment.
+
+List pages render `id` fields with `uuid` type as links to a detail page template such as
+`/preventivi/{id}` (substituting the row `id` value) when that templated page exists in
+the same UI manifest. The legacy `{list_path}/detail` convention is still recognized.
 
 `axl-compiler ui` emits the manifest. `axl-compiler render` evaluates the bound
 flow with JSON input and emits HTML that displays typed scalar or entity fields
 from the eval result. `render_form` emits an HTML form with inputs derived from
 entity fields (text, money, int, enum as select, optional fields) and a navigation
 shell linking all `page` and `form` paths. `serve` returns `text/html` on GET for
-matching page and form paths. Application logic stays in AXL; the renderer only reads
+matching page and form paths. Exact UI paths (without `{param}` placeholders) are always
+served as HTML on GET. Templated UI pages are served when the client prefers HTML
+(`Accept: text/html`). When the same path is also served by an HTTP API route, JSON
+clients keep the API response unless they request HTML. After a successful POST to a form's `submit` route
+with `application/x-www-form-urlencoded` (or `Accept: text/html`), `serve` returns
+HTTP 303 with `Location` set to the form's `redirect` path or the inferred parent
+list page. Application logic stays in AXL; the renderer only reads
 Graph IR and manifest metadata. Duplicate paths inside one `ui` block and
 conflicts across `ui` blocks are rejected.
 
@@ -880,11 +921,18 @@ Implemented UI diagnostics:
 | `AXL-P951` | page missing flow binding |
 | `AXL-P952` | page missing output type |
 | `AXL-P953` | page missing path and input type |
+| `AXL-P954` | page binding needs a source and name |
 | `AXL-P960` | form missing flow binding |
 | `AXL-P961` | form missing output type |
 | `AXL-P962` | form missing path and entity type |
 | `AXL-P963` | form submit path must be absolute |
-| `AXL-U901` | `ui` requires at least one page or form |
+| `AXL-P964` | form redirect path must be absolute |
+| `AXL-P970` | action missing path, method or submit route |
+| `AXL-P971` | action label path must be absolute |
+| `AXL-P972` | action submit path must be absolute |
+| `AXL-P973` | action method must be POST |
+| `AXL-P974` | action redirect path must be absolute |
+| `AXL-U901` | `ui` requires at least one page, form or action |
 | `AXL-U902` | invalid page or form path |
 | `AXL-U903` | duplicate page path in one `ui` |
 | `AXL-U904` | unknown or non-flow page/form target |
@@ -892,6 +940,12 @@ Implemented UI diagnostics:
 | `AXL-U906` | page or form path conflicts across `ui` blocks |
 | `AXL-U907` | duplicate form path in one `ui` |
 | `AXL-U908` | unknown submit route for form |
+| `AXL-U910` | duplicate action path in one `ui` |
+| `AXL-U911` | unknown submit route for action |
+| `AXL-U912` | action method must be POST |
+| `AXL-U913` | invalid UI page binding name |
+| `AXL-U914` | page path binding has no matching placeholder |
+| `AXL-U915` | page path binding cannot construct input type |
 
 Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`.
 

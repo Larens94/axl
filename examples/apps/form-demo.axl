@@ -25,4 +25,4 @@ api ClienteApi
 
 ui ClienteScreen
   page /clienti unit -> text = ListaClienti
-  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti redirect /clienti

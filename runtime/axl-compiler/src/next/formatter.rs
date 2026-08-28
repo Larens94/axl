@@ -396,9 +396,14 @@ pub fn format(program: &Program) -> String {
             Declaration::Ui(ui) => {
                 output.push(format!("ui {}", ui.name));
                 for page in &ui.pages {
+                    let binding = page
+                        .input_name
+                        .as_deref()
+                        .map(|name| format!(" from {}.{name}", page.input_source))
+                        .unwrap_or_default();
                     output.push(format!(
-                        "  page {} {} -> {} = {}",
-                        page.path, page.input, page.output, page.flow
+                        "  page {} {} -> {} = {}{}",
+                        page.path, page.input, page.output, page.flow, binding
                     ));
                 }
                 for form in &ui.forms {
@@ -407,9 +412,25 @@ pub fn format(program: &Program) -> String {
                         .as_deref()
                         .map(|path| format!(" submit {path}"))
                         .unwrap_or_default();
+                    let redirect = form
+                        .redirect
+                        .as_deref()
+                        .map(|path| format!(" redirect {path}"))
+                        .unwrap_or_default();
                     output.push(format!(
-                        "  form {} {} -> {} = {}{}",
-                        form.path, form.entity, form.output, form.flow, submit
+                        "  form {} {} -> {} = {}{}{}",
+                        form.path, form.entity, form.output, form.flow, submit, redirect
+                    ));
+                }
+                for action in &ui.actions {
+                    let redirect = action
+                        .redirect
+                        .as_deref()
+                        .map(|path| format!(" redirect {path}"))
+                        .unwrap_or_default();
+                    output.push(format!(
+                        "  action {} {} {}{}",
+                        action.path, action.method, action.submit, redirect
                     ));
                 }
             }

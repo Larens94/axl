@@ -2,6 +2,9 @@ use std::collections::BTreeMap;
 
 use serde_json::{Value, json};
 
+use super::http::{
+    match_http_path, parse_bound_scalar, path_template_matches, substitute_path_template,
+};
 use super::ir::GraphIr;
 use super::runtime;
 
@@ -21,6 +24,17 @@ pub struct UiFormRenderResult {
     pub flow: String,
     pub submit: String,
     pub html: String,
+}
+
+pub fn matches_exact_ui_path(graph: &GraphIr, path: &str) -> bool {
+    let normalized = normalize_path(path);
+    graph.nodes.iter().any(|node| {
+        matches!(node.kind.as_str(), "page" | "form")
+            && node
+                .metadata
+                .get("path")
+                .is_some_and(|value| !value.contains('{') && normalize_path(value) == normalized)
+    })
 }
 
 pub fn ui_manifest(graph: &GraphIr) -> Value {
@@ -43,17 +57,30 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                     .and_then(|value| value.parse::<usize>().ok())
                     .unwrap_or(usize::MAX)
             });
+            let mut actions = children(graph, &ui.id, "ui_action");
+            actions.sort_by_key(|action| {
+                action
+                    .metadata
+                    .get("order")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
             json!({
                 "name": ui.name,
                 "pages": pages.into_iter().map(|page| {
                     let (input, output) = page.type_name.as_deref()
                         .and_then(|value| value.split_once("->"))
                         .unwrap_or(("", ""));
+                    let path = page.metadata.get("path").cloned().unwrap_or_default();
+                    let template = path.contains('{').then(|| path.clone());
                     json!({
-                        "path": page.metadata.get("path"),
+                        "path": path,
+                        "template": template,
                         "input": input,
                         "output": output,
                         "flow": page.metadata.get("flow"),
+                        "input_source": page.metadata.get("input_source"),
+                        "input_name": page.metadata.get("input_name"),
                     })
                 }).collect::<Vec<_>>(),
                 "forms": forms.into_iter().map(|form| {
@@ -66,6 +93,15 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "output": output,
                         "flow": form.metadata.get("flow"),
                         "submit": form.metadata.get("submit"),
+                        "redirect": form.metadata.get("redirect"),
+                    })
+                }).collect::<Vec<_>>(),
+                "actions": actions.into_iter().map(|action| {
+                    json!({
+                        "path": action.metadata.get("path"),
+                        "method": action.metadata.get("method"),
+                        "submit": action.metadata.get("submit"),
+                        "redirect": action.metadata.get("redirect"),
                     })
                 }).collect::<Vec<_>>(),
             })
@@ -80,17 +116,17 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
 }
 
 pub fn render_page(graph: &GraphIr, path: &str, input: Value) -> Result<UiRenderResult, String> {
-    let normalized = normalize_path(path);
-    let page = graph
-        .nodes
-        .iter()
-        .filter(|node| node.kind == "page")
-        .find(|node| {
-            node.metadata
-                .get("path")
-                .is_some_and(|value| normalize_path(value) == normalized)
-        })
-        .ok_or_else(|| format!("ui_page_not_found:{path}"))?;
+    let mut runtime = runtime::BuiltinRuntime::new().map_err(|error| error.0)?;
+    render_page_with_runtime(graph, &mut runtime, path, input)
+}
+
+pub fn render_page_with_runtime(
+    graph: &GraphIr,
+    provider_runtime: &mut dyn runtime::ProviderRuntime,
+    path: &str,
+    input: Value,
+) -> Result<UiRenderResult, String> {
+    let (page, _) = find_page(graph, path).ok_or_else(|| format!("ui_page_not_found:{path}"))?;
     let flow = page
         .metadata
         .get("flow")
@@ -101,7 +137,9 @@ pub fn render_page(graph: &GraphIr, path: &str, input: Value) -> Result<UiRender
         .as_deref()
         .and_then(|value| value.split_once("->").map(|(_, output)| output.to_string()))
         .unwrap_or_else(|| "text".to_string());
-    let data = runtime::evaluate_flow(graph, &flow, input).map_err(|error| error.0)?;
+    let input = bind_page_input(page, path, input)?;
+    let data = runtime::evaluate_flow_with_runtime(graph, &flow, input, provider_runtime)
+        .map_err(|error| error.0)?;
     let nav = render_nav(graph);
     let html = render_page_html(graph, &graph.app, path, &output_type, &data, &nav);
     Ok(UiRenderResult {
@@ -199,24 +237,198 @@ fn render_page_html(
     nav: &str,
 ) -> String {
     let title = format!("{app}{path}");
-    if let Some(table) = render_items_table(graph, output_type, data) {
-        return wrap_html(&title, nav, &table);
-    }
-    let fields = collect_fields(graph, output_type, data);
-    let rows = fields
-        .iter()
-        .map(|(label, value)| format!("    <dt>{label}</dt>\n    <dd>{value}</dd>"))
-        .collect::<Vec<_>>()
-        .join("\n");
-    wrap_html(
-        &title,
-        nav,
-        &format!(
+    let body = if let Some(table) = render_items_table(graph, path, output_type, data) {
+        table
+    } else {
+        let fields = collect_fields(graph, output_type, data);
+        let rows = fields
+            .iter()
+            .map(|(label, value)| format!("    <dt>{label}</dt>\n    <dd>{value}</dd>"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
             r#"  <dl>
 {rows}
   </dl>"#
-        ),
+        )
+    };
+    let actions = render_page_actions(graph, path, data);
+    wrap_html(&title, nav, &format!("{body}{actions}"))
+}
+
+fn render_page_actions(graph: &GraphIr, page_path: &str, page_data: &Value) -> String {
+    let normalized = normalize_path(page_path);
+    let mut actions = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "ui_action")
+        .filter(|action| {
+            action
+                .metadata
+                .get("redirect")
+                .is_some_and(|redirect| path_template_matches(redirect, &normalized))
+        })
+        .collect::<Vec<_>>();
+    actions.sort_by_key(|action| {
+        action
+            .metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    if actions.is_empty() {
+        return String::new();
+    }
+    let forms = actions
+        .iter()
+        .map(|action| render_action_form(graph, action, page_path, page_data))
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("\n  <section class=\"actions\">\n{forms}\n  </section>")
+}
+
+fn render_action_form(
+    graph: &GraphIr,
+    action: &super::ir::GraphNode,
+    page_path: &str,
+    page_data: &Value,
+) -> String {
+    let submit_template = action.metadata.get("submit").cloned().unwrap_or_default();
+    let redirect = action.metadata.get("redirect").cloned();
+    let path_params = action_page_path_parameters(page_path, redirect.as_deref());
+    let submit = if submit_template.contains('{') {
+        substitute_path_template(&submit_template, &path_params).unwrap_or(submit_template)
+    } else {
+        submit_template.clone()
+    };
+    let label = action_label(action);
+    let hidden = render_action_hidden_inputs(&submit_template, redirect.as_deref(), &path_params, page_data);
+    let entity_inputs = route_input_entity(graph, "post", &submit_template)
+        .as_deref()
+        .filter(|type_name| !is_scalar_type(type_name))
+        .map(|entity| {
+            entity_fields(graph, entity)
+                .iter()
+                .map(|field| render_form_field(graph, field))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .unwrap_or_default();
+    let inputs = if hidden.is_empty() {
+        entity_inputs
+    } else if entity_inputs.is_empty() {
+        hidden
+    } else {
+        format!("{hidden}{entity_inputs}")
+    };
+    format!(
+        r#"    <form method="post" action="{submit}" class="action-form">
+{inputs}      <button type="submit">{label}</button>
+    </form>"#
     )
+}
+
+fn action_page_path_parameters(
+    page_path: &str,
+    redirect: Option<&str>,
+) -> BTreeMap<String, String> {
+    redirect
+        .and_then(|template| match_http_path(template, page_path))
+        .unwrap_or_default()
+}
+
+fn template_param_names(template: &str) -> Vec<String> {
+    template
+        .split('/')
+        .filter_map(|segment| {
+            segment
+                .strip_prefix('{')
+                .and_then(|value| value.strip_suffix('}'))
+                .map(String::from)
+        })
+        .collect()
+}
+
+fn render_action_hidden_inputs(
+    submit_template: &str,
+    redirect: Option<&str>,
+    path_params: &BTreeMap<String, String>,
+    page_data: &Value,
+) -> String {
+    let ok = page_data.get("ok");
+    let mut names = template_param_names(submit_template);
+    if let Some(redirect) = redirect {
+        for name in template_param_names(redirect) {
+            if !names.iter().any(|existing| existing == &name) {
+                names.push(name);
+            }
+        }
+    }
+    names
+        .into_iter()
+        .filter_map(|name| {
+            let value = path_params
+                .get(&name)
+                .cloned()
+                .or_else(|| {
+                    ok.and_then(|object| object.get(&name))
+                        .and_then(|value| value.as_str().map(String::from))
+                });
+            value.map(|value| format!(
+                r#"      <input type="hidden" name="{name}" value="{value}">"#
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn action_label(action: &super::ir::GraphNode) -> String {
+    action
+        .metadata
+        .get("path")
+        .and_then(|path| path.rsplit('/').next())
+        .filter(|segment| !segment.is_empty())
+        .unwrap_or("submit")
+        .into()
+}
+
+fn normalized_route_path(path: &str) -> String {
+    path.split('/')
+        .map(|segment| {
+            if segment.starts_with('{') && segment.ends_with('}') {
+                "{}"
+            } else {
+                segment
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
+}
+
+fn route_input_entity(graph: &GraphIr, method: &str, submit_path: &str) -> Option<String> {
+    find_route_by_template(graph, method, submit_path)
+        .and_then(|route| route.type_name.as_deref())
+        .and_then(|signature| signature.split_once("->"))
+        .map(|(input, _)| input.trim().to_string())
+}
+
+fn find_route_by_template<'a>(
+    graph: &'a GraphIr,
+    method: &str,
+    template: &str,
+) -> Option<&'a super::ir::GraphNode> {
+    let normalized = normalized_route_path(template);
+    graph.nodes.iter().find(|node| {
+        node.kind == "route"
+            && node
+                .metadata
+                .get("method")
+                .is_some_and(|value| value.eq_ignore_ascii_case(method))
+            && node
+                .metadata
+                .get("path")
+                .is_some_and(|value| normalized_route_path(value) == normalized)
+    })
 }
 
 fn render_form_html(
@@ -353,7 +565,12 @@ fn wrap_html(title: &str, nav: &str, body: &str) -> String {
     )
 }
 
-fn render_items_table(graph: &GraphIr, output_type: &str, data: &Value) -> Option<String> {
+fn render_items_table(
+    graph: &GraphIr,
+    page_path: &str,
+    output_type: &str,
+    data: &Value,
+) -> Option<String> {
     let payload = if let Some(ok) = data.get("ok") {
         ok
     } else {
@@ -369,6 +586,7 @@ fn render_items_table(graph: &GraphIr, output_type: &str, data: &Value) -> Optio
         return Some("  <p>No items.</p>".into());
     }
     let item_type = page_item_type(graph, output_type)?;
+    let detail_template = detail_path_template_for_list(graph, page_path, &item_type);
     let columns = entity_field_names(graph, &item_type);
     if columns.is_empty() {
         return None;
@@ -388,7 +606,21 @@ fn render_items_table(graph: &GraphIr, output_type: &str, data: &Value) -> Optio
                 .iter()
                 .map(|column| {
                     let value = row.get(column).map(display_value).unwrap_or_default();
-                    format!("        <td>{value}</td>")
+                    let cell = if column == "id"
+                        && detail_template.is_some()
+                        && field_type(graph, &item_type, column).as_deref() == Some("uuid")
+                    {
+                        let template = detail_template.as_deref().unwrap_or("");
+                        let href = substitute_path_template(
+                            template,
+                            &BTreeMap::from([("id".into(), value.clone())]),
+                        )
+                        .unwrap_or_else(|| template.replace("{id}", &value));
+                        format!(r#"<a href="{href}">{value}</a>"#)
+                    } else {
+                        value
+                    };
+                    format!("        <td>{cell}</td>")
                 })
                 .collect::<Vec<_>>()
                 .join("\n");
@@ -433,6 +665,114 @@ fn entity_field_names(graph: &GraphIr, entity_name: &str) -> Vec<String> {
                 .collect()
         })
         .unwrap_or_default()
+}
+
+fn field_type(graph: &GraphIr, entity_name: &str, field_name: &str) -> Option<String> {
+    graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "entity" && node.name == entity_name)
+        .and_then(|entity| {
+            children(graph, &entity.id, "field")
+                .into_iter()
+                .find(|field| field.name == field_name)
+        })
+        .and_then(|field| field.type_name.clone())
+}
+
+fn find_page<'a>(
+    graph: &'a GraphIr,
+    path: &str,
+) -> Option<(&'a super::ir::GraphNode, BTreeMap<String, String>)> {
+    let normalized = normalize_path(path);
+    let pages = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "page")
+        .collect::<Vec<_>>();
+    for page in &pages {
+        let pattern = page.metadata.get("path")?;
+        if !pattern.contains('{') && normalize_path(pattern) == normalized {
+            return Some((page, BTreeMap::new()));
+        }
+    }
+    for page in &pages {
+        let pattern = page.metadata.get("path")?;
+        if let Some(parameters) = match_http_path(pattern, path) {
+            return Some((page, parameters));
+        }
+    }
+    None
+}
+
+fn bind_page_input(
+    page: &super::ir::GraphNode,
+    request_path: &str,
+    explicit_input: Value,
+) -> Result<Value, String> {
+    let source = page
+        .metadata
+        .get("input_source")
+        .map(String::as_str)
+        .unwrap_or("body");
+    if source == "body" {
+        return Ok(explicit_input);
+    }
+    let name = page
+        .metadata
+        .get("input_name")
+        .ok_or_else(|| "ui_page_binding_has_no_name".to_string())?;
+    let pattern = page
+        .metadata
+        .get("path")
+        .ok_or_else(|| "ui_page_has_no_path".to_string())?;
+    let parameters = match_http_path(pattern, request_path)
+        .ok_or_else(|| format!("ui_page_path_mismatch:{request_path}"))?;
+    let raw = parameters
+        .get(name)
+        .ok_or_else(|| format!("missing_path_parameter:{name}"))?;
+    let input_type = page
+        .type_name
+        .as_deref()
+        .and_then(|value| value.split_once("->"))
+        .map(|value| value.0)
+        .ok_or_else(|| "ui_page_has_no_input_type".to_string())?;
+    parse_bound_scalar(input_type, raw)
+}
+
+fn detail_path_template_for_list(
+    graph: &GraphIr,
+    list_path: &str,
+    item_type: &str,
+) -> Option<String> {
+    let legacy = format!("{}/detail", normalize_path(list_path));
+    if graph.nodes.iter().any(|node| {
+        node.kind == "page"
+            && node
+                .metadata
+                .get("path")
+                .is_some_and(|path| normalize_path(path) == legacy)
+    }) {
+        return Some(legacy);
+    }
+    graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "page")
+        .find_map(|page| {
+            let path = page.metadata.get("path")?;
+            if !path.contains("{id}") {
+                return None;
+            }
+            let output = page
+                .type_name
+                .as_deref()
+                .and_then(|value| value.split_once("->").map(|(_, output)| output))?;
+            if strip_result(output) != item_type {
+                return None;
+            }
+            Some(path.clone())
+        })
 }
 
 fn collect_fields(graph: &GraphIr, output_type: &str, data: &Value) -> Vec<(String, String)> {
@@ -677,5 +1017,118 @@ flow EchoClienti unit -> text
         );
         assert!(rendered.html.contains("/clienti/new (form)"));
         assert!(rendered.html.contains(r#"<a href="/clienti">/clienti</a>"#));
+    }
+
+    const ACTION_UI: &str = r#"axl 4
+app ActionUI
+
+entity WorkflowConfirm
+  nota: text optional
+
+entity Preventivo
+  id: uuid key
+  stato: text required
+
+flow DettaglioPreventivo unit -> Result<Preventivo>
+  make p: Preventivo
+    id = "preventivo-001"
+    stato = "bozza"
+  return p
+
+flow CercaPreventivo uuid -> Result<Preventivo>
+  make p: Preventivo
+    id = input
+    stato = "bozza"
+  return p
+
+flow InviaPreventivo uuid -> Result<Preventivo>
+  make p: Preventivo
+    id = input
+    stato = "inviato"
+  return p
+
+api PreventivoApi
+  post /preventivi/demo/{id}/invia uuid -> Result<Preventivo> = InviaPreventivo from path.id
+
+ui PreventivoScreen
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+  action /preventivi/demo/invia POST /preventivi/demo/{id}/invia redirect /preventivi/{id}
+"#;
+
+    #[test]
+    fn ui_manifest_lists_declared_actions() {
+        let graph = compile_source(ACTION_UI).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(
+            manifest["uis"][0]["actions"][0]["submit"],
+            "/preventivi/demo/{id}/invia"
+        );
+        assert_eq!(
+            manifest["uis"][0]["actions"][0]["redirect"],
+            "/preventivi/{id}"
+        );
+        assert_eq!(
+            manifest["uis"][0]["pages"][0]["template"],
+            "/preventivi/{id}"
+        );
+    }
+
+    #[test]
+    fn render_page_embeds_actions_on_matching_detail_page() {
+        let graph = compile_source(ACTION_UI).unwrap().graph;
+        let rendered = render_page(&graph, "/preventivi/preventivo-001", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"actions\""));
+        assert!(rendered.html.contains(r#"action="/preventivi/demo/preventivo-001/invia""#));
+        assert!(rendered.html.contains(r#"name="id" value="preventivo-001""#));
+        assert!(rendered.html.contains(">invia</button>"));
+    }
+
+    const TEMPLATED_LIST_UI: &str = r#"axl 4
+app TemplatedListUI
+
+entity Preventivo
+  id: uuid key
+  stato: text required
+
+entity PreventivoPage
+  items: List<Preventivo> required
+  total: int required
+
+flow PaginaPreventivi unit -> Result<PreventivoPage>
+  make p: Preventivo
+    id = "preventivo-001"
+    stato = "bozza"
+  make page: PreventivoPage
+    items = [p]
+    total = 1
+  return page
+
+flow CercaPreventivo uuid -> Result<Preventivo>
+  make p: Preventivo
+    id = input
+    stato = "bozza"
+  return p
+
+ui PreventivoScreen
+  page /preventivi unit -> Result<PreventivoPage> = PaginaPreventivi
+  page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
+"#;
+
+    #[test]
+    fn render_list_links_templated_detail_paths() {
+        let graph = compile_source(TEMPLATED_LIST_UI).unwrap().graph;
+        let rendered = render_page(&graph, "/preventivi", json!(null)).unwrap();
+        assert!(
+            rendered
+                .html
+                .contains(r#"href="/preventivi/preventivo-001""#)
+        );
+    }
+
+    #[test]
+    fn render_templated_page_binds_path_input() {
+        let graph = compile_source(TEMPLATED_LIST_UI).unwrap().graph;
+        let rendered = render_page(&graph, "/preventivi/preventivo-001", json!(null)).unwrap();
+        assert_eq!(rendered.data["ok"]["id"], "preventivo-001");
     }
 }

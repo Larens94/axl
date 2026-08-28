@@ -2805,6 +2805,52 @@ fn check_api(
     }
 }
 
+fn check_page_bindings(
+    page: &UiPage,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if page.input_source == "body" {
+        return;
+    }
+    let name = page.input_name.as_deref().unwrap_or_default();
+    if page.input_source != "body" && !valid_name(name, false) {
+        diagnostics.push(Diagnostic::error(
+            "AXL-U913",
+            "ui",
+            format!("invalid UI page binding name '{name}'"),
+            page.span.clone(),
+        ));
+    }
+    if page.input_source == "path"
+        && !page
+            .path
+            .split('/')
+            .any(|segment| segment == format!("{{{name}}}"))
+    {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U914",
+                "ui",
+                format!("page path binding '{name}' has no matching placeholder"),
+                page.span.clone(),
+            )
+            .expected(format!("{{{name}}}"), &page.path),
+        );
+    }
+    if !http_binding_type(&page.input, declarations) {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U915",
+                "ui",
+                format!("page path binding cannot construct type '{}'", page.input),
+                page.span.clone(),
+            )
+            .expected("scalar or enum input type", &page.input),
+        );
+    }
+}
+
 fn check_request_bindings(
     route: &ApiRoute,
     declarations: &BTreeMap<&str, &Declaration>,
@@ -3026,11 +3072,14 @@ fn check_ui(
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if ui.pages.is_empty() && ui.forms.is_empty() {
+    if ui.pages.is_empty() && ui.forms.is_empty() && ui.actions.is_empty() {
         diagnostics.push(Diagnostic::error(
             "AXL-U901",
             "ui",
-            format!("ui '{}' requires at least one page or form", ui.name),
+            format!(
+                "ui '{}' requires at least one page, form or action",
+                ui.name
+            ),
             ui.span.clone(),
         ));
     }
@@ -3060,6 +3109,7 @@ fn check_ui(
         }
         check_type(&page.input, &page.span, declarations, diagnostics);
         check_type(&page.output, &page.span, declarations, diagnostics);
+        check_page_bindings(page, declarations, diagnostics);
         match declarations.get(page.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
                 if flow.input != page.input || flow.output != page.output {
@@ -3169,6 +3219,77 @@ fn check_ui(
                 ),
                 form.span.clone(),
             ));
+        }
+    }
+    let mut action_paths = BTreeSet::new();
+    for action in &ui.actions {
+        if !valid_http_path(&action.path) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI action path '{}'", action.path),
+                    action.span.clone(),
+                )
+                .expected("absolute path without query or fragment", &action.path),
+            );
+        }
+        if !valid_http_path(&action.submit) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI action submit path '{}'", action.submit),
+                    action.span.clone(),
+                )
+                .expected("absolute path without query or fragment", &action.submit),
+            );
+        }
+        if !action_paths.insert(normalized_http_path(&action.path)) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U910",
+                "ui",
+                format!(
+                    "ui '{}' declares action '{}' more than once",
+                    ui.name, action.path
+                ),
+                action.span.clone(),
+            ));
+        }
+        if !action.method.eq_ignore_ascii_case("post") {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U912",
+                "ui",
+                format!(
+                    "action '{}' method must be POST, found '{}'",
+                    action.path, action.method
+                ),
+                action.span.clone(),
+            ));
+        }
+        if !post_route_exists(declarations, &action.submit) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U911",
+                "ui",
+                format!(
+                    "action '{}' submit path '{}' has no matching POST api route",
+                    action.path, action.submit
+                ),
+                action.span.clone(),
+            ));
+        }
+        if let Some(redirect) = &action.redirect
+            && !valid_http_path(redirect)
+        {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI action redirect path '{}'", redirect),
+                    action.span.clone(),
+                )
+                .expected("absolute path without query or fragment", redirect),
+            );
         }
     }
 }
@@ -3500,8 +3621,10 @@ fn compatible_make_assignment(found: &str, expected: &str) -> bool {
     }
     matches!(
         (found, expected),
-        ("text" | "string", "uuid" | "datetime" | "email" | "duration")
-            | ("int", "money" | "float")
+        (
+            "text" | "string",
+            "uuid" | "datetime" | "email" | "duration"
+        ) | ("int", "money" | "float")
             | ("float", "money")
     )
 }
@@ -4695,6 +4818,12 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         value.type_name = Some(format!("{}->{}", page.input, page.output));
         value.metadata.insert("path".into(), page.path.clone());
         value.metadata.insert("flow".into(), page.flow.clone());
+        value
+            .metadata
+            .insert("input_source".into(), page.input_source.clone());
+        if let Some(name) = &page.input_name {
+            value.metadata.insert("input_name".into(), name.clone());
+        }
         value.metadata.insert("order".into(), index.to_string());
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));
@@ -4715,6 +4844,9 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         value.metadata.insert("order".into(), index.to_string());
         let submit = form.submit.as_deref().unwrap_or(form.path.as_str());
         value.metadata.insert("submit".into(), submit.into());
+        if let Some(redirect) = &form.redirect {
+            value.metadata.insert("redirect".into(), redirect.clone());
+        }
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));
         graph.edges.push(edge(
@@ -4723,6 +4855,23 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             "dispatch",
             Some(&format!("{}->{}", form.entity, form.output)),
         ));
+    }
+    for (index, action) in ui.actions.iter().enumerate() {
+        let id = format!("{ui_id}.action.{index}");
+        let mut value = node(&id, "ui_action", &action.path);
+        value.metadata.insert("path".into(), action.path.clone());
+        value
+            .metadata
+            .insert("method".into(), action.method.to_ascii_lowercase());
+        value
+            .metadata
+            .insert("submit".into(), action.submit.clone());
+        value.metadata.insert("order".into(), index.to_string());
+        if let Some(redirect) = &action.redirect {
+            value.metadata.insert("redirect".into(), redirect.clone());
+        }
+        graph.nodes.push(value);
+        graph.edges.push(edge(&ui_id, &id, "owns", None));
     }
 }
 

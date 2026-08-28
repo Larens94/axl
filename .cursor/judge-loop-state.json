@@ -1,11 +1,13 @@
 {
-  "iteration": 10,
+  "iteration": 18,
   "product": "sales-module",
-  "milestone": 5,
-  "milestone_label": "Durable SQLite + demo-sales.sh",
-  "steward_done": ["WP-04 ui form + serve GET"],
-  "last_judge_summary": "M4 workflow stati via match+require; M3 preventivo+righe",
-  "last_verification": "verify-sales OK through milestone 4",
+  "milestone": 15,
+  "milestone_label": "ui action templated submit POST /preventivi/{id}/invia",
+  "steward_queue": [
+    "WP-04: allow ui action submit path templates; hidden id from page context on action forms"
+  ],
+  "last_judge_summary": "M14 README demo + RenderDettaglioPreventivoDemoUnit; live/* workaround documented",
+  "last_verification": "verify-sales OK",
   "judge_prompt_file": "docs/agent-judge-prompt.md",
-  "autoloop": "continuous — loop PID 18014"
+  "autoloop": "continuous PID 18014"
 }
