@@ -68,6 +68,16 @@ echo "== eval CreaPreventivoListinoFormDemoUnit (flat form -> CreaPreventivoConL
 echo "== eval DettaglioListinoDemoUnit (seeded detail + righe) =="
 "${BIN[@]}" eval examples/apps/sales.axl DettaglioListinoDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.id == "listino-001" and (.ok.righe | length) == 2 and .ok.righe[0].prodotto_id == "prodotto-001" and .ok.righe[0].prezzo == 119900'
 
+echo "== eval CreaListinoSqlite (durable store) =="
+mkdir -p ./build
+rm -f ./build/vendite.db
+"${BIN[@]}" eval examples/apps/sales.axl CreaProdottoSqlite examples/apps/inputs/sales-prodotto-001.json | jq -e '.ok.id == "prodotto-001"'
+"${BIN[@]}" eval examples/apps/sales.axl CreaListinoSqlite examples/apps/inputs/sales-listino.json | jq -e '.ok.nome == "Promo estate" and (.ok.righe | length) == 2'
+
+echo "== eval CercaListinoSqlite + RisolviPrezzoSqlite (durable pricing) =="
+"${BIN[@]}" eval examples/apps/sales.axl CercaListinoSqlite examples/apps/inputs/sales-listino-id.json | jq -e '.ok.id == "listino-001" and .ok.righe[0].prezzo == 119900'
+"${BIN[@]}" eval examples/apps/sales.axl RisolviPrezzoSqlite examples/apps/inputs/sales-prezzo-listino.json | jq -e '.ok == 119900'
+
 echo "== eval CercaProdotto =="
 "${BIN[@]}" eval examples/apps/sales.axl CercaProdotto examples/apps/inputs/sales-prodotto-id.json | jq -e '.ok.sku == "LP-001" or .error != null'
 
@@ -483,6 +493,11 @@ rm -f ./build/vendite.db
 "${BIN[@]}" eval examples/apps/sales.axl InviaPreventivoSqlite examples/apps/inputs/sales-preventivo-durable-id.json | jq -e '.ok.stato == "inviato"'
 "${BIN[@]}" eval examples/apps/sales.axl CercaPreventivoSqlite examples/apps/inputs/sales-preventivo-durable-id.json | jq -e '.ok.stato == "inviato"'
 
+"${BIN[@]}" eval examples/apps/sales.axl CreaProdottoSqlite examples/apps/inputs/sales-prodotto-001.json | jq -e '.ok.id == "prodotto-001"'
+"${BIN[@]}" eval examples/apps/sales.axl CreaListinoSqlite examples/apps/inputs/sales-listino.json | jq -e '.ok.id == "listino-001"'
+"${BIN[@]}" eval examples/apps/sales.axl CercaListinoSqlite examples/apps/inputs/sales-listino-id.json | jq -e '.ok.nome == "Promo estate"'
+"${BIN[@]}" eval examples/apps/sales.axl RisolviPrezzoSqlite examples/apps/inputs/sales-prezzo-listino.json | jq -e '.ok == 119900'
+
 echo "== durable sqlite cross-process (HTTP restart) =="
 DPORT=18085
 (
@@ -507,18 +522,28 @@ DPORT=18085
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/preventivi/durable" \
     -H 'content-type: application/json' \
     -d @examples/apps/inputs/sales-preventivo.json | jq -e '.ok.id == "preventivo-002"'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/prodotti/durable" \
+    -H 'content-type: application/json' \
+    -d @examples/apps/inputs/sales-prodotto-001.json | jq -e '.ok.id == "prodotto-001"'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/listini/durable" \
+    -H 'content-type: application/json' \
+    -d @examples/apps/inputs/sales-listino.json | jq -e '.ok.id == "listino-001" and .ok.righe[0].prezzo == 119900'
   kill "$DPID" 2>/dev/null; wait "$DPID" 2>/dev/null || true
   "${BIN[@]}" serve examples/apps/sales.axl "127.0.0.1:${DPORT}" &
   DPID=$!
   ready=0
   for _ in $(seq 1 50); do
-    if curl -sf --max-time 1 "http://127.0.0.1:${DPORT}/preventivi/durable/preventivo-002" >/dev/null 2>&1; then
+    if curl -sf --max-time 1 "http://127.0.0.1:${DPORT}/listini/durable/listino-001" >/dev/null 2>&1; then
       ready=1
       break
     fi
     sleep 0.2
   done
   test "$ready" -eq 1
+  curl -sf --max-time 2 "http://127.0.0.1:${DPORT}/listini/durable/listino-001" | jq -e '.ok.nome == "Promo estate" and (.ok.righe | length) == 2'
+  curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/listini/durable/prezzo" \
+    -H 'content-type: application/json' \
+    -d @examples/apps/inputs/sales-prezzo-listino.json | jq -e '.ok == 119900'
   curl -sf --max-time 2 "http://127.0.0.1:${DPORT}/preventivi/durable/preventivo-002" | jq -e '.ok.stato == "bozza" and .ok.totale == 135880'
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/preventivi/durable/preventivo-002/invia" | jq -e '.ok.stato == "inviato"'
   curl -sf --max-time 2 -X POST "http://127.0.0.1:${DPORT}/preventivi/durable/preventivo-002/conferma" | jq -e '.ok.stato == "confermato"'

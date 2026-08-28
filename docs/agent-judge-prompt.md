@@ -1,14 +1,14 @@
-# Judge prompt — sales milestone 25 (listino durable + form primitive)
+# Judge prompt — sales milestone 26 (nested form righe)
 
-Repo: AXL sales-module autoloop
+Repo: AXL sales-module autoloop (local)
 
-Milestones 1–24 complete. Readiness **10/10**. See `docs/agent-sales-autoloop.md` and `.cursor/judge-loop-state.json`.
+Milestones 1–25 complete. Readiness **10/10**.
 
-## Milestone 25: listino durable SQLite + dynamic righe form
+## Milestone 26: dynamic righe form
 
-1. Extend `verify-sales.sh` with listino durable HTTP restart (mirror preventivi/ordini pattern)
-2. Document or prototype `ui form` nested `List<>` field rendering (repeatable righe rows) — if missing, report exact gap in steward queue E
-3. Optional: listino picker (`select` from seeded list) on preventivo listino form
-4. Never implement pricing rules in Rust beyond open primitives
+1. Steward: `ui form` nested `List<Entity>` repeatable rows (or report exact gap)
+2. Optional: dynamic `select` for `listino_id` from seeded query
+3. Replace flat `PreventivoListinoForm` when primitive lands
+4. Extend `verify-sales.sh` render + serve smoke
 
-Report A–F. Run `verify-sales.sh` + `verify-libro-cassa.sh`.
+Report A–F. Run verify scripts. Local only — no cloud.

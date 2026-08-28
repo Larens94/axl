@@ -1,0 +1,7 @@
+{
+  "id": "prodotto-001",
+  "nome": "Laptop Pro",
+  "prezzo": 129900,
+  "sku": "LP-001",
+  "attivo": true
+}
