@@ -746,11 +746,12 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - `ui` / `page` nodes lower to Graph IR and emit `axl-ui/1`;
 - `render` evaluates a bound flow and displays typed scalar/entity fields in HTML.
 
-It does not prove SQL pushdown, routing shell, component
+It does not prove routing shell, component
 registry, forms, tables or responsive admin UI (full Gate 4).
 HTTP execution, process-local memory, restart-durable configured SQLite and
 document JSON, PostgreSQL/MySQL store/tx/migrate (boundary samples when env URL
-is set), document tx/migrate (`document-tx-boundary.axl`), typed multi-subscriber
+is set), SQL pushdown store `query` on SQLite/PostgreSQL/MySQL
+(`sql-pushdown-boundary.axl`), document tx/migrate (`document-tx-boundary.axl`), typed multi-subscriber
 events, durable jobs, Cache get/put/invalidate, Logger/Metrics/Tracer
 observability, transaction commit/rollback, migration upgrade/downgrade, typed
 store queries and the minimal UI page slice are proven.
@@ -760,6 +761,6 @@ demo config secrets. True secret references (Gate 8) are proven on portal auth/
 vendite skills; OAuth demo provider is proven (`oauth-boundary.axl` →
 `authorize_url` + `exchange`). Password reset uses `EmailSender.latest` without
 returning the token in the API result. `hosts/portal-web` syncs `axl-ui/1`
-codegen. Gate 2 auth adapters are otherwise complete. Next Gate 3 target: SQL
-pushdown and pooling/health configuration. Next Gate 4 target:
+codegen. Gate 2 auth adapters are otherwise complete. Next Gate 3 target:
+pooling/health/timeout configuration. Next Gate 4 target:
 routing shell, component registry and admin UI kit.

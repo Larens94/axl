@@ -1,0 +1,43 @@
+// SQL pushdown boundary — store query filter/order/limit execute in the database
+// for SQLite, PostgreSQL and MySQL adapters (JSON payload fields).
+axl 4
+app SqlPushdownBoundary
+
+entity Record
+  id: uuid required
+  kind: text required
+  account: text required
+  occurred_at: text required
+
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity RecordStore
+  op save Record -> Result<Record>
+  op query RecordQuery -> Result<RecordPage> idempotent
+
+skill SqliteRecords provides RecordStore
+  native rust axl::store::sqlite
+  config path: text = "./build/sql-pushdown-boundary.db"
+  effect db.read
+  effect db.write
+
+flow SqlPushdownSaveDemo Record -> Result<Record>
+  in store: RecordStore = SqliteRecords
+  call saved = store.save(input)?
+  return saved
+
+flow SqlPushdownQueryDemo RecordQuery -> Result<RecordPage>
+  in store: RecordStore = SqliteRecords
+  call page = store.query(input)?
+  return page

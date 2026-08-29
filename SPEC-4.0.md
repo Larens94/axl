@@ -828,11 +828,14 @@ Runtime `rust::axl::store::memory`, `rust::axl::store::sqlite`,
 `rust::axl::store::document` interpret conventional fields: `filter` is equality
 on stored JSON fields (map values are text; numbers and booleans coerce),
 `order_by`/`direction` sort stably, `offset`/`limit` page after filtering.
-`total` is the filtered count before paging. Skills that declare `query` must
+`total` is the filtered count before paging. SQLite, PostgreSQL and MySQL
+adapters push `filter`/`order_by`/`limit`/`offset` into SQL over JSON payload
+fields (safe field names only; invalid names return `invalid_query_field`).
+Memory and document stores still evaluate queries in-process. Skills that declare `query` must
 use an idempotent entity → `Result<PageEntity>` contract (`AXL-D903`). No new
 Graph IR opcodes. Document skills persist a JSON object file when `config path`
-is set (same path model as SQLite). SQL pushdown and MySQL remain
-later Gate 3 work. PostgreSQL store (`rust::axl::store::postgres`),
+is set (same path model as SQLite). SQL pushdown for store `query` is executable
+on SQLite, PostgreSQL and MySQL. PostgreSQL store (`rust::axl::store::postgres`),
 transactions (`rust::axl::tx::postgres`) and migrations
 (`rust::axl::migrate::postgres`) are executable with the same save/find/query and
 begin/commit/rollback and up/down/status contracts; see
@@ -1184,6 +1187,7 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/apps/postgres-boundary.axl` — PostgreSQL store, tx and migrate providers.
 - `examples/apps/mysql-boundary.axl` — MySQL store, tx and migrate providers.
 - `examples/apps/document-tx-boundary.axl` — document JSON store tx and migrate providers.
+- `examples/apps/sql-pushdown-boundary.axl` — SQLite store query SQL pushdown demo.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.

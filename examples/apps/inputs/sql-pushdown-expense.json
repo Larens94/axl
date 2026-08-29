@@ -1,0 +1,6 @@
+{
+  "id": "sp-expense-1",
+  "kind": "expense",
+  "account": "a1",
+  "occurred_at": "2026-08-29T03:01:00Z"
+}

@@ -1370,20 +1370,7 @@ fn sqlite_store_call(connection: &Connection, call: ProviderCall<'_>) -> Result<
             }
             Ok(Value::Array(values))
         }
-        "query" => {
-            let mut statement = connection
-                .prepare("SELECT payload FROM axl_records WHERE provider = ?1 ORDER BY record_id")
-                .map_err(|error| error.to_string())?;
-            let rows = statement
-                .query_map(params![call.provider], |row| row.get::<_, String>(0))
-                .map_err(|error| error.to_string())?;
-            let mut values = Vec::new();
-            for row in rows {
-                let payload = row.map_err(|error| error.to_string())?;
-                values.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
-            }
-            store_query(values, &call.input)
-        }
+        "query" => sqlite_store_query_pushdown(connection, call.provider, &call.input),
         "find_by" => {
             let mut statement = connection
                 .prepare("SELECT payload FROM axl_records WHERE provider = ?1 ORDER BY record_id")
@@ -1459,20 +1446,7 @@ fn postgres_store_call(client: &mut Client, call: ProviderCall<'_>) -> Result<Va
             }
             Ok(Value::Array(values))
         }
-        "query" => {
-            let rows = client
-                .query(
-                    "SELECT payload FROM axl_records WHERE provider = $1 ORDER BY record_id",
-                    &[&call.provider],
-                )
-                .map_err(|error| error.to_string())?;
-            let mut values = Vec::new();
-            for row in rows {
-                let payload: String = row.get(0);
-                values.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
-            }
-            store_query(values, &call.input)
-        }
+        "query" => postgres_store_query_pushdown(client, call.provider, &call.input),
         "find_by" => {
             let rows = client
                 .query(
@@ -1548,10 +1522,7 @@ fn mysql_store_call(conn: &mut Conn, call: ProviderCall<'_>) -> Result<Value, St
             conn,
             call.provider,
         )?)),
-        "query" => {
-            let values = mysql_load_record_payloads(conn, call.provider)?;
-            store_query(values, &call.input)
-        }
+        "query" => mysql_store_query_pushdown(conn, call.provider, &call.input),
         "find_by" => {
             let values = mysql_load_record_payloads(conn, call.provider)?;
             store_find_by(values, &call.input)
@@ -1774,7 +1745,16 @@ fn store_find_by(records: Vec<Value>, input: &Value) -> Result<Value, String> {
     Err("not_found".into())
 }
 
-fn store_query(records: Vec<Value>, input: &Value) -> Result<Value, String> {
+#[derive(Debug, Clone)]
+struct ParsedStoreQuery {
+    filter: Option<BTreeMap<String, String>>,
+    order_by: Option<String>,
+    descending: bool,
+    offset: i64,
+    limit: Option<i64>,
+}
+
+fn parse_store_query_spec(input: &Value) -> Result<ParsedStoreQuery, String> {
     let spec = input
         .as_object()
         .ok_or_else(|| "store query requires an object QuerySpec".to_string())?;
@@ -1782,40 +1762,292 @@ fn store_query(records: Vec<Value>, input: &Value) -> Result<Value, String> {
     let filter = match spec.get("filter") {
         None | Some(Value::Null) => None,
         Some(Value::Object(map)) if map.is_empty() => None,
-        Some(Value::Object(map)) => Some(map),
+        Some(Value::Object(map)) => {
+            let mut normalized = BTreeMap::new();
+            for (key, value) in map {
+                sql_safe_query_field(key)?;
+                normalized.insert(key.clone(), json_scalar_to_string(value));
+            }
+            Some(normalized)
+        }
         Some(Value::String(text)) if text.is_empty() || text == "{}" => None,
         Some(Value::String(text)) => {
             owned_filter = serde_json::from_str::<Value>(text)
                 .map_err(|error| format!("query filter text must be a JSON object: {error}"))?;
             match &owned_filter {
                 Value::Object(map) if map.is_empty() => None,
-                Value::Object(_) => owned_filter.as_object(),
-                _ => {
-                    return Err("query filter text must be a JSON object".into());
+                Value::Object(map) => {
+                    let mut normalized = BTreeMap::new();
+                    for (key, value) in map {
+                        sql_safe_query_field(key)?;
+                        normalized.insert(key.clone(), json_scalar_to_string(value));
+                    }
+                    Some(normalized)
                 }
+                _ => return Err("query filter text must be a JSON object".into()),
             }
         }
         Some(_) => return Err("query filter must be a map or JSON object text".into()),
     };
-
-    let mut items: Vec<Value> = records
-        .into_iter()
-        .filter(|record| record_matches_query_filter(record, filter))
-        .collect();
-
-    if let Some(order_by) = spec
+    let order_by = spec
         .get("order_by")
         .and_then(Value::as_str)
         .filter(|field| !field.is_empty())
+        .map(str::to_string);
+    if let Some(field) = &order_by {
+        sql_safe_query_field(field)?;
+    }
+    let descending = matches!(
+        spec.get("direction").and_then(Value::as_str),
+        Some("desc") | Some("DESC")
+    );
+    let offset = spec
+        .get("offset")
+        .and_then(Value::as_i64)
+        .unwrap_or(0)
+        .max(0);
+    let limit = spec
+        .get("limit")
+        .and_then(Value::as_i64)
+        .filter(|value| *value >= 0);
+    Ok(ParsedStoreQuery {
+        filter,
+        order_by,
+        descending,
+        offset,
+        limit,
+    })
+}
+
+fn sql_safe_query_field(field: &str) -> Result<(), String> {
+    if field.is_empty()
+        || !field
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
     {
-        let descending = matches!(
-            spec.get("direction").and_then(Value::as_str),
-            Some("desc") | Some("DESC")
-        );
+        return Err("invalid_query_field".into());
+    }
+    Ok(())
+}
+
+fn build_query_page(items: Vec<Value>, total: i64, spec: &ParsedStoreQuery) -> Value {
+    let limit_out = spec.limit.unwrap_or(total);
+    json!({
+        "items": items,
+        "total": total,
+        "limit": limit_out,
+        "offset": spec.offset,
+    })
+}
+
+fn sqlite_json_text_expr(field: &str) -> String {
+    format!("CAST(json_extract(payload, '$.{field}') AS TEXT)")
+}
+
+fn sqlite_store_query_pushdown(
+    connection: &Connection,
+    provider: &str,
+    input: &Value,
+) -> Result<Value, String> {
+    let spec = parse_store_query_spec(input)?;
+    let mut where_sql = String::from("provider = ?");
+    let mut bind_values: Vec<rusqlite::types::Value> =
+        vec![rusqlite::types::Value::Text(provider.to_string())];
+    if let Some(filter) = &spec.filter {
+        for (field, expected) in filter {
+            where_sql.push_str(&format!(" AND {} = ?", sqlite_json_text_expr(field)));
+            bind_values.push(rusqlite::types::Value::Text(expected.clone()));
+        }
+    }
+    let count_sql = format!("SELECT COUNT(*) FROM axl_records WHERE {where_sql}");
+    let total: i64 = connection
+        .query_row(
+            &count_sql,
+            rusqlite::params_from_iter(bind_values.iter().cloned()),
+            |row| row.get(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let order_clause = match &spec.order_by {
+        Some(field) => format!(
+            " ORDER BY {} {}",
+            sqlite_json_text_expr(field),
+            if spec.descending { "DESC" } else { "ASC" }
+        ),
+        None => " ORDER BY record_id".to_string(),
+    };
+    let mut data_sql = format!("SELECT payload FROM axl_records WHERE {where_sql}{order_clause}");
+    let mut data_binds = bind_values.clone();
+    if let Some(limit) = spec.limit {
+        data_sql.push_str(" LIMIT ?");
+        data_binds.push(rusqlite::types::Value::Integer(limit));
+    }
+    if spec.offset > 0 {
+        data_sql.push_str(" OFFSET ?");
+        data_binds.push(rusqlite::types::Value::Integer(spec.offset));
+    }
+    let mut statement = connection
+        .prepare(&data_sql)
+        .map_err(|error| error.to_string())?;
+    let rows = statement
+        .query_map(
+            rusqlite::params_from_iter(data_binds.iter().cloned()),
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|error| error.to_string())?;
+    let mut items = Vec::new();
+    for row in rows {
+        let payload = row.map_err(|error| error.to_string())?;
+        items.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+    }
+    Ok(build_query_page(items, total, &spec))
+}
+
+fn postgres_json_text_expr(field: &str) -> String {
+    format!("(payload::json->>'{field}')")
+}
+
+fn postgres_store_query_pushdown(
+    client: &mut Client,
+    provider: &str,
+    input: &Value,
+) -> Result<Value, String> {
+    let spec = parse_store_query_spec(input)?;
+    let mut where_sql = String::from("provider = $1");
+    let mut filter_values = Vec::new();
+    let mut param_index = 2usize;
+    if let Some(filter) = &spec.filter {
+        for (field, expected) in filter {
+            where_sql.push_str(&format!(
+                " AND {} = ${param_index}",
+                postgres_json_text_expr(field)
+            ));
+            filter_values.push(expected.clone());
+            param_index += 1;
+        }
+    }
+    let mut count_params: Vec<&(dyn postgres::types::ToSql + Sync)> = vec![&provider];
+    for value in &filter_values {
+        count_params.push(value);
+    }
+    let count_sql = format!("SELECT COUNT(*)::bigint FROM axl_records WHERE {where_sql}");
+    let total: i64 = client
+        .query_one(&count_sql, &count_params)
+        .map_err(|error| error.to_string())?
+        .get(0);
+    let order_clause = match &spec.order_by {
+        Some(field) => format!(
+            " ORDER BY {} {}",
+            postgres_json_text_expr(field),
+            if spec.descending { "DESC" } else { "ASC" }
+        ),
+        None => " ORDER BY record_id".to_string(),
+    };
+    let mut data_sql = format!("SELECT payload FROM axl_records WHERE {where_sql}{order_clause}");
+    let mut data_params: Vec<&(dyn postgres::types::ToSql + Sync)> = vec![&provider];
+    for value in &filter_values {
+        data_params.push(value);
+    }
+    let limit_value;
+    let offset_value;
+    if let Some(limit) = spec.limit {
+        data_sql.push_str(&format!(" LIMIT ${param_index}"));
+        param_index += 1;
+        limit_value = limit;
+        data_params.push(&limit_value);
+    }
+    if spec.offset > 0 {
+        data_sql.push_str(&format!(" OFFSET ${param_index}"));
+        offset_value = spec.offset;
+        data_params.push(&offset_value);
+    }
+    let rows = client
+        .query(&data_sql, &data_params)
+        .map_err(|error| error.to_string())?;
+    let mut items = Vec::new();
+    for row in rows {
+        let payload: String = row.get(0);
+        items.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+    }
+    Ok(build_query_page(items, total, &spec))
+}
+
+fn mysql_json_text_expr(field: &str) -> String {
+    format!("JSON_UNQUOTE(JSON_EXTRACT(payload, '$.{field}'))")
+}
+
+fn mysql_store_query_pushdown(
+    conn: &mut Conn,
+    provider: &str,
+    input: &Value,
+) -> Result<Value, String> {
+    let spec = parse_store_query_spec(input)?;
+    let mut where_sql = String::from("provider = ?");
+    let mut bind_values: Vec<String> = vec![provider.to_string()];
+    if let Some(filter) = &spec.filter {
+        for (field, expected) in filter {
+            where_sql.push_str(&format!(" AND {} = ?", mysql_json_text_expr(field)));
+            bind_values.push(expected.clone());
+        }
+    }
+    let count_sql = format!("SELECT COUNT(*) FROM axl_records WHERE {where_sql}");
+    let total: i64 = conn
+        .exec_first(
+            &count_sql,
+            bind_values.iter().map(String::as_str).collect::<Vec<_>>(),
+        )
+        .map_err(|error| error.to_string())?
+        .unwrap_or(0);
+    let order_clause = match &spec.order_by {
+        Some(field) => format!(
+            " ORDER BY {} {}",
+            mysql_json_text_expr(field),
+            if spec.descending { "DESC" } else { "ASC" }
+        ),
+        None => " ORDER BY record_id".to_string(),
+    };
+    let mut data_sql = format!("SELECT payload FROM axl_records WHERE {where_sql}{order_clause}");
+    let mut data_binds = bind_values;
+    if let Some(limit) = spec.limit {
+        data_sql.push_str(" LIMIT ?");
+        data_binds.push(limit.to_string());
+    }
+    if spec.offset > 0 {
+        data_sql.push_str(" OFFSET ?");
+        data_binds.push(spec.offset.to_string());
+    }
+    let rows: Vec<String> = conn
+        .exec_map(
+            &data_sql,
+            data_binds.iter().map(String::as_str).collect::<Vec<_>>(),
+            |payload: String| payload,
+        )
+        .map_err(|error| error.to_string())?;
+    let mut items = Vec::new();
+    for payload in rows {
+        items.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+    }
+    Ok(build_query_page(items, total, &spec))
+}
+
+fn store_query(records: Vec<Value>, input: &Value) -> Result<Value, String> {
+    let spec = parse_store_query_spec(input)?;
+    let filter = spec.filter.as_ref().map(|map| {
+        map.iter()
+            .map(|(key, value)| (key.clone(), Value::String(value.clone())))
+            .collect::<serde_json::Map<_, _>>()
+    });
+    let filter_ref = filter.as_ref();
+
+    let mut items: Vec<Value> = records
+        .into_iter()
+        .filter(|record| record_matches_query_filter(record, filter_ref))
+        .collect();
+
+    if let Some(order_by) = &spec.order_by {
         items.sort_by(|left, right| {
             let ordering =
                 compare_query_field_keys(left, right, order_by).unwrap_or(Ordering::Equal);
-            if descending {
+            if spec.descending {
                 ordering.reverse()
             } else {
                 ordering
@@ -1824,29 +2056,14 @@ fn store_query(records: Vec<Value>, input: &Value) -> Result<Value, String> {
     }
 
     let total = items.len() as i64;
-    let offset = spec
-        .get("offset")
-        .and_then(Value::as_i64)
-        .unwrap_or(0)
-        .max(0) as usize;
-    let limit = spec
-        .get("limit")
-        .and_then(Value::as_i64)
-        .filter(|value| *value >= 0)
-        .map(|value| value as usize);
+    let offset = spec.offset.max(0) as usize;
+    let limit = spec.limit.map(|value| value as usize);
     let page: Vec<Value> = items
         .into_iter()
         .skip(offset)
         .take(limit.unwrap_or(usize::MAX))
         .collect();
-    let limit_out = limit.map(|value| value as i64).unwrap_or(total);
-
-    Ok(json!({
-        "items": page,
-        "total": total,
-        "limit": limit_out,
-        "offset": offset as i64,
-    }))
+    Ok(build_query_page(page, total, &spec))
 }
 
 fn record_matches_query_filter(
@@ -5233,6 +5450,58 @@ flow Query RecordQuery -> Result<RecordPage>
             assert_eq!(page["ok"]["total"], 2);
             assert_eq!(page["ok"]["items"][0]["id"], "q3");
         }
+        drop(database.exists().then(|| std::fs::remove_file(&database)));
+    }
+
+    #[test]
+    fn sqlite_store_query_pushdown_rejects_unsafe_filter_fields() {
+        let database = std::env::temp_dir().join(format!(
+            "axl-pushdown-invalid-{}-{}.db",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let path = serde_json::to_string(database.to_str().unwrap()).unwrap();
+        let source = format!(
+            r#"axl 4
+app PushdownGuard
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+entity Record
+  id: uuid required
+capacity RecordStore
+  op query RecordQuery -> Result<RecordPage> idempotent
+skill DurableRecords provides RecordStore
+  native rust axl::store::sqlite
+  config path: text = {path}
+  effect db.read
+flow Query RecordQuery -> Result<RecordPage>
+  in store: RecordStore = DurableRecords
+  call page = store.query(input)?
+  return page
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let result = evaluate_flow_with_runtime(
+            &graph,
+            "Query",
+            json!({"filter": {"kind;drop": "income"}}),
+            &mut runtime,
+        )
+        .unwrap();
+        assert_eq!(result["error"], "invalid_query_field");
         drop(database.exists().then(|| std::fs::remove_file(&database)));
     }
 
