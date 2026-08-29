@@ -434,7 +434,16 @@ pub fn format(program: &Program) -> String {
                                 .as_ref()
                                 .map(|name| format!("{}.{name}", binding.source))
                                 .unwrap_or_else(|| binding.source.clone());
-                            output.push(format!("    bind {target} = {source}"));
+                            let is_filter = page.filters.iter().any(|filter| {
+                                filter.target == binding.target
+                                    && filter.source == binding.source
+                                    && filter.name == binding.name
+                            });
+                            if is_filter {
+                                output.push(format!("    filter {target} = {source}"));
+                            } else {
+                                output.push(format!("    bind {target} = {source}"));
+                            }
                         }
                     }
                 }

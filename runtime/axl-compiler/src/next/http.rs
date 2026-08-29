@@ -146,7 +146,44 @@ pub fn dispatch_with_headers(
     if method == "post" {
         apply_form_post_redirect(graph, request_path, headers, &mut result);
     }
+    apply_api_redirect(route, &mut result);
     result
+}
+
+fn apply_api_redirect(route: &super::ir::GraphNode, result: &mut HttpResult) {
+    if result.body.get("error").is_some() {
+        return;
+    }
+    let Some(type_name) = route.type_name.as_deref() else {
+        return;
+    };
+    let Some((_, output)) = type_name.split_once("->") else {
+        return;
+    };
+    let output = output.trim();
+    let Some(inner) = output.strip_prefix("redirect ") else {
+        return;
+    };
+    let Some(ok) = result.body.get("ok") else {
+        return;
+    };
+    let location = if inner == "text" {
+        ok.as_str().map(str::to_string)
+    } else if inner == "LoginResult" {
+        if let Some(session_id) = ok.get("session_id").and_then(Value::as_str) {
+            result.headers.insert(
+                "set-cookie".into(),
+                format!("sid={session_id}; Path=/; HttpOnly; SameSite=Lax"),
+            );
+        }
+        Some("/home".into())
+    } else {
+        None
+    };
+    if let Some(location) = location {
+        result.status = 302;
+        result.headers.insert("location".into(), location);
+    }
 }
 
 fn match_http_route<'a>(

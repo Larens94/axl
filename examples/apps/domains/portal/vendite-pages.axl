@@ -2,6 +2,33 @@
 axl 4
 app PortalVenditePages
 
+entity ClienteSessioneQuery
+  session_id: uuid required
+  stato: text optional
+
+flow PaginaClientiSessioneQuery ClienteSessioneQuery -> Result<ClientePage>
+  make gate: SessionePermessoInput
+    session_id = input.session_id
+    permesso = "vendite.clienti.read"
+  run _ = RequireSessionPermesso(gate)?
+  in store: ArchivioClienti = SqliteClienti
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  filter items_filtrati: List<Cliente> = pagina.items as cliente
+    where = input.stato != "attivo" || cliente.stato == ClienteStato.attivo
+  fold total: int = items_filtrati from 0 as _cliente
+    next = value + 1
+  make risultato: ClientePage
+    items = items_filtrati
+    total = total
+    limit = pagina.limit
+    offset = pagina.offset
+  return risultato
+
 flow PaginaClientiSessione uuid -> Result<ClientePage>
   make gate: SessionePermessoInput
     session_id = input
@@ -133,4 +160,13 @@ flow PaginaClientiRbacDemoUnit unit -> Result<ClientePage>
     codice = "vendite.clienti.read"
   run _ = RichiediPermesso(check)?
   run pagina = PaginaClientiDemoUnit(input)?
+  return pagina
+
+flow PaginaClientiSessioneQueryDemoUnit unit -> Result<ClientePage>
+  run login = LoginAdminPortalDemoUnit(input)?
+  run _seed = SeedClientiSqlite(input)?
+  make gate: ClienteSessioneQuery
+    session_id = login.session_id
+    stato = "attivo"
+  run pagina = PaginaClientiSessioneQuery(gate)?
   return pagina

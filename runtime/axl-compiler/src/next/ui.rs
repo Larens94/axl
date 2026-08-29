@@ -151,7 +151,7 @@ pub fn render_page_with_runtime(
     let data = runtime::evaluate_flow_with_runtime(graph, &flow, input, provider_runtime)
         .map_err(|error| error.0)?;
     let sidebar = render_sidebar(graph, path);
-    let html = render_page_html(graph, &graph.app, path, &output_type, &data, &sidebar);
+    let html = render_page_html(graph, page, &graph.app, path, &output_type, &data, &sidebar);
     Ok(UiRenderResult {
         path: path.into(),
         flow,
@@ -406,8 +406,38 @@ fn render_detail_card(fields: &[(String, String)]) -> String {
     )
 }
 
+fn render_page_filters(graph: &GraphIr, page: &super::ir::GraphNode, path: &str) -> Option<String> {
+    let filters = children(graph, &page.id, "ui_filter");
+    if filters.is_empty() {
+        return None;
+    }
+    let page_path = page.metadata.get("path")?.split('?').next()?;
+    let query = path.split_once('?').map(|(_, query)| query).unwrap_or("");
+    let fields = filters
+        .iter()
+        .map(|filter| {
+            let name = filter.name.clone();
+            let current = super::http::query_value(query, &name).unwrap_or_default();
+            format!(
+                r#"        <label class="filter-field">{name} <input name="{name}" value="{current}" /></label>"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!(
+        r#"  <section class="card filter-card">
+    <form class="filter-form" method="get" action="{page_path}">
+{fields}
+      <button type="submit">Filtra</button>
+      <a class="filter-reset" href="{page_path}">Reset</a>
+    </form>
+  </section>"#
+    ))
+}
+
 fn render_page_html(
     graph: &GraphIr,
+    page: &super::ir::GraphNode,
     app: &str,
     path: &str,
     output_type: &str,
@@ -420,7 +450,8 @@ fn render_page_html(
         render_home_dashboard(data)
             .unwrap_or_else(|| render_detail_card(&collect_fields(graph, output_type, data)))
     } else if let Some(table) = render_items_table(graph, path, output_type, data) {
-        table
+        let filters = render_page_filters(graph, page, path).unwrap_or_default();
+        format!("{filters}{table}")
     } else {
         let fields = collect_fields(graph, output_type, data);
         render_detail_card(&fields)
@@ -1384,7 +1415,8 @@ fn find_page<'a>(
     graph: &'a GraphIr,
     path: &str,
 ) -> Option<(&'a super::ir::GraphNode, BTreeMap<String, String>)> {
-    let normalized = normalize_path(path);
+    let path_only = path.split('?').next().unwrap_or(path);
+    let normalized = normalize_path(path_only);
     let pages = graph
         .nodes
         .iter()
@@ -1398,7 +1430,7 @@ fn find_page<'a>(
     }
     for page in &pages {
         let pattern = page.metadata.get("path")?;
-        if let Some(parameters) = match_http_path(pattern, path) {
+        if let Some(parameters) = match_http_path(pattern, path_only) {
             return Some((page, parameters));
         }
     }

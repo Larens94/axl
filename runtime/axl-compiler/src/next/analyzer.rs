@@ -2764,7 +2764,9 @@ fn check_api(
         check_request_bindings(route, declarations, diagnostics);
         match declarations.get(route.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
-                if flow.input != route.input || flow.output != route.output {
+                if flow.input != route.input
+                    || !route_output_matches_flow(&route.output, &flow.output)
+                {
                     diagnostics.push(
                         Diagnostic::error(
                             "AXL-H906",
@@ -4240,6 +4242,15 @@ fn type_references(type_name: &str) -> Vec<&str> {
         .collect()
 }
 
+fn route_output_matches_flow(route_output: &str, flow_output: &str) -> bool {
+    if route_output == flow_output {
+        return true;
+    }
+    route_output
+        .strip_prefix("redirect ")
+        .is_some_and(|inner| flow_output == format!("Result<{inner}>"))
+}
+
 fn builtin_type(type_name: &str) -> bool {
     matches!(
         type_name,
@@ -4250,6 +4261,7 @@ fn builtin_type(type_name: &str) -> bool {
             | "text"
             | "string"
             | "email"
+            | "redirect"
             | "uuid"
             | "datetime"
             | "money"
@@ -5051,6 +5063,25 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
                 .insert("order".into(), binding_index.to_string());
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &binding_id, "owns", None));
+        }
+        for (filter_index, filter) in page.filters.iter().enumerate() {
+            let filter_id = format!("{id}.ui_filter.{filter_index}");
+            let mut value = node(
+                &filter_id,
+                "ui_filter",
+                filter.target.as_deref().unwrap_or("$"),
+            );
+            value
+                .metadata
+                .insert("source".into(), filter.source.clone());
+            if let Some(name) = &filter.name {
+                value.metadata.insert("name".into(), name.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), filter_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &filter_id, "owns", None));
         }
         graph.edges.push(edge(
             &id,

@@ -2008,14 +2008,14 @@ fn oauth_auth_call(call: ProviderCall<'_>) -> Result<Value, String> {
                 return Err("oauth_invalid_code".to_string());
             }
             let access_token = sha256_hex(&format!("{client_id}:{code}:{client_secret}"));
-            let sub = format!("oauth-{suffix}");
+            let sub = "admin@example.com".to_string();
             let token = json!({
                 "access_token": access_token,
                 "token_type": "Bearer",
                 "expires_in": 3600,
                 "sub": sub,
             });
-            Ok(Value::String(token.to_string()))
+            Ok(token)
         }
         operation => Err(format!("oauth does not implement operation '{operation}'")),
     }
@@ -4090,9 +4090,7 @@ flow TraceOnce unit -> Result<List<text>>
         assert!(url.contains("redirect_uri="));
 
         let code = oauth_demo_code("demo-state", "demo");
-        let token_json = invoke(&mut runtime, "exchange", Value::String(code)).unwrap();
-        let token_json = token_json.as_str().expect("token json");
-        let token: Value = serde_json::from_str(token_json).expect("token parse");
+        let token = invoke(&mut runtime, "exchange", Value::String(code)).unwrap();
         assert_eq!(
             token.get("token_type"),
             Some(&Value::String("Bearer".into()))

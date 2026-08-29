@@ -202,3 +202,39 @@ flow CreaRuoloPortal CreaRuoloInput -> Result<Ruolo>
     permessi = permessi_vuoti
   call salvato = store.save(ruolo)?
   return salvato
+
+entity OAuthCallbackInput
+  code: text required
+  state: text required
+
+flow OAuthStartPortal unit -> Result<text>
+  in oauth: OAuthClient = DemoOAuthProvider
+  call url = oauth.authorize_url("portal-oauth-state")?
+  return url
+
+flow OAuthCallbackPortal OAuthCallbackInput -> Result<LoginResult>
+  in oauth: OAuthClient = DemoOAuthProvider
+  in utenti: ArchivioUtenti = SqliteUtenti
+  in sessioni: ArchivioSessioni = SqliteSessioni
+  in issuer: JwtIssuer = AuthDemoJwtIssuer
+  call token = oauth.exchange(input.code)?
+  make lookup: UtenteLookup
+    field = "email"
+    value = token.sub
+  call utente = utenti.find_by(lookup)?
+  let attivo = utente.attivo
+  require attivo else "utente_disattivato"
+  make sessione: Sessione
+    id = uuid.v4
+    utente_id = utente.id
+    attiva = true
+  call salvata = sessioni.save(sessione)?
+  make claims: JwtClaims
+    sub = utente.id
+    roles = utente.permessi
+  call jwt = issuer.sign(claims)?
+  make result: LoginResult
+    session_id = salvata.id
+    token = jwt
+    utente_id = utente.id
+  return result

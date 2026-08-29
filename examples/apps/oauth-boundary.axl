@@ -1,18 +1,22 @@
 // OAuth boundary sample — capacity shape and demo provider.
 // Check succeeds (syntax/types). Runtime uses rust::axl::auth::oauth:
 // - authorize_url(state) → provider authorize URL with query params
-// - exchange(code) → JSON OAuthToken text (demo codes: axl-demo-{16 hex})
+// - exchange(code) → OAuthToken record (demo codes: axl-demo-{16 hex})
 //
 // Future ABI (steward queue):
-// - Types: OAuthStart { provider, redirect_uri, state }, OAuthCode { code, state },
-//   OAuthToken { access_token, token_type, expires_in, refresh_token?, sub? }
-// - HTTP redirect + callback route; AXL flow maps token → Sessione
+// - HTTP redirect/callback routes; typed OAuthStart input record
 axl 4
 app OAuthBoundary
 
+entity OAuthToken
+  access_token: text required
+  token_type: text required
+  expires_in: int required
+  sub: text optional
+
 capacity OAuthClient
   op authorize_url text -> Result<text> idempotent
-  op exchange text -> Result<text>
+  op exchange text -> Result<OAuthToken>
 
 skill DemoOAuthProvider provides OAuthClient
   native rust axl::auth::oauth
@@ -28,7 +32,7 @@ flow OAuthAuthorizeUrlDemo text -> Result<text>
   call url = oauth.authorize_url(input)?
   return url
 
-flow OAuthExchangeDemo text -> Result<text>
+flow OAuthExchangeDemo text -> Result<OAuthToken>
   in oauth: OAuthClient = DemoOAuthProvider
   call token = oauth.exchange(input)?
   return token

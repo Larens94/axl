@@ -528,6 +528,7 @@ pub struct UiPage {
     pub input_source: String,
     pub input_name: Option<String>,
     pub bindings: Vec<HttpRequestBinding>,
+    pub filters: Vec<HttpRequestBinding>,
     pub span: SourceSpan,
 }
 

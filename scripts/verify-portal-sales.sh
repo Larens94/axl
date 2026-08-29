@@ -189,6 +189,15 @@ echo "== eval ConfermaOrdineDemoForm (bozza -> confermato via form flow) =="
 echo "== eval AnnullaOrdineDemoForm (bozza -> annullato via form flow) =="
 "${BIN[@]}" eval "$PORTAL" AnnullaOrdineDemoForm examples/apps/inputs/sales-workflow-confirm.json | jq -e '.ok.stato == "annullato" and .ok.totale == 268770'
 
+echo "== eval PaginaClientiSessioneQueryDemoUnit (session + stato filter) =="
+"${BIN[@]}" eval "$PORTAL" PaginaClientiSessioneQueryDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.total == 2'
+
+echo "== ui filter manifest (clienti stato query filter) =="
+"${BIN[@]}" ui "$PORTAL" | jq -e '[.uis[] | select(.name=="VenditeUi") | .pages[] | select(.path=="/clienti") | .input] | index("ClienteSessioneQuery") != null'
+
+echo "== ui filter IR (clienti stato query filter) =="
+"${BIN[@]}" ir "$PORTAL" | jq -e '[.nodes[] | select(.kind=="ui_filter" and .name=="stato")] | length >= 1'
+
 echo "== render clienti list (seeded demo) =="
 "${BIN[@]}" render "$PORTAL" /clienti/demo examples/apps/inputs/unit.json | grep -q 'cliente-001'
 

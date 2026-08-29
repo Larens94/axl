@@ -59,7 +59,40 @@ AXL_OAUTH_CLIENT_ID=demo AXL_OAUTH_CLIENT_SECRET=demo \
   | jq -e '.ok | contains("client_id=demo") and contains("state=demo-state")'
 AXL_OAUTH_CLIENT_ID=demo AXL_OAUTH_CLIENT_SECRET=demo \
   "${BIN[@]}" eval examples/apps/oauth-boundary.axl OAuthExchangeDemo examples/apps/inputs/oauth-code.json \
-  | jq -e '(.ok | fromjson).token_type == "Bearer" and ((.ok | fromjson).access_token | length) > 0'
+  | jq -e '.ok.token_type == "Bearer" and (.ok.access_token | length) > 0'
+
+echo "== OAuth HTTP redirect routes =="
+OAUTH_PORT=18089
+pkill -f 'axl-compiler.*serve' 2>/dev/null || true
+if command -v fuser >/dev/null 2>&1; then
+  fuser -k "${OAUTH_PORT}/tcp" 2>/dev/null || true
+fi
+sleep 0.5
+mkdir -p ./build
+rm -f ./build/portal-auth.db ./build/vendite.db
+(
+  AXL_OAUTH_CLIENT_ID=demo AXL_OAUTH_CLIENT_SECRET=demo \
+    "${BIN[@]}" serve "$PORTAL" "127.0.0.1:${OAUTH_PORT}" &
+  OPID=$!
+  cleanup() { kill "$OPID" 2>/dev/null; wait "$OPID" 2>/dev/null || true; }
+  trap cleanup EXIT
+  ready=0
+  for _ in $(seq 1 50); do
+    if curl -sf --max-time 1 "http://127.0.0.1:${OAUTH_PORT}/" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.2
+  done
+  test "$ready" -eq 1
+  curl -s -D - -o /dev/null --max-time 2 "http://127.0.0.1:${OAUTH_PORT}/auth/oauth/start" \
+    | grep -qi '^location:.*client_id=demo'
+  "${BIN[@]}" eval "$PORTAL" BootstrapPortalProd examples/apps/inputs/unit.json >/dev/null
+  CODE=$(python3 -c "import hashlib; print('axl-demo-'+hashlib.sha256(b'demo:demo-state').hexdigest()[:16])")
+  curl -s -D - -o /dev/null --max-time 2 \
+    "http://127.0.0.1:${OAUTH_PORT}/auth/oauth/callback?code=${CODE}&state=demo-state" \
+    | grep -qi '^location:.*/home'
+)
 
 echo "== route guards in HTTP manifest (session + can on VenditeApi POST /clienti) =="
 "${BIN[@]}" blocks "$PORTAL" >/dev/null

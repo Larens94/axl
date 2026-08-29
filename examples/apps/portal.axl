@@ -6,6 +6,7 @@ import "./sales-domain.axl"
 import "./domains/portal/core.axl"
 import "./domains/portal/vendite-pages.axl"
 import "./domains/portal/prod.axl"
+import "./oauth-boundary.axl"
 
 flow PaginaClientiRbac text -> Result<ClientePage>
   make auth: BearerAuthInput
@@ -35,6 +36,10 @@ api AuthApi
   get /auth/home unit -> Result<HomePage> = PaginaHome
   post /auth/init-demo unit -> Result<UtentePage> = InizializzaPortal
   post /auth/bootstrap unit -> Result<HomePage> = BootstrapPortalProd
+  get /auth/oauth/start unit -> redirect text = OAuthStartPortal
+  get /auth/oauth/callback OAuthCallbackInput -> redirect LoginResult = OAuthCallbackPortal
+    bind code = query.code
+    bind state = query.state
   get /auth/admin/utenti unit -> Result<UtentePage> = PaginaUtentiAdminSqlite
     guard session RequireSession from cookie.sid
     guard can RequireSessionPermesso "admin.utenti.read" from cookie.sid
@@ -163,7 +168,9 @@ ui AuthUi
   action /logout POST /auth/logout redirect /login clear_cookie sid
 
 ui VenditeUi
-  page /clienti uuid -> Result<ClientePage> = PaginaClientiSessione from cookie.sid
+  page /clienti ClienteSessioneQuery -> Result<ClientePage> = PaginaClientiSessioneQuery
+    bind session_id = cookie.sid
+    filter stato = query.stato
   form /clienti/new Cliente -> Result<Cliente> = CreaClienteSqlite submit /clienti
   page /prodotti uuid -> Result<ProdottoPage> = PaginaProdottiSessione from cookie.sid
   form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdottoSqlite submit /prodotti

@@ -2610,7 +2610,7 @@ fn parse_ui_page_block(
         );
         return start + 1;
     }
-    let (flow, input_source, input_name, mut bindings) =
+    let (flow, input_source, input_name, initial_bindings) =
         if let Some((flow, binding)) = flow.split_once(" from ") {
             let Some((source, name)) = parse_request_source(binding) else {
                 diagnostics.push(
@@ -2651,11 +2651,17 @@ fn parse_ui_page_block(
                 }],
             )
         };
+    let mut bindings = initial_bindings;
+    let mut filters = Vec::new();
     let mut cursor = start + 1;
     let mut found_nested = false;
     while cursor < body.len() && body[cursor].indent > line.indent {
         let binding_line = &body[cursor];
-        let Some(value) = binding_line.text.strip_prefix("bind ") else {
+        let (is_filter, prefix) = if let Some(value) = binding_line.text.strip_prefix("filter ") {
+            (true, value)
+        } else if let Some(value) = binding_line.text.strip_prefix("bind ") {
+            (false, value)
+        } else {
             diagnostics.push(
                 Diagnostic::error(
                     "AXL-P956",
@@ -2664,14 +2670,14 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name",
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name",
                     &binding_line.text,
                 ),
             );
             cursor += 1;
             continue;
         };
-        let parsed = value.split_once('=').and_then(|(target, source)| {
+        let parsed = prefix.split_once('=').and_then(|(target, source)| {
             let target = target.trim();
             let (source, name) = parse_request_source(source.trim())?;
             (!target.is_empty()).then(|| (target.to_string(), source, name))
@@ -2681,17 +2687,38 @@ fn parse_ui_page_block(
                 Diagnostic::error(
                     "AXL-P956",
                     "parse",
-                    "invalid composite UI page binding",
+                    if is_filter {
+                        "invalid UI page filter"
+                    } else {
+                        "invalid composite UI page binding"
+                    },
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name",
+                    if is_filter {
+                        "filter field = query.name"
+                    } else {
+                        "bind field = body|body.field|path.name|query.name|header.name|cookie.name"
+                    },
                     &binding_line.text,
                 ),
             );
             cursor += 1;
             continue;
         };
+        if is_filter && source != "query" {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P958",
+                    "parse",
+                    "a UI page filter must bind from query parameters",
+                    span(binding_line),
+                )
+                .expected("filter field = query.name", &binding_line.text),
+            );
+            cursor += 1;
+            continue;
+        }
         if !found_nested {
             if input_source != "body" || input_name.is_some() {
                 diagnostics.push(Diagnostic::error(
@@ -2702,14 +2729,19 @@ fn parse_ui_page_block(
                 ));
             }
             bindings.clear();
+            filters.clear();
             found_nested = true;
         }
-        bindings.push(HttpRequestBinding {
+        let binding = HttpRequestBinding {
             target: Some(target),
             source,
             name,
             span: span(binding_line),
-        });
+        };
+        bindings.push(binding.clone());
+        if is_filter {
+            filters.push(binding);
+        }
         cursor += 1;
     }
     let (input_source, input_name) = if found_nested {
@@ -2725,6 +2757,7 @@ fn parse_ui_page_block(
         input_source,
         input_name,
         bindings,
+        filters,
         span: span(line),
     });
     cursor
