@@ -87,7 +87,7 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 - **Gate 8 secret refs** (`secret("ENV")`) used by portal auth/vendite demo skills.
 - **Password reset** sends token via `EmailSender` (`MemoriaEmail`); API returns only `messaggio`.
 - Nested `List<>` form rows still use flat workaround forms.
-- OAuth remains open: `examples/apps/oauth-boundary.axl` proves missing `rust::axl::auth::oauth`.
+- OAuth demo provider: `examples/apps/oauth-boundary.axl` exercises `rust::axl::auth::oauth` (`authorize_url` / `exchange`). HTTP redirect/callback routes remain open.
 - Package registry/lockfile remain open Gate 8 items.
 
 ## Verify

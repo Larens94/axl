@@ -52,14 +52,14 @@ rm -f ./build/portal-auth.db ./build/vendite.db
 echo "== diamond imports (shared email merged once) =="
 "${BIN[@]}" check examples/apps/import-diamond-demo.axl --json | jq -e '.ok == true'
 
-echo "== OAuth boundary (provider missing at runtime) =="
+echo "== OAuth provider (authorize_url + exchange) =="
 "${BIN[@]}" check examples/apps/oauth-boundary.axl --json | jq -e '.ok == true'
-set +e
-OAUTH_OUT=$(AXL_OAUTH_CLIENT_ID=demo AXL_OAUTH_CLIENT_SECRET=demo \
-  "${BIN[@]}" eval examples/apps/oauth-boundary.axl OAuthAuthorizeUrlDemo examples/apps/inputs/oauth-start.json 2>&1)
-OAUTH_EC=$?
-set -e
-echo "$OAUTH_OUT" | grep -q "unsupported provider implementation 'rust::axl::auth::oauth'"
+AXL_OAUTH_CLIENT_ID=demo AXL_OAUTH_CLIENT_SECRET=demo \
+  "${BIN[@]}" eval examples/apps/oauth-boundary.axl OAuthAuthorizeUrlDemo examples/apps/inputs/oauth-start.json \
+  | jq -e '.ok | contains("client_id=demo") and contains("state=demo-state")'
+AXL_OAUTH_CLIENT_ID=demo AXL_OAUTH_CLIENT_SECRET=demo \
+  "${BIN[@]}" eval examples/apps/oauth-boundary.axl OAuthExchangeDemo examples/apps/inputs/oauth-code.json \
+  | jq -e '(.ok | fromjson).token_type == "Bearer" and ((.ok | fromjson).access_token | length) > 0'
 
 echo "== route guards in HTTP manifest (session + can on VenditeApi POST /clienti) =="
 "${BIN[@]}" blocks "$PORTAL" >/dev/null

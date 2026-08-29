@@ -235,6 +235,7 @@ impl ProviderRuntime for BuiltinRuntime {
             "rust::axl::auth::jwt" => jwt_auth_call(call),
             "rust::axl::auth::jwt_sign" => jwt_sign_call(call),
             "rust::axl::auth::jwt_decode" => jwt_decode_call(call),
+            "rust::axl::auth::oauth" => oauth_auth_call(call),
             "rust::axl::auth::password" => password_auth_call(call),
             "rust::axl::middleware::header_gate" => header_gate_call(call),
             "rust::axl::middleware::response_headers" => response_headers_call(call),
@@ -1931,6 +1932,93 @@ fn jwt_decode_call(call: ProviderCall<'_>) -> Result<Value, String> {
         .or_else(|| token.strip_prefix("bearer "))
         .unwrap_or(token);
     decode_hs256_jwt(token, secret, issuer)
+}
+
+fn url_encode_query_value(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
+fn oauth_config_text<'a>(
+    config: &'a BTreeMap<String, Value>,
+    key: &str,
+) -> Result<&'a str, String> {
+    config
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| format!("oauth_{key}_not_configured"))
+}
+
+fn oauth_auth_call(call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "authorize_url" => {
+            let state = call
+                .input
+                .as_str()
+                .ok_or_else(|| "oauth authorize_url requires state text".to_string())?;
+            let client_id = oauth_config_text(&call.config, "client_id")?;
+            let authorize_url = oauth_config_text(&call.config, "authorize_url")?;
+            let redirect_uri = call
+                .config
+                .get("redirect_uri")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("urn:ietf:wg:oauth:2.0:oob");
+            let scope = call
+                .config
+                .get("scope")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("openid profile");
+            let separator = if authorize_url.contains('?') {
+                '&'
+            } else {
+                '?'
+            };
+            let url = format!(
+                "{authorize_url}{separator}response_type=code&client_id={}&state={}&redirect_uri={}&scope={}",
+                url_encode_query_value(client_id),
+                url_encode_query_value(state),
+                url_encode_query_value(redirect_uri),
+                url_encode_query_value(scope),
+            );
+            Ok(Value::String(url))
+        }
+        "exchange" => {
+            let code = call
+                .input
+                .as_str()
+                .ok_or_else(|| "oauth exchange requires authorization code text".to_string())?;
+            let client_id = oauth_config_text(&call.config, "client_id")?;
+            let client_secret = oauth_config_text(&call.config, "client_secret")?;
+            let _token_url = oauth_config_text(&call.config, "token_url")?;
+            let Some(suffix) = code.strip_prefix("axl-demo-") else {
+                return Err("oauth_invalid_code".to_string());
+            };
+            if suffix.len() != 16 || !suffix.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                return Err("oauth_invalid_code".to_string());
+            }
+            let access_token = sha256_hex(&format!("{client_id}:{code}:{client_secret}"));
+            let sub = format!("oauth-{suffix}");
+            let token = json!({
+                "access_token": access_token,
+                "token_type": "Bearer",
+                "expires_in": 3600,
+                "sub": sub,
+            });
+            Ok(Value::String(token.to_string()))
+        }
+        operation => Err(format!("oauth does not implement operation '{operation}'")),
+    }
 }
 
 fn decode_hs256_jwt(token: &str, secret: &str, expected_issuer: &str) -> Result<Value, String> {
@@ -3951,6 +4039,69 @@ flow TraceOnce unit -> Result<List<text>>
         assert_eq!(
             authorize(&mut runtime, "a.b.c").unwrap(),
             Value::Bool(false)
+        );
+    }
+
+    #[test]
+    fn oauth_authorize_url_and_exchange_demo_round_trip() {
+        fn oauth_demo_code(state: &str, client_secret: &str) -> String {
+            format!(
+                "axl-demo-{}",
+                &sha256_hex(&format!("{client_secret}:{state}"))[..16]
+            )
+        }
+
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let mut config = BTreeMap::new();
+        config.insert("client_id".into(), Value::String("demo".into()));
+        config.insert("client_secret".into(), Value::String("demo".into()));
+        config.insert(
+            "authorize_url".into(),
+            Value::String("https://example.invalid/oauth/authorize".into()),
+        );
+        config.insert(
+            "token_url".into(),
+            Value::String("https://example.invalid/oauth/token".into()),
+        );
+        config.insert(
+            "redirect_uri".into(),
+            Value::String("https://portal.example.invalid/oauth/callback".into()),
+        );
+        let invoke = |runtime: &mut BuiltinRuntime, operation: &str, input: Value| {
+            runtime.invoke(ProviderCall {
+                provider: "DemoOAuth",
+                capacity: "OAuthClient",
+                implementation: "rust::axl::auth::oauth",
+                operation,
+                config: config.clone(),
+                input,
+            })
+        };
+
+        let url = invoke(
+            &mut runtime,
+            "authorize_url",
+            Value::String("demo-state".into()),
+        )
+        .unwrap();
+        let url = url.as_str().expect("authorize url");
+        assert!(url.contains("client_id=demo"));
+        assert!(url.contains("state=demo-state"));
+        assert!(url.contains("redirect_uri="));
+
+        let code = oauth_demo_code("demo-state", "demo");
+        let token_json = invoke(&mut runtime, "exchange", Value::String(code)).unwrap();
+        let token_json = token_json.as_str().expect("token json");
+        let token: Value = serde_json::from_str(token_json).expect("token parse");
+        assert_eq!(
+            token.get("token_type"),
+            Some(&Value::String("Bearer".into()))
+        );
+        assert!(
+            token
+                .get("access_token")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty())
         );
     }
 

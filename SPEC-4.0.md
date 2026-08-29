@@ -449,9 +449,11 @@ skill AuthDemoJwtIssuer provides JwtIssuer
 The IR stores `secret_ref` metadata with a null value; `provider_config` resolves
 the environment variable at invoke time. Provider manifests redact the value.
 Demo plaintext skill config remains allowed for fixtures that have not migrated.
-OAuth adapters are not implemented. `examples/apps/oauth-boundary.axl` documents
-the intended `OAuthClient` capacity; eval fails with
-`unsupported provider implementation 'rust::axl::auth::oauth'`.
+OAuth demo provider `rust::axl::auth::oauth` implements `authorize_url` and
+`exchange` on the `OAuthClient` capacity (`examples/apps/oauth-boundary.axl`).
+Demo authorization codes use the `axl-demo-{16hex}` shape; `client_id` /
+`client_secret` resolve from `secret("ENV")` at invoke time. HTTP redirect and
+callback routes remain open.
 
 Routes may also declare **per-route guards** that call AXL flows (no application
 logic in Rust). Guards run after API middleware and before bearer auth:
@@ -1169,7 +1171,7 @@ shell, component registry and admin UI kit are not implemented yet.
   including transactions and migrations.
 - `examples/apps/import-demo.axl` — multi-file import of a shared module.
 - `examples/apps/import-diamond-demo.axl` — diamond import merges shared email once.
-- `examples/apps/oauth-boundary.axl` — OAuth capacity shape; runtime provider missing.
+- `examples/apps/oauth-boundary.axl` — OAuth capacity + demo `rust::axl::auth::oauth` provider.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.

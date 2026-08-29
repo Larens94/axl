@@ -51,7 +51,8 @@ allowed requests then HTTP 429. Capacity-backed CORS adds `Access-Control-*`
 headers and OPTIONS preflight through replaceable middleware skills. Capacity-
 backed HS256 JWT auth validates `sub`/`iss` with demo HMAC config on the same
 open `HttpAuth` port. Demo secrets may appear in skill config; true secret
-references are Gate 8. OAuth remains open (`examples/apps/oauth-boundary.axl`).
+references are Gate 8. OAuth demo provider is executable (`oauth-boundary.axl`);
+HTTP redirect/callback routes remain open.
 Gate 2 auth adapters are otherwise complete. Portal password reset delivers the
 token only through `EmailSender`. A Vite host under `hosts/portal-web` consumes
 `axl-ui/1` codegen with a same-origin cookie proxy. Gate 3 transactions are executable through open

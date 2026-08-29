@@ -755,8 +755,8 @@ upgrade/downgrade, typed store queries and the minimal UI page slice are proven.
 Generated target files are not yet a deployable app. Capacity-backed rate-limit
 and CORS middleware are proven. Capacity-backed HS256 JWT auth is proven with
 demo config secrets. True secret references (Gate 8) are proven on portal auth/
-vendite skills; OAuth remains open (`oauth-boundary.axl` → missing
-`rust::axl::auth::oauth`). Password reset uses `EmailSender.latest` without
+vendite skills; OAuth demo provider is proven (`oauth-boundary.axl` →
+`authorize_url` + `exchange`). Password reset uses `EmailSender.latest` without
 returning the token in the API result. `hosts/portal-web` syncs `axl-ui/1`
 codegen. Gate 2 auth adapters are otherwise complete. Next Gate 3 target: PostgreSQL/
 MySQL and document tx/migrate behind the same capacities. Next Gate 4 target:
