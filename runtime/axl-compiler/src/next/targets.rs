@@ -32,6 +32,9 @@ pub fn generate(graph: &GraphIr, output: &Path) -> Result<()> {
     }
     std::fs::write(rust_dir.join("axl_contracts.rs"), rust_contracts(graph))?;
     std::fs::write(react_dir.join("axl_slots.ts"), react_slots(graph))?;
+    std::fs::write(react_dir.join("axl_routes.tsx"), react_routes(graph))?;
+    std::fs::write(react_dir.join("axl_layouts.tsx"), react_layouts(graph))?;
+    std::fs::write(react_dir.join("axl_registry.ts"), react_registry(graph))?;
     std::fs::write(sql_dir.join("schema.sql"), sql_schema(graph))?;
     std::fs::write(
         agent_dir.join("agents.json"),
@@ -71,6 +74,14 @@ pub fn provider_manifest(graph: &GraphIr) -> serde_json::Value {
             let configs = children(graph, &skill.id, "config")
                 .into_iter()
                 .map(|config| {
+                    if let Some(secret_ref) = config.metadata.get("secret_ref") {
+                        return json!({
+                            "name": config.name,
+                            "type": config.type_name,
+                            "secret_ref": secret_ref,
+                            "value": null,
+                        });
+                    }
                     let raw = config.metadata.get("value").cloned().unwrap_or_default();
                     json!({
                         "name": config.name,
@@ -198,6 +209,195 @@ pub fn react_slots(graph: &GraphIr) -> String {
         "// Generated from AXL Semantic Graph IR. Do not edit.\n\nexport const axlSlots = {} as const;\n\nexport const axlInstances = {} as const;\n",
         serde_json::to_string_pretty(&slots).expect("slot registry is JSON serializable"),
         serde_json::to_string_pretty(&instances).expect("instance registry is JSON serializable")
+    )
+}
+
+fn react_layout_for_path(path: &str) -> &'static str {
+    let normalized = if path.is_empty() { "/" } else { path };
+    if matches!(
+        normalized,
+        "/" | "/login" | "/register" | "/password-dimenticata" | "/reimposta-password"
+    ) {
+        "GuestLayout"
+    } else if normalized.starts_with("/admin") {
+        "AdminLayout"
+    } else {
+        "AppLayout"
+    }
+}
+
+pub fn react_routes(graph: &GraphIr) -> String {
+    let manifest = ui::ui_manifest(graph);
+    let mut routes = Vec::new();
+    if let Some(uis) = manifest.get("uis").and_then(|value| value.as_array()) {
+        for ui in uis {
+            let ui_name = ui
+                .get("name")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            if let Some(pages) = ui.get("pages").and_then(|value| value.as_array()) {
+                for page in pages {
+                    let path = page
+                        .get("path")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("/");
+                    routes.push(json!({
+                        "kind": "page",
+                        "ui": ui_name,
+                        "path": path,
+                        "layout": react_layout_for_path(path),
+                        "flow": page.get("flow"),
+                        "input": page.get("input"),
+                        "output": page.get("output"),
+                        "input_source": page.get("input_source"),
+                        "demo": path.contains("/demo"),
+                    }));
+                }
+            }
+            if let Some(forms) = ui.get("forms").and_then(|value| value.as_array()) {
+                for form in forms {
+                    let path = form
+                        .get("path")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or("/");
+                    routes.push(json!({
+                        "kind": "form",
+                        "ui": ui_name,
+                        "path": path,
+                        "layout": react_layout_for_path(path),
+                        "entity": form.get("entity"),
+                        "flow": form.get("flow"),
+                        "submit": form.get("submit"),
+                        "redirect": form.get("redirect"),
+                        "demo": false,
+                    }));
+                }
+            }
+        }
+    }
+    format!(
+        r#"// Generated from AXL Semantic Graph IR. Do not edit.
+// Protocol: axl-ui/1 → React Router route table.
+
+export type AxlLayout = "GuestLayout" | "AppLayout" | "AdminLayout";
+
+export type AxlRoute = {{
+  kind: "page" | "form";
+  ui: string;
+  path: string;
+  layout: AxlLayout;
+  flow?: string | null;
+  input?: string | null;
+  output?: string | null;
+  entity?: string | null;
+  submit?: string | null;
+  redirect?: string | null;
+  input_source?: string | null;
+  demo: boolean;
+}};
+
+export const axlApp = "{app}" as const;
+export const axlUiProtocol = "axl-ui/1" as const;
+export const axlRoutes = {routes} as const satisfies readonly AxlRoute[];
+
+export const axlProductionRoutes = axlRoutes.filter((route) => !route.demo);
+"#,
+        app = graph.app,
+        routes = serde_json::to_string_pretty(&routes).expect("routes are JSON serializable")
+    )
+}
+
+pub fn react_layouts(graph: &GraphIr) -> String {
+    format!(
+        r#"// Generated from AXL Semantic Graph IR. Do not edit.
+// Layout slots for axl-ui/1. Host app provides concrete components.
+
+import type {{ AxlLayout }} from "./axl_routes";
+
+export type AxlLayoutProps = {{
+  app: string;
+  path: string;
+  children: unknown;
+}};
+
+export type AxlLayoutComponent = (props: AxlLayoutProps) => unknown;
+
+/** Registry keys that a React host must bind. */
+export const axlLayoutSlots: Record<AxlLayout, string> = {{
+  GuestLayout: "axl::ui::GuestLayout",
+  AppLayout: "axl::ui::AppLayout",
+  AdminLayout: "axl::ui::AdminLayout",
+}};
+
+export const axlDefaultApp = "{app}" as const;
+"#,
+        app = graph.app
+    )
+}
+
+pub fn react_registry(graph: &GraphIr) -> String {
+    let mut components = Vec::new();
+    for node in graph.nodes.iter().filter(|node| node.kind == "page") {
+        let path = node.metadata.get("path").cloned().unwrap_or_default();
+        let name = path
+            .trim_matches('/')
+            .replace('/', "_")
+            .replace(['{', '}'], "");
+        let name = if name.is_empty() {
+            "HomePage".into()
+        } else {
+            format!(
+                "{}Page",
+                name.split('_')
+                    .map(|part| {
+                        let mut chars = part.chars();
+                        match chars.next() {
+                            Some(first) => {
+                                format!("{}{}", first.to_ascii_uppercase(), chars.as_str())
+                            }
+                            None => String::new(),
+                        }
+                    })
+                    .collect::<String>()
+            )
+        };
+        components.push(json!({
+            "kind": "page",
+            "name": name,
+            "path": path,
+            "flow": node.metadata.get("flow"),
+            "layout": react_layout_for_path(&path),
+        }));
+    }
+    for node in graph.nodes.iter().filter(|node| node.kind == "form") {
+        let path = node.metadata.get("path").cloned().unwrap_or_default();
+        let entity = node.metadata.get("entity").cloned().unwrap_or_default();
+        components.push(json!({
+            "kind": "form",
+            "name": format!("{entity}Form"),
+            "path": path,
+            "entity": entity,
+            "submit": node.metadata.get("submit"),
+            "layout": react_layout_for_path(&path),
+        }));
+    }
+    components.sort_by(|left, right| {
+        left.get("name")
+            .and_then(|value| value.as_str())
+            .cmp(&right.get("name").and_then(|value| value.as_str()))
+    });
+    format!(
+        r#"// Generated from AXL Semantic Graph IR. Do not edit.
+// Component registry for axl-ui/1 hosts (LoginForm, DataTable, AdminShell, …).
+
+export const axlComponentRegistry = {components} as const;
+
+export function axlComponentForPath(path: string) {{
+  return axlComponentRegistry.find((entry) => entry.path === path);
+}}
+"#,
+        components =
+            serde_json::to_string_pretty(&components).expect("registry is JSON serializable")
     )
 }
 
@@ -454,6 +654,10 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
                     bindings.sort_by_key(|binding| binding.metadata.get("order")
                         .and_then(|value| value.parse::<usize>().ok())
                         .unwrap_or(usize::MAX));
+                    let mut guards = children(graph, &route.id, "route_guard");
+                    guards.sort_by_key(|guard| guard.metadata.get("order")
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .unwrap_or(usize::MAX));
                     json!({
                         "method": route.metadata.get("method"),
                         "path": route.metadata.get("path"),
@@ -466,6 +670,13 @@ pub fn http_manifest(graph: &GraphIr) -> serde_json::Value {
                             "target": (binding.name != "$").then_some(&binding.name),
                             "source": binding.metadata.get("source"),
                             "name": binding.metadata.get("name"),
+                        })).collect::<Vec<_>>(),
+                        "guards": guards.into_iter().map(|guard| json!({
+                            "kind": guard.metadata.get("kind"),
+                            "flow": guard.metadata.get("flow"),
+                            "param": guard.metadata.get("param"),
+                            "source": guard.metadata.get("source"),
+                            "name": guard.metadata.get("name"),
                         })).collect::<Vec<_>>(),
                     })
                 }).collect::<Vec<_>>(),
@@ -527,6 +738,9 @@ fn target_manifest(graph: &GraphIr) -> serde_json::Value {
         "targets": {
             "rust": "rust/axl_contracts.rs",
             "react": "react/axl_slots.ts",
+            "react_routes": "react/axl_routes.tsx",
+            "react_layouts": "react/axl_layouts.tsx",
+            "react_registry": "react/axl_registry.ts",
             "sql": "sql/schema.sql",
             "agents": "agents/agents.json",
             "blocks": "blocks/open-blocks.json",
@@ -763,6 +977,14 @@ api DemoApi
         assert!(react.contains("crm::DefaultRow"));
         assert!(react.contains("axlInstances"));
         assert!(react.contains("CompactRow"));
+        let routes = react_routes(&graph);
+        assert!(routes.contains("axlRoutes"));
+        assert!(routes.contains("axl-ui/1"));
+        let layouts = react_layouts(&graph);
+        assert!(layouts.contains("GuestLayout"));
+        assert!(layouts.contains("AppLayout"));
+        let registry = react_registry(&graph);
+        assert!(registry.contains("axlComponentRegistry"));
         assert!(sql.contains("CREATE TABLE IF NOT EXISTS customers"));
         assert!(sql.contains("email TEXT NOT NULL UNIQUE"));
         assert_eq!(blocks["protocol"], "axl-open-block/2");

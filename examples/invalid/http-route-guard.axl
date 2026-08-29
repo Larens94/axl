@@ -1,0 +1,16 @@
+axl 4
+app InvalidHttpRouteGuard
+flow Identity text -> text
+  return input
+flow SessionOk uuid -> Result<uuid>
+  return input
+api BrokenGuards
+  post /open text -> text = Identity
+    guard weird SessionOk from cookie.sid
+  post /session text -> text = Identity
+    guard session UnknownFlow from cookie.sid
+  post /can text -> text = Identity
+    guard can SessionOk from cookie.sid
+  post /ok text -> text = Identity
+    guard session SessionOk from cookie.sid
+    guard can SessionOk "demo.read" from cookie.sid

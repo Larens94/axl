@@ -1,0 +1,35 @@
+// Sales shared: auth demos, PDF capacities; email from domains/shared/email.axl
+axl 4
+app SalesShared
+import "../shared/email.axl"
+
+capacity HttpAuth
+  op authorize text -> Result<bool> idempotent
+
+// Demo bearer/JWT resolve secrets at runtime (Gate 8); values never enter IR plaintext.
+skill VenditeDemoBearer provides HttpAuth
+  native rust axl::auth::bearer
+  config token: text = secret("AXL_VENDITE_BEARER")
+  capability auth.verify
+
+skill VenditeDemoJwt provides HttpAuth
+  native rust axl::auth::jwt
+  config secret: text = secret("AXL_VENDITE_JWT")
+  config issuer: text = "axl-vendite"
+  capability auth.verify
+
+entity PdfDocument
+  id: uuid required
+  title: text required
+  totale: money required
+
+capacity PdfRenderer
+  op render PdfDocument -> Result<text> idempotent
+  op get text -> Result<text> idempotent
+
+skill MemoriaPdf provides PdfRenderer
+  native rust axl::pdf::memory
+
+enum ClienteStato
+  attivo
+  inattivo

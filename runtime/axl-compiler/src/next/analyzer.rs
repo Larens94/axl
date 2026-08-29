@@ -238,7 +238,7 @@ fn check_skill(
             ));
         }
         check_type(&config.type_name, &config.span, declarations, diagnostics);
-        if !scalar_value_matches(&config.type_name, &config.value) {
+        if config.secret_ref.is_none() && !scalar_value_matches(&config.type_name, &config.value) {
             diagnostics.push(
                 Diagnostic::error(
                     "AXL-V305",
@@ -2764,7 +2764,9 @@ fn check_api(
         check_request_bindings(route, declarations, diagnostics);
         match declarations.get(route.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
-                if flow.input != route.input || flow.output != route.output {
+                if flow.input != route.input
+                    || !route_output_matches_flow(&route.output, &flow.output)
+                {
                     diagnostics.push(
                         Diagnostic::error(
                             "AXL-H906",
@@ -2801,6 +2803,85 @@ fn check_api(
                 .expected("declared flow", &route.flow),
             ),
         }
+        check_route_guards(route, declarations, diagnostics);
+    }
+}
+
+fn check_route_guards(
+    route: &ApiRoute,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    for guard in &route.guards {
+        if !matches!(guard.kind.as_str(), "session" | "guest" | "can") {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H920",
+                    "http",
+                    format!("unsupported route guard kind '{}'", guard.kind),
+                    guard.span.clone(),
+                )
+                .expected("session|guest|can", &guard.kind),
+            );
+        }
+        let name = guard.name.as_deref().unwrap_or_default();
+        if !valid_name(name, false) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-H921",
+                "http",
+                format!("invalid route guard binding name '{name}'"),
+                guard.span.clone(),
+            ));
+        }
+        if !matches!(
+            guard.source.as_str(),
+            "cookie" | "header" | "query" | "path"
+        ) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H921",
+                    "http",
+                    format!("unsupported route guard source '{}'", guard.source),
+                    guard.span.clone(),
+                )
+                .expected("cookie|header|query|path", &guard.source),
+            );
+        }
+        if guard.kind == "can" && guard.param.as_ref().is_none_or(|value| value.is_empty()) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H922",
+                    "http",
+                    "a can guard requires a permission parameter",
+                    guard.span.clone(),
+                )
+                .expected(
+                    "guard can Flow \"perm.code\" from cookie.sid",
+                    "missing param",
+                ),
+            );
+        }
+        match declarations.get(guard.flow.as_str()) {
+            Some(Declaration::Flow(_)) => {}
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H923",
+                    "http",
+                    format!("route guard target '{}' is not a flow", guard.flow),
+                    guard.span.clone(),
+                )
+                .expected("flow", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-H923",
+                    "http",
+                    format!("route guard references unknown flow '{}'", guard.flow),
+                    guard.span.clone(),
+                )
+                .expected("declared flow", &guard.flow),
+            ),
+        }
     }
 }
 
@@ -2809,6 +2890,87 @@ fn check_page_bindings(
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
+    if page.input_source == "composite" {
+        let Some(Declaration::Entity(entity)) = declarations.get(page.input.as_str()) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U915",
+                    "ui",
+                    format!("composite UI page requires entity input '{}'", page.input),
+                    page.span.clone(),
+                )
+                .expected("declared entity", &page.input),
+            );
+            return;
+        };
+        let mut targets = BTreeSet::new();
+        for binding in &page.bindings {
+            let target = binding.target.as_deref().unwrap_or_default();
+            if !valid_name(target, false) {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-U913",
+                    "ui",
+                    format!("invalid UI page target '{target}'"),
+                    binding.span.clone(),
+                ));
+            }
+            let Some(field) = entity.fields.iter().find(|field| field.name == target) else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U916",
+                        "ui",
+                        format!("unknown composite UI page field '{}.{target}'", entity.name),
+                        binding.span.clone(),
+                    )
+                    .expected("declared entity field", target),
+                );
+                continue;
+            };
+            if !targets.insert(target) {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-U916",
+                    "ui",
+                    format!(
+                        "duplicate composite UI page field '{}.{target}'",
+                        entity.name
+                    ),
+                    binding.span.clone(),
+                ));
+            }
+            let name = binding.name.as_deref().unwrap_or_default();
+            if binding.source == "path"
+                && !page
+                    .path
+                    .split('/')
+                    .any(|segment| segment == format!("{{{name}}}"))
+            {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U914",
+                        "ui",
+                        format!("page path binding '{name}' has no matching placeholder"),
+                        binding.span.clone(),
+                    )
+                    .expected(format!("{{{name}}}"), &page.path),
+                );
+            }
+            if !http_binding_type(&field.type_name, declarations) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U915",
+                        "ui",
+                        format!(
+                            "page binding cannot construct field type '{}'",
+                            field.type_name
+                        ),
+                        binding.span.clone(),
+                    )
+                    .expected("scalar or enum field type", field.name.as_str()),
+                );
+            }
+        }
+        return;
+    }
     if page.input_source == "body" {
         return;
     }
@@ -3636,6 +3798,9 @@ fn compatible_make_assignment(found: &str, expected: &str) -> bool {
         (
             "text" | "string",
             "uuid" | "datetime" | "email" | "duration"
+        ) | (
+            "uuid" | "datetime" | "email" | "duration",
+            "text" | "string"
         ) | ("int", "money" | "float")
             | ("float", "money")
     )
@@ -4077,6 +4242,15 @@ fn type_references(type_name: &str) -> Vec<&str> {
         .collect()
 }
 
+fn route_output_matches_flow(route_output: &str, flow_output: &str) -> bool {
+    if route_output == flow_output {
+        return true;
+    }
+    route_output
+        .strip_prefix("redirect ")
+        .is_some_and(|inner| flow_output == format!("Result<{inner}>"))
+}
+
 fn builtin_type(type_name: &str) -> bool {
     matches!(
         type_name,
@@ -4087,6 +4261,7 @@ fn builtin_type(type_name: &str) -> bool {
             | "text"
             | "string"
             | "email"
+            | "redirect"
             | "uuid"
             | "datetime"
             | "money"
@@ -4358,7 +4533,14 @@ fn lower_skill(skill: &Skill, graph: &mut GraphIr) {
         let config_id = format!("{id}.config.{}", config.name);
         let mut value = node(&config_id, "config", &config.name);
         value.type_name = Some(config.type_name.clone());
-        value.metadata.insert("value".into(), config.value.clone());
+        if let Some(secret_ref) = &config.secret_ref {
+            value
+                .metadata
+                .insert("secret_ref".into(), secret_ref.clone());
+            value.metadata.insert("value".into(), "null".into());
+        } else {
+            value.metadata.insert("value".into(), config.value.clone());
+        }
         graph.nodes.push(value);
         graph.edges.push(edge(&id, &config_id, "owns", None));
     }
@@ -4812,6 +4994,30 @@ fn lower_api(api: &Api, graph: &mut GraphIr) {
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &binding_id, "owns", None));
         }
+        for (guard_index, guard) in route.guards.iter().enumerate() {
+            let guard_id = format!("{id}.route_guard.{guard_index}");
+            let mut value = node(&guard_id, "route_guard", &guard.kind);
+            value.metadata.insert("kind".into(), guard.kind.clone());
+            value.metadata.insert("flow".into(), guard.flow.clone());
+            if let Some(param) = &guard.param {
+                value.metadata.insert("param".into(), param.clone());
+            }
+            value.metadata.insert("source".into(), guard.source.clone());
+            if let Some(name) = &guard.name {
+                value.metadata.insert("name".into(), name.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), guard_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &guard_id, "owns", None));
+            graph.edges.push(edge(
+                &guard_id,
+                &format!("flow.{}", guard.flow),
+                "dispatch",
+                None,
+            ));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", route.flow),
@@ -4839,6 +5045,44 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         value.metadata.insert("order".into(), index.to_string());
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));
+        for (binding_index, binding) in page.bindings.iter().enumerate() {
+            let binding_id = format!("{id}.request_binding.{binding_index}");
+            let mut value = node(
+                &binding_id,
+                "request_binding",
+                binding.target.as_deref().unwrap_or("$"),
+            );
+            value
+                .metadata
+                .insert("source".into(), binding.source.clone());
+            if let Some(name) = &binding.name {
+                value.metadata.insert("name".into(), name.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), binding_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &binding_id, "owns", None));
+        }
+        for (filter_index, filter) in page.filters.iter().enumerate() {
+            let filter_id = format!("{id}.ui_filter.{filter_index}");
+            let mut value = node(
+                &filter_id,
+                "ui_filter",
+                filter.target.as_deref().unwrap_or("$"),
+            );
+            value
+                .metadata
+                .insert("source".into(), filter.source.clone());
+            if let Some(name) = &filter.name {
+                value.metadata.insert("name".into(), name.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), filter_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &filter_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", page.flow),
@@ -4884,6 +5128,9 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         }
         if let Some(redirect) = &action.redirect {
             value.metadata.insert("redirect".into(), redirect.clone());
+        }
+        if let Some(cookie) = &action.clear_cookie {
+            value.metadata.insert("clear_cookie".into(), cookie.clone());
         }
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));

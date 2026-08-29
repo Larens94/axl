@@ -5,6 +5,8 @@ import "./auth-domain.axl"
 import "./sales-domain.axl"
 import "./domains/portal/core.axl"
 import "./domains/portal/vendite-pages.axl"
+import "./domains/portal/prod.axl"
+import "./oauth-boundary.axl"
 
 flow PaginaClientiRbac text -> Result<ClientePage>
   make auth: BearerAuthInput
@@ -20,54 +22,104 @@ flow PaginaClientiRbac text -> Result<ClientePage>
   call pagina = store.query(query)?
   return pagina
 
+flow BootstrapPortal unit -> Result<HomePage>
+  run result = BootstrapPortalProd(input)?
+  return result
+
 api AuthApi
-  post /auth/register RegistrazioneInput -> Result<Utente> = RegistraUtente
-  post /auth/login LoginInput -> Result<LoginResult> = LoginUtente
+  post /auth/register RegistrazioneInput -> Result<Utente> = RegistraPortal
+  post /auth/login LoginInput -> Result<LoginResult> = LoginPortal
+  post /auth/logout uuid -> Result<Sessione> = LogoutPortal from cookie.sid
+    guard session RequireSession from cookie.sid
   post /auth/password/reset-request RichiestaResetPasswordInput -> Result<ResetPasswordResult> = RichiediResetPassword
   post /auth/password/reset ReimpostaPasswordInput -> Result<Utente> = ReimpostaPassword
   get /auth/home unit -> Result<HomePage> = PaginaHome
-  post /auth/init-demo unit -> Result<UtentePage> = InizializzaAuthDemo
-  get /auth/admin/utenti unit -> Result<UtentePage> = PaginaUtentiAdmin
-  get /auth/admin/ruoli unit -> Result<RuoloPage> = PaginaRuoliAdmin
-  post /auth/admin/ruoli CreaRuoloInput -> Result<Ruolo> = CreaRuolo
+  post /auth/init-demo unit -> Result<UtentePage> = InizializzaPortal
+  post /auth/bootstrap unit -> Result<HomePage> = BootstrapPortalProd
+  get /auth/oauth/start unit -> redirect text = OAuthStartPortal
+  get /auth/oauth/callback OAuthCallbackInput -> redirect LoginResult = OAuthCallbackPortal
+    bind code = query.code
+    bind state = query.state
+  get /auth/admin/utenti unit -> Result<UtentePage> = PaginaUtentiAdminSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.utenti.read" from cookie.sid
+  get /auth/admin/ruoli unit -> Result<RuoloPage> = PaginaRuoliAdminSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.ruoli.read" from cookie.sid
+  get /auth/admin/permessi unit -> Result<PermessoPage> = PaginaPermessiAdminSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.permessi.read" from cookie.sid
+  post /auth/admin/ruoli CreaRuoloInput -> Result<Ruolo> = CreaRuoloPortal
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.ruoli.write" from cookie.sid
   post /auth/admin/ruoli/permesso AssegnaPermessoInput -> Result<Ruolo> = AssegnaPermessoARuolo
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.ruoli.write" from cookie.sid
   post /auth/admin/utenti/ruolo AssegnaRuoloInput -> Result<Utente> = AssegnaRuoloUtente
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "admin.ruoli.write" from cookie.sid
 
 api VenditeApi
-  post /clienti Cliente -> Result<Cliente> = CreaCliente
-  get /clienti/{id} uuid -> Result<Cliente> = CercaCliente from path.id
-  get /clienti unit -> Result<List<Cliente>> = ElencaClienti
-  post /clienti/query ClienteQuery -> Result<ClientePage> = InterrogaClienti
-  post /clienti/search ClienteQuery -> Result<ClientePage> = CercaClientiAttivi
-  post /prodotti Prodotto -> Result<Prodotto> = CreaProdotto
-  get /prodotti/{id} uuid -> Result<Prodotto> = CercaProdotto from path.id
-  get /prodotti unit -> Result<List<Prodotto>> = ElencaProdotti
-  post /prodotti/query ProdottoQuery -> Result<ProdottoPage> = InterrogaProdotti
-  post /prodotti/search ProdottoQuery -> Result<ProdottoPage> = CercaProdottiPerSku
-  post /listini Listino -> Result<Listino> = CreaListino
-  get /listini/{id} uuid -> Result<Listino> = CercaListino from path.id
-  get /listini unit -> Result<List<Listino>> = ElencaListini
-  post /listini/query ListinoQuery -> Result<ListinoPage> = InterrogaListini
-  post /listini/prezzo PrezzoListinoQuery -> Result<money> = RisolviPrezzo
-  post /preventivi/con-listino PreventivoConListinoInput -> Result<Preventivo> = CreaPreventivoConListino
-  post /preventivi/listino-form PreventivoListinoForm -> Result<Preventivo> = CreaPreventivoListinoForm
-  post /preventivi Preventivo -> Result<Preventivo> = CreaPreventivo
-  get /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
-  get /preventivi unit -> Result<List<Preventivo>> = ElencaPreventivi
-  post /preventivi/query PreventivoQuery -> Result<PreventivoPage> = InterrogaPreventivi
-  post /preventivi/search PreventivoQuery -> Result<PreventivoPage> = CercaPreventiviPerStato
-  post /preventivi/{id}/invia uuid -> Result<Preventivo> = InviaPreventivo from path.id
-  post /preventivi/{id}/conferma uuid -> Result<Preventivo> = ConfermaPreventivo from path.id
-  post /preventivi/{id}/annulla uuid -> Result<Preventivo> = AnnullaPreventivo from path.id
-  post /ordini/da-preventivo/{id} uuid -> Result<Ordine> = CreaOrdineDaPreventivo from path.id
-  get /ordini/{id} uuid -> Result<Ordine> = CercaOrdine from path.id
-  get /ordini unit -> Result<List<Ordine>> = ElencaOrdini
-  post /ordini/query OrdineQuery -> Result<OrdinePage> = InterrogaOrdini
-  post /ordini/{id}/conferma uuid -> Result<Ordine> = ConfermaOrdine from path.id
-  post /ordini/{id}/annulla uuid -> Result<Ordine> = AnnullaOrdine from path.id
+  post /clienti Cliente -> Result<Cliente> = CreaClienteSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.clienti.read" from cookie.sid
+  get /clienti/{id} uuid -> Result<Cliente> = CercaClienteSqlite from path.id
+  get /clienti unit -> Result<List<Cliente>> = ElencaClientiSqlite
+  post /clienti/query ClienteQuery -> Result<ClientePage> = InterrogaClientiSqlite
+  post /clienti/search ClienteQuery -> Result<ClientePage> = CercaClientiAttiviSqlite
+  post /prodotti Prodotto -> Result<Prodotto> = CreaProdottoSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.prodotti.read" from cookie.sid
+  get /prodotti/{id} uuid -> Result<Prodotto> = CercaProdottoSqlite from path.id
+  get /prodotti unit -> Result<List<Prodotto>> = ElencaProdottiSqlite
+  post /prodotti/query ProdottoQuery -> Result<ProdottoPage> = InterrogaProdottiSqlite
+  post /prodotti/search ProdottoQuery -> Result<ProdottoPage> = CercaProdottiPerSkuSqlite
+  post /listini Listino -> Result<Listino> = CreaListinoSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.listini.read" from cookie.sid
+  get /listini/{id} uuid -> Result<Listino> = CercaListinoSqlite from path.id
+  get /listini unit -> Result<List<Listino>> = ElencaListiniSqlite
+  post /listini/query ListinoQuery -> Result<ListinoPage> = InterrogaListiniSqlite
+  post /listini/prezzo PrezzoListinoQuery -> Result<money> = RisolviPrezzoSqlite
+  post /preventivi/con-listino PreventivoConListinoInput -> Result<Preventivo> = CreaPreventivoConListinoSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
+  post /preventivi/listino-form PreventivoListinoForm -> Result<Preventivo> = CreaPreventivoListinoFormSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
+  post /preventivi Preventivo -> Result<Preventivo> = CreaPreventivoSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
+  get /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivoSqlite from path.id
+  get /preventivi unit -> Result<List<Preventivo>> = ElencaPreventiviSqlite
+  post /preventivi/query PreventivoQuery -> Result<PreventivoPage> = InterrogaPreventiviSqlite
+  post /preventivi/search PreventivoQuery -> Result<PreventivoPage> = CercaPreventiviPerStatoSqlite
+  post /preventivi/{id}/invia uuid -> Result<Preventivo> = InviaPreventivoSqlite from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
+  post /preventivi/{id}/conferma uuid -> Result<Preventivo> = ConfermaPreventivoSqlite from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
+  post /preventivi/{id}/annulla uuid -> Result<Preventivo> = AnnullaPreventivoSqlite from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.preventivi.write" from cookie.sid
+  post /ordini/da-preventivo/{id} uuid -> Result<Ordine> = CreaOrdineDaPreventivoSqlite from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.ordini.read" from cookie.sid
+  get /ordini/{id} uuid -> Result<Ordine> = CercaOrdineSqlite from path.id
+  get /ordini unit -> Result<List<Ordine>> = ElencaOrdiniSqlite
+  post /ordini/query OrdineQuery -> Result<OrdinePage> = InterrogaOrdiniSqlite
+  post /ordini/{id}/conferma uuid -> Result<Ordine> = ConfermaOrdineSqlite from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.ordini.read" from cookie.sid
+  post /ordini/{id}/annulla uuid -> Result<Ordine> = AnnullaOrdineSqlite from path.id
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.ordini.read" from cookie.sid
 
 api VenditeDurableApi
   post /clienti/durable Cliente -> Result<Cliente> = CreaClienteSqlite
+    guard session RequireSession from cookie.sid
+    guard can RequireSessionPermesso "vendite.clienti.read" from cookie.sid
   get /clienti/durable/{id} uuid -> Result<Cliente> = CercaClienteSqlite from path.id
   post /clienti/durable/query ClienteQuery -> Result<ClientePage> = InterrogaClientiSqlite
   post /prodotti/durable Prodotto -> Result<Prodotto> = CreaProdottoSqlite
@@ -104,32 +156,42 @@ api PortalRbacDemoApi
 
 ui AuthUi
   page / unit -> Result<HomePage> = PaginaHome
-  page /home uuid -> Result<HomePage> = PaginaHomeUtente from cookie.sid
-  form /login LoginInput -> Result<LoginResult> = LoginUtente submit /auth/login redirect /home
-  form /register RegistrazioneInput -> Result<Utente> = RegistraUtente submit /auth/register redirect /login
+  page /home uuid -> Result<HomePage> = PaginaHomeUtentePortal from cookie.sid
+  form /login LoginInput -> Result<LoginResult> = LoginPortal submit /auth/login redirect /home
+  form /register RegistrazioneInput -> Result<Utente> = RegistraPortal submit /auth/register redirect /login
   form /password-dimenticata RichiestaResetPasswordInput -> Result<ResetPasswordResult> = RichiediResetPassword submit /auth/password/reset-request redirect /reimposta-password
   form /reimposta-password ReimpostaPasswordInput -> Result<Utente> = ReimpostaPassword submit /auth/password/reset redirect /login
-  page /admin/utenti uuid -> Result<UtentePage> = PaginaUtentiAdminSessione from cookie.sid
-  page /admin/ruoli uuid -> Result<RuoloPage> = PaginaRuoliAdminSessione from cookie.sid
-  form /admin/ruoli/new CreaRuoloInput -> Result<Ruolo> = CreaRuolo submit /auth/admin/ruoli redirect /admin/ruoli
+  page /admin/utenti uuid -> Result<UtentePage> = PaginaUtentiAdminSessionePortal from cookie.sid
+  page /admin/ruoli uuid -> Result<RuoloPage> = PaginaRuoliAdminSessionePortal from cookie.sid
+  page /admin/permessi uuid -> Result<PermessoPage> = PaginaPermessiAdminSessionePortal from cookie.sid
+  form /admin/ruoli/new CreaRuoloInput -> Result<Ruolo> = CreaRuoloPortal submit /auth/admin/ruoli redirect /admin/ruoli
+  action /logout POST /auth/logout redirect /login clear_cookie sid
 
 ui VenditeUi
-  page /clienti uuid -> Result<ClientePage> = PaginaClientiSessione from cookie.sid
-  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+  page /clienti ClienteSessioneQuery -> Result<ClientePage> = PaginaClientiSessioneQuery
+    bind session_id = cookie.sid
+    filter stato = query.stato
+  form /clienti/new Cliente -> Result<Cliente> = CreaClienteSqlite submit /clienti
   page /prodotti uuid -> Result<ProdottoPage> = PaginaProdottiSessione from cookie.sid
-  form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdotto submit /prodotti
+  form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdottoSqlite submit /prodotti
   page /listini uuid -> Result<ListinoPage> = PaginaListiniSessione from cookie.sid
-  page /listini/{id} uuid -> Result<Listino> = DettaglioListino from path.id
-  form /listini/new Listino -> Result<Listino> = CreaListino submit /listini
+  page /listini/{id} DettaglioSessioneInput -> Result<Listino> = DettaglioListinoSessione
+    bind session_id = cookie.sid
+    bind id = path.id
+  form /listini/new Listino -> Result<Listino> = CreaListinoSqlite submit /listini
   page /preventivi uuid -> Result<PreventivoPage> = PaginaPreventiviSessione from cookie.sid
-  page /preventivi/{id} uuid -> Result<Preventivo> = DettaglioPreventivo from path.id
-  form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivo submit /preventivi redirect /preventivi
-  form /preventivi/new-listino PreventivoListinoForm -> Result<Preventivo> = CreaPreventivoListinoForm submit /preventivi/listino-form redirect /preventivi
+  page /preventivi/{id} DettaglioSessioneInput -> Result<Preventivo> = DettaglioPreventivoSessione
+    bind session_id = cookie.sid
+    bind id = path.id
+  form /preventivi/new Preventivo -> Result<Preventivo> = CreaPreventivoSqlite submit /preventivi redirect /preventivi
+  form /preventivi/new-listino PreventivoListinoForm -> Result<Preventivo> = CreaPreventivoListinoFormSqlite submit /preventivi/listino-form redirect /preventivi
   action /preventivi/invia POST /preventivi/{id}/invia redirect /preventivi/{id}
   action /preventivi/conferma POST /preventivi/{id}/conferma redirect /preventivi/{id}
   action /preventivi/ordine POST /ordini/da-preventivo/{id} on /preventivi/{id} redirect /ordini/{id}
   page /ordini uuid -> Result<OrdinePage> = PaginaOrdiniSessione from cookie.sid
-  page /ordini/{id} uuid -> Result<Ordine> = DettaglioOrdine from path.id
+  page /ordini/{id} DettaglioSessioneInput -> Result<Ordine> = DettaglioOrdineSessione
+    bind session_id = cookie.sid
+    bind id = path.id
   action /ordini/conferma POST /ordini/{id}/conferma redirect /ordini/{id}
   action /ordini/annulla POST /ordini/{id}/annulla redirect /ordini/{id}
 

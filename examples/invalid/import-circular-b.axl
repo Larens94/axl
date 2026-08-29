@@ -1,0 +1,3 @@
+axl 4
+app CircularB
+import "./import-circular-a.axl"

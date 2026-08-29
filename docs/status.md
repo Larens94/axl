@@ -11,10 +11,10 @@ This table is the short source of truth for the current experiment.
 | Safety | diagnostics (`axl-check/1` JSON envelope, file paths, repair candidates, safety levels) | automatic application of risky repairs |
 | Policies | effects and capabilities validated and stored | runtime budgets and enforcement |
 | Agents | belief/goal/plan graph model | planning and execution runtime |
-| Runtime | records, transforms, `parallel`, `race`, retry/timeout, flow/capacity calls, typed `emit`/subscriptions, jobs (`enqueue`/`tick`), `Result` propagation, forkable configured provider ABI and HTTP | state; full Gate 4 UI kit |
+| Runtime | records, transforms, `parallel`, `race`, retry/timeout, flow/capacity calls, typed `emit`/subscriptions, jobs (`enqueue`/`tick`), `Result` propagation, forkable configured provider ABI and HTTP | state; full Gate 4 UI kit (list **query filters** started) |
 | Storage | generic memory, SQLite and document/JSON-file providers behind the same capacities; typed durable paths; capacity-backed transactions (begin/commit/rollback); capacity-backed migrations (`MigrationRunner` up/down/status + schema history); typed store `query` (filter/order/page → page entity) | PostgreSQL/MySQL; document tx/migrate |
-| Backend | scalar and composite body/path/query/header/cookie binding, Axum, typed bearer auth (static + HS256 JWT skills), ordered request and response middleware, capacity-backed rate-limit (`allow` → 429), capacity-backed CORS (`Access-Control-*` + OPTIONS preflight), typed events/subscriptions, capacity-backed jobs, Cache get/put/invalidate (memory + durable SQLite), Logger/Metrics/Tracer observability (memory) and durable SQLite; memory `EmailSender` send/list and `PdfRenderer` render/get stubs | secret references (Gate 8) and OAuth |
-| Targets | Rust/React/SQL contracts plus agent, block, flow, HTTP, UI and provider manifests | executable full-stack application generation |
+| Backend | scalar and composite body/path/query/header/cookie binding, Axum, typed bearer auth (static + HS256 JWT skills), **OAuth demo provider** (`rust::axl::auth::oauth` — `authorize_url`/`exchange`; see `oauth-boundary.axl`), **HTTP redirect routes** (`redirect text` / `redirect LoginResult`), ordered request and response middleware, **per-route guards** (`session`/`can`/`guest` → AXL flows), capacity-backed rate-limit (`allow` → 429), capacity-backed CORS (`Access-Control-*` + OPTIONS preflight), typed events/subscriptions, capacity-backed jobs, Cache get/put/invalidate (memory + durable SQLite), Logger/Metrics/Tracer observability (memory) and durable SQLite; memory `EmailSender` send/list/**latest** and `PdfRenderer` render/get stubs; password reset via `EmailSender` (token only in mailbox); **portal production SQLite** (auth + vendite APIs); SQLite **`find_by`** on store capacities; **Gate 8 secret refs** (`secret("ENV")` → runtime env, redacted in IR/manifest) | OAuth HTTP redirect/callback routes; typed `OAuthStart`/`OAuthToken` records |
+| Targets | Rust/React/SQL contracts plus agent, block, flow, HTTP, UI and provider manifests; **React routes/layouts/registry** from `axl-ui/1`; **Vite host** `hosts/portal-web` (same-origin cookie proxy) | executable full-stack application generation |
 | IR | canonical JSON graph, packed opcode round-trip | stable compatibility guarantee |
 
 ## Evidence
@@ -42,7 +42,10 @@ demo route. Capacity-backed CORS middleware proves `Access-Control-Allow-Origin`
 on `/cors/balance` and OPTIONS preflight 204. Capacity-backed HS256 JWT auth
 (`axl::auth::jwt`) proves 401/403/200 on `/jwt/balance` with demo `secret`/
 `issuer` config. True secret references (no plaintext in IR) remain Gate 8;
-OAuth remains open. Gate 2 auth-adapter slice is otherwise complete. Gate 3
+OAuth demo provider `rust::axl::auth::oauth` is executable (`authorize_url` /
+`exchange` on `oauth-boundary.axl`); **HTTP redirect routes** (`redirect text`,
+`redirect LoginResult` + session cookie) and portal `/auth/oauth/*` are proven.
+Gate 2 auth-adapter slice is otherwise complete. Gate 3
 transactions are executable: `TransactionManager` begin/commit/rollback with
 memory and SQLite skills; SQLite commit survives runtime recreate and rollback
 hides both writes. Gate 3 migrations are executable: `MigrationRunner`

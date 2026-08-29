@@ -50,6 +50,7 @@ Rules:
 - imported modules are ordinary AXL files with their own `axl`/`app` headers;
 - imported declarations merge before local declarations in import order;
 - duplicate declaration names across merged modules are rejected (`AXL-N002`);
+- **diamond imports** (A→B, A→C, B→D, C→D) merge D once; true cycles still report `AXL-P932`;
 - missing paths report `AXL-P931`; circular imports report `AXL-P932`;
 - `compile_source` without a base file rejects programs that contain imports
   (`AXL-P933`); use `compile_file` or `compile_source_at`.
@@ -435,9 +436,42 @@ The compiler requires the exact idempotent `authorize` contract and a compatible
 provider. The Axum adapter maps a missing bearer header to 401 and denial to 403.
 A replaceable HS256 JWT skill (`native rust axl::auth::jwt`) validates bearer
 tokens against typed `secret` and `issuer` config and requires `sub`/`iss`
-claims. Demo secrets may appear as plaintext skill config (same honesty rule as
-the static bearer fixture). True secret references that never enter Graph or
-manifest plaintext are Gate 8. OAuth adapters are not implemented.
+claims. Skills may bind secrets with Gate 8 references that never enter Graph or
+manifest plaintext:
+
+```axl
+skill AuthDemoJwtIssuer provides JwtIssuer
+  native rust axl::auth::jwt_sign
+  config secret: text = secret("AXL_AUTH_JWT")
+  config issuer: text = "axl-auth"
+```
+
+The IR stores `secret_ref` metadata with a null value; `provider_config` resolves
+the environment variable at invoke time. Provider manifests redact the value.
+Demo plaintext skill config remains allowed for fixtures that have not migrated.
+OAuth demo provider `rust::axl::auth::oauth` implements `authorize_url` and
+`exchange` on the `OAuthClient` capacity (`examples/apps/oauth-boundary.axl`).
+Demo authorization codes use the `axl-demo-{16hex}` shape; `client_id` /
+`client_secret` resolve from `secret("ENV")` at invoke time. HTTP redirect and
+callback routes remain open.
+
+Routes may also declare **per-route guards** that call AXL flows (no application
+logic in Rust). Guards run after API middleware and before bearer auth:
+
+```axl
+post /clienti Cliente -> Result<Cliente> = CreaCliente
+  guard session RequireSession from cookie.sid
+  guard can RequireSessionPermesso "vendite.clienti.read" from cookie.sid
+
+post /auth/login LoginInput -> Result<LoginResult> = LoginUtente
+  guard guest RequireSession from cookie.sid
+```
+
+Kinds:
+
+- `session` — bind a scalar from cookie/header/query/path, evaluate the flow; failure → 401
+- `can` — bind session id + permission string into `{session_id, permesso}`, evaluate the flow; failure → 403
+- `guest` — if the bound session flow succeeds, reject with 403 `already_authenticated`
 
 An API can also attach an ordered open request middleware pipeline. Each entry is
 a capacity over a typed request envelope:
@@ -847,6 +881,10 @@ server and CLI restarts.
 ### UI pages and forms
 
 UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` / `ui_action` nodes in Graph
+IR. The HTML renderer evaluates bound flows. The React target emits open codegen artifacts from the
+same manifest — `axl_routes.tsx` (React Router table + layout assignment), `axl_layouts.tsx`
+(Guest/App/Admin slots), and `axl_registry.ts` (component registry). Hosts bind concrete React
+components to those slots; product routes and forms are never authored by hand in React.
 IR. The built-in HTML renderer emits a dashboard shell (`theme: dashboard-apple` in the UI manifest):
 sidebar navigation grouped by section, top bar, cards, stat blocks, and responsive tables/forms styled
 with system typography and light/dark support. Application layout stays in the open renderer; domain
@@ -1132,7 +1170,10 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/catalog/software-foundation.axl` — primary open block contracts
   including transactions and migrations.
 - `examples/apps/import-demo.axl` — multi-file import of a shared module.
+- `examples/apps/import-diamond-demo.axl` — diamond import merges shared email once.
+- `examples/apps/oauth-boundary.axl` — OAuth capacity + demo `rust::axl::auth::oauth` provider.
 - `examples/modules/math-lib.axl` — imported balance helpers.
+- `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.
 - `docs/blocks.md` — construction guide and current limitations.
 - `docs/executable-flows.md` — executable syntax, commands and current boundary.

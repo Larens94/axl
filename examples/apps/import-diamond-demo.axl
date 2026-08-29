@@ -1,0 +1,5 @@
+// Diamond import: left and right both import shared/email.axl once.
+axl 4
+app ImportDiamondDemo
+import "./domains/shared/diamond-left.axl"
+import "./domains/shared/diamond-right.axl"

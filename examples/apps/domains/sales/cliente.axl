@@ -1,0 +1,168 @@
+// Sales aggregate: Cliente
+axl 4
+app SalesCliente
+entity Cliente
+  id: uuid key
+  nome: text required
+  email: email required
+  budget: money required
+  priorita: int optional
+  stato: ClienteStato required
+
+entity ClienteQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity ClientePage
+  items: List<Cliente> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioClienti
+  op save Cliente -> Result<Cliente>
+  op find uuid -> Result<Cliente> idempotent
+  op list unit -> Result<List<Cliente>> idempotent
+  op query ClienteQuery -> Result<ClientePage> idempotent
+
+skill MemoriaClienti provides ArchivioClienti
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteClienti provides ArchivioClienti
+  native rust axl::store::sqlite
+  config path: text = "./build/vendite.db"
+  effect db.read
+  effect db.write
+
+flow ValidaCliente Cliente -> Result<Cliente>
+  let nome_presente = input.nome != ""
+  require nome_presente else "nome_obbligatorio"
+  let budget_positivo = input.budget > 0
+  require budget_positivo else "budget_deve_essere_positivo"
+  return input
+
+flow CreaCliente Cliente -> Result<Cliente>
+  in store: ArchivioClienti = MemoriaClienti
+  run valida = ValidaCliente(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaCliente uuid -> Result<Cliente>
+  in store: ArchivioClienti = MemoriaClienti
+  call trovato = store.find(input)?
+  return trovato
+
+flow ElencaClienti unit -> Result<List<Cliente>>
+  in store: ArchivioClienti = MemoriaClienti
+  call clienti = store.list(input)?
+  return clienti
+
+flow InterrogaClienti ClienteQuery -> Result<ClientePage>
+  in store: ArchivioClienti = MemoriaClienti
+  call pagina = store.query(input)?
+  return pagina
+
+flow CercaClientiAttivi ClienteQuery -> Result<ClientePage>
+  run pagina = InterrogaClienti(input)?
+  return pagina
+
+flow CercaClientiAttiviDemoUnit ClienteQuery -> Result<ClientePage>
+  in store: ArchivioClienti = MemoriaClienti
+  make cliente1: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  make cliente2: Cliente
+    id = "cliente-002"
+    nome = "Bob Bianchi"
+    email = "bob@example.com"
+    budget = 180000
+    stato = ClienteStato.inattivo
+  run valida1 = ValidaCliente(cliente1)?
+  call c1 = store.save(valida1)?
+  run valida2 = ValidaCliente(cliente2)?
+  call c2 = store.save(valida2)?
+  run pagina = CercaClientiAttivi(input)?
+  return pagina
+
+flow PaginaClienti unit -> Result<ClientePage>
+  in store: ArchivioClienti = MemoriaClienti
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaClientiDemoUnit unit -> Result<ClientePage>
+  in store: ArchivioClienti = MemoriaClienti
+  make cliente1: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  make cliente2: Cliente
+    id = "cliente-002"
+    nome = "Bob Bianchi"
+    email = "bob@example.com"
+    budget = 180000
+    stato = ClienteStato.attivo
+  run valida1 = ValidaCliente(cliente1)?
+  call c1 = store.save(valida1)?
+  run valida2 = ValidaCliente(cliente2)?
+  call c2 = store.save(valida2)?
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow ElencaClientiSqlite unit -> Result<List<Cliente>>
+  in store: ArchivioClienti = SqliteClienti
+  call clienti = store.list(input)?
+  return clienti
+
+flow CercaClientiAttiviSqlite ClienteQuery -> Result<ClientePage>
+  run pagina = InterrogaClientiSqlite(input)?
+  return pagina
+
+flow SeedClientiSqlite unit -> Result<ClientePage>
+  in store: ArchivioClienti = SqliteClienti
+  make cliente1: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  make cliente2: Cliente
+    id = "cliente-002"
+    nome = "Bob Bianchi"
+    email = "bob@example.com"
+    budget = 180000
+    stato = ClienteStato.attivo
+  run valida1 = ValidaCliente(cliente1)?
+  call c1 = store.save(valida1)?
+  run valida2 = ValidaCliente(cliente2)?
+  call c2 = store.save(valida2)?
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+

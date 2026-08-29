@@ -160,6 +160,7 @@ pub struct SkillConfig {
     pub name: String,
     pub type_name: String,
     pub value: String,
+    pub secret_ref: Option<String>,
     pub span: SourceSpan,
 }
 
@@ -495,6 +496,17 @@ pub struct ApiRoute {
     pub input_source: String,
     pub input_name: Option<String>,
     pub bindings: Vec<HttpRequestBinding>,
+    pub guards: Vec<ApiRouteGuard>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApiRouteGuard {
+    pub kind: String,
+    pub flow: String,
+    pub param: Option<String>,
+    pub source: String,
+    pub name: Option<String>,
     pub span: SourceSpan,
 }
 
@@ -515,6 +527,8 @@ pub struct UiPage {
     pub flow: String,
     pub input_source: String,
     pub input_name: Option<String>,
+    pub bindings: Vec<HttpRequestBinding>,
+    pub filters: Vec<HttpRequestBinding>,
     pub span: SourceSpan,
 }
 
@@ -536,6 +550,7 @@ pub struct UiAction {
     pub submit: String,
     pub on: Option<String>,
     pub redirect: Option<String>,
+    pub clear_cookie: Option<String>,
     pub span: SourceSpan,
 }
 

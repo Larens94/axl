@@ -17,12 +17,20 @@ Read before changing language or runtime:
 
 1. Start from a failing AXL example.
 2. Implement only a general open primitive (capacity/skill/slot/hook/param/policy).
-3. Never move application logic into Rust, React, or another target.
-4. If AXL lacks a primitive, stop and report missing syntax, type rule, IR node, manifest field, and runtime behavior.
-5. Add negative diagnostics with stable codes.
-6. Prove AXL → AST → Graph IR → Packed IR round-trip.
-7. Update schemas, tests, SPEC, status, testing handoff, presentation, `film.html` / `mondo.html` as needed.
-8. Run `cargo fmt --all`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`.
+3. **Never use Rust or React directly for application behavior.** All product logic
+   (auth, RBAC, vendite, admin, UI flows) lives in AXL source. Rust and React are
+   **targets only**: open primitives (capacities, middleware, bindings, manifests,
+   codegen hooks) that AXL lowers to and invokes — never handwritten controllers,
+   components, or domain rules in those languages.
+4. If the target lacks a capability, add an **abstract primitive under AXL**
+   (syntax, IR node, manifest field, runtime hook) so generation stays in the
+   compiler pipeline. Do not patch around missing language features in Rust/React.
+5. If AXL lacks a primitive and you cannot add one in scope, stop and report the
+   exact missing syntax, type rule, IR node, manifest field, and runtime behavior.
+6. Add negative diagnostics with stable codes.
+7. Prove AXL → AST → Graph IR → Packed IR round-trip.
+8. Update schemas, tests, SPEC, status, testing handoff, presentation, `film.html` / `mondo.html` as needed.
+9. Run `cargo fmt --all`, `cargo test --workspace`, `cargo clippy --workspace --all-targets -- -D warnings`.
 
 ## Coordination
 

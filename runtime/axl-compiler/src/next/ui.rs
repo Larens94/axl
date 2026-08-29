@@ -81,6 +81,13 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "flow": page.metadata.get("flow"),
                         "input_source": page.metadata.get("input_source"),
                         "input_name": page.metadata.get("input_name"),
+                        "layout": if matches!(path.as_str(), "/" | "/login" | "/register" | "/password-dimenticata" | "/reimposta-password") {
+                            "guest"
+                        } else if path.starts_with("/admin") {
+                            "admin"
+                        } else {
+                            "app"
+                        },
                     })
                 }).collect::<Vec<_>>(),
                 "forms": forms.into_iter().map(|form| {
@@ -140,11 +147,11 @@ pub fn render_page_with_runtime(
         .as_deref()
         .and_then(|value| value.split_once("->").map(|(_, output)| output.to_string()))
         .unwrap_or_else(|| "text".to_string());
-    let input = bind_page_input(page, path, input, headers)?;
+    let input = bind_page_input(graph, page, path, input, headers)?;
     let data = runtime::evaluate_flow_with_runtime(graph, &flow, input, provider_runtime)
         .map_err(|error| error.0)?;
     let sidebar = render_sidebar(graph, path);
-    let html = render_page_html(graph, &graph.app, path, &output_type, &data, &sidebar);
+    let html = render_page_html(graph, page, &graph.app, path, &output_type, &data, &sidebar);
     Ok(UiRenderResult {
         path: path.into(),
         flow,
@@ -209,8 +216,6 @@ fn nav_group(path: &str) -> &'static str {
         || normalized.contains("reimposta")
     {
         "Accesso"
-    } else if normalized.ends_with("/demo") {
-        "Demo"
     } else {
         "Vendite"
     }
@@ -251,9 +256,8 @@ fn nav_group_order(group: &str) -> u8 {
         "Home" => 0,
         "Accesso" => 1,
         "Vendite" => 2,
-        "Demo" => 3,
-        "Amministrazione" => 4,
-        _ => 5,
+        "Amministrazione" => 3,
+        _ => 4,
     }
 }
 
@@ -267,7 +271,7 @@ fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
         let Some(path) = node.metadata.get("path") else {
             continue;
         };
-        if path.contains('{') {
+        if path.contains('{') || path.contains("/demo") {
             continue;
         }
         let normalized = normalize_path(path);
@@ -329,6 +333,9 @@ fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
     <nav class="sidebar-nav">
 {sections}
     </nav>
+    <form method="post" action="/auth/logout" class="logout-form">
+      <button type="submit" class="btn btn-secondary btn-block">Esci</button>
+    </form>
   </aside>"#,
         app = graph.app,
         sections = sections.join("\n")
@@ -399,8 +406,38 @@ fn render_detail_card(fields: &[(String, String)]) -> String {
     )
 }
 
+fn render_page_filters(graph: &GraphIr, page: &super::ir::GraphNode, path: &str) -> Option<String> {
+    let filters = children(graph, &page.id, "ui_filter");
+    if filters.is_empty() {
+        return None;
+    }
+    let page_path = page.metadata.get("path")?.split('?').next()?;
+    let query = path.split_once('?').map(|(_, query)| query).unwrap_or("");
+    let fields = filters
+        .iter()
+        .map(|filter| {
+            let name = filter.name.clone();
+            let current = super::http::query_value(query, &name).unwrap_or_default();
+            format!(
+                r#"        <label class="filter-field">{name} <input name="{name}" value="{current}" /></label>"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    Some(format!(
+        r#"  <section class="card filter-card">
+    <form class="filter-form" method="get" action="{page_path}">
+{fields}
+      <button type="submit">Filtra</button>
+      <a class="filter-reset" href="{page_path}">Reset</a>
+    </form>
+  </section>"#
+    ))
+}
+
 fn render_page_html(
     graph: &GraphIr,
+    page: &super::ir::GraphNode,
     app: &str,
     path: &str,
     output_type: &str,
@@ -413,20 +450,23 @@ fn render_page_html(
         render_home_dashboard(data)
             .unwrap_or_else(|| render_detail_card(&collect_fields(graph, output_type, data)))
     } else if let Some(table) = render_items_table(graph, path, output_type, data) {
-        table
+        let filters = render_page_filters(graph, page, path).unwrap_or_default();
+        format!("{filters}{table}")
     } else {
         let fields = collect_fields(graph, output_type, data);
         render_detail_card(&fields)
     };
     let actions = render_page_actions(graph, path, data);
-    wrap_html(
-        app,
-        path,
-        &title,
-        &heading,
-        sidebar,
-        &format!("{body}{actions}"),
-    )
+    let content = format!("{body}{actions}");
+    if is_guest_path(path) {
+        return wrap_html_guest(app, path, &title, &heading, &content);
+    }
+    let body_class = if is_admin_path(path) {
+        " admin-layout"
+    } else {
+        ""
+    };
+    wrap_html(app, path, &title, &heading, sidebar, &content, body_class)
 }
 
 fn render_page_actions(graph: &GraphIr, page_path: &str, page_data: &Value) -> String {
@@ -642,7 +682,15 @@ fn render_form_html(
     </form>
   </section>"#
     );
-    wrap_html(app, path, &title, &heading, sidebar, &body)
+    if is_guest_path(path) {
+        return wrap_html_guest(app, path, &title, &heading, &body);
+    }
+    let body_class = if is_admin_path(path) {
+        " admin-layout"
+    } else {
+        ""
+    };
+    wrap_html(app, path, &title, &heading, sidebar, &body, body_class)
 }
 
 fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
@@ -761,6 +809,31 @@ fn dashboard_styles() -> &'static str {
       min-height: 100vh;
       display: grid;
       grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+    }
+    body.guest-layout {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1.5rem;
+    }
+    .guest-shell {
+      width: min(100%, 28rem);
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.5rem;
+    }
+    .guest-header { margin-bottom: 1.25rem; }
+    .guest-brand { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 0.5rem; }
+    .guest-title { font-size: 1.5rem; margin: 0; font-weight: 600; }
+    .guest-path { font-size: 0.85rem; color: var(--muted); margin: 0.35rem 0 0; }
+    body.admin-layout .topbar-title::after {
+      content: " · Admin";
+      color: var(--muted);
+      font-weight: 500;
+      font-size: 0.85em;
     }
     .sidebar {
       position: sticky;
@@ -1045,6 +1118,8 @@ fn dashboard_styles() -> &'static str {
       color: var(--accent);
     }
     .btn-secondary:hover { background: rgba(0, 113, 227, 0.16); }
+    .btn-block { width: 100%; margin-top: 0.75rem; }
+    .logout-form { padding: 0 0.75rem 1rem; }
     .footer-note {
       padding: 0 2rem 1.5rem;
       font-size: 0.75rem;
@@ -1063,6 +1138,52 @@ fn dashboard_styles() -> &'static str {
 "#
 }
 
+fn is_guest_path(path: &str) -> bool {
+    matches!(
+        normalize_path(path).as_str(),
+        "/" | "/login" | "/register" | "/password-dimenticata" | "/reimposta-password"
+    )
+}
+
+fn is_admin_path(path: &str) -> bool {
+    normalize_path(path).starts_with("/admin")
+}
+
+fn wrap_html_guest(
+    app: &str,
+    page_path: &str,
+    document_title: &str,
+    heading: &str,
+    body: &str,
+) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{document_title}</title>
+  <style>{styles}</style>
+</head>
+<body class="guest-layout">
+  <main class="guest-shell">
+    <header class="guest-header">
+      <p class="guest-brand">{app}</p>
+      <h1 class="guest-title">{heading}</h1>
+      <p class="guest-path">{page_path}</p>
+    </header>
+    <div class="guest-body">
+{body}
+    </div>
+    <p class="footer-note">AXL UI · axl-ui/1 · guest layout</p>
+  </main>
+</body>
+</html>
+"#,
+        styles = dashboard_styles(),
+    )
+}
+
 fn wrap_html(
     app: &str,
     page_path: &str,
@@ -1070,6 +1191,7 @@ fn wrap_html(
     heading: &str,
     sidebar: &str,
     body: &str,
+    body_class: &str,
 ) -> String {
     let breadcrumb = page_breadcrumb(page_path);
     format!(
@@ -1081,7 +1203,7 @@ fn wrap_html(
   <title>{document_title}</title>
   <style>{styles}</style>
 </head>
-<body>
+<body class="{body_class}">
   <div class="app-shell">
 {sidebar}
     <div class="main">
@@ -1102,6 +1224,7 @@ fn wrap_html(
 </html>
 "#,
         styles = dashboard_styles(),
+        body_class = body_class.trim(),
     )
 }
 
@@ -1292,7 +1415,8 @@ fn find_page<'a>(
     graph: &'a GraphIr,
     path: &str,
 ) -> Option<(&'a super::ir::GraphNode, BTreeMap<String, String>)> {
-    let normalized = normalize_path(path);
+    let path_only = path.split('?').next().unwrap_or(path);
+    let normalized = normalize_path(path_only);
     let pages = graph
         .nodes
         .iter()
@@ -1306,7 +1430,7 @@ fn find_page<'a>(
     }
     for page in &pages {
         let pattern = page.metadata.get("path")?;
-        if let Some(parameters) = match_http_path(pattern, path) {
+        if let Some(parameters) = match_http_path(pattern, path_only) {
             return Some((page, parameters));
         }
     }
@@ -1314,6 +1438,7 @@ fn find_page<'a>(
 }
 
 fn bind_page_input(
+    graph: &GraphIr,
     page: &super::ir::GraphNode,
     request_path: &str,
     explicit_input: Value,
@@ -1324,6 +1449,22 @@ fn bind_page_input(
         .get("input_source")
         .map(String::as_str)
         .unwrap_or("body");
+    if source == "composite" {
+        let (path_only, query) = request_path.split_once('?').unwrap_or((request_path, ""));
+        let path_params = page
+            .metadata
+            .get("path")
+            .and_then(|pattern| super::http::match_http_path(pattern, path_only))
+            .unwrap_or_default();
+        return super::http::bind_composite_input(
+            graph,
+            page,
+            explicit_input,
+            &path_params,
+            query,
+            headers,
+        );
+    }
     if source == "body" {
         return Ok(explicit_input);
     }

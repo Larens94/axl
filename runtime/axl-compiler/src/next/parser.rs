@@ -512,10 +512,24 @@ fn parse_skill(
                 );
                 continue;
             };
+            let config_value = config_value.trim();
+            let secret_ref = parse_secret_ref(config_value);
+            if config_value.starts_with("secret(") && secret_ref.is_none() {
+                diagnostics.push(
+                    Diagnostic::error("AXL-P315", "parse", "invalid secret reference", span(line))
+                        .expected("config name: type = secret(\"ENV_NAME\")", config_value),
+                );
+                continue;
+            }
             skill.configs.push(SkillConfig {
                 name: name.trim().to_string(),
                 type_name: type_name.trim().to_string(),
-                value: config_value.trim().to_string(),
+                value: if secret_ref.is_some() {
+                    "null".into()
+                } else {
+                    config_value.to_string()
+                },
+                secret_ref,
                 span: span(line),
             });
         } else if let Some(effect) = line.text.strip_prefix("effect ") {
@@ -2280,6 +2294,22 @@ fn parse_api(
             cursor += 1;
             continue;
         }
+        if line.text.starts_with("guard ") {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P920",
+                    "parse",
+                    "a route guard must be nested under a route",
+                    span(line),
+                )
+                .expected(
+                    "route\n  guard session|guest|can Flow [\"perm\"] from cookie.name",
+                    &line.text,
+                ),
+            );
+            cursor += 1;
+            continue;
+        }
         let Some((method, remainder)) = line.text.split_once(' ') else {
             diagnostics.push(
                 Diagnostic::error(
@@ -2374,19 +2404,27 @@ fn parse_api(
             };
         cursor += 1;
         let mut found_nested = false;
+        let mut guards = Vec::new();
         while cursor < body.len() && body[cursor].indent > line.indent {
-            let binding_line = &body[cursor];
-            let Some(value) = binding_line.text.strip_prefix("bind ") else {
+            let nested = &body[cursor];
+            if let Some(value) = nested.text.strip_prefix("guard ") {
+                if let Some(guard) = parse_route_guard(value, nested, diagnostics) {
+                    guards.push(guard);
+                }
+                cursor += 1;
+                continue;
+            }
+            let Some(value) = nested.text.strip_prefix("bind ") else {
                 diagnostics.push(
                     Diagnostic::error(
                         "AXL-P916",
                         "parse",
                         "unknown nested API route declaration",
-                        span(binding_line),
+                        span(nested),
                     )
                     .expected(
-                        "bind field = body|body.field|path.name|query.name|header.name|cookie.name",
-                        &binding_line.text,
+                        "bind field = source | guard session|guest|can Flow [\"perm\"] from cookie.name",
+                        &nested.text,
                     ),
                 );
                 cursor += 1;
@@ -2403,11 +2441,11 @@ fn parse_api(
                         "AXL-P916",
                         "parse",
                         "invalid composite request binding",
-                        span(binding_line),
+                        span(nested),
                     )
                     .expected(
                         "bind field = body|body.field|path.name|query.name|header.name|cookie.name",
-                        &binding_line.text,
+                        &nested.text,
                     ),
                 );
                 cursor += 1;
@@ -2419,7 +2457,7 @@ fn parse_api(
                         "AXL-P917",
                         "parse",
                         "inline and nested request bindings cannot be combined",
-                        span(binding_line),
+                        span(nested),
                     ));
                 }
                 bindings.clear();
@@ -2429,7 +2467,7 @@ fn parse_api(
                 target: Some(target),
                 source,
                 name,
-                span: span(binding_line),
+                span: span(nested),
             });
             cursor += 1;
         }
@@ -2447,6 +2485,7 @@ fn parse_api(
             input_source,
             input_name,
             bindings,
+            guards,
             span: span(line),
         });
     }
@@ -2473,21 +2512,46 @@ fn parse_ui(
     let mut pages = Vec::new();
     let mut forms = Vec::new();
     let mut actions = Vec::new();
-    for line in body {
-        if line.text.starts_with("page ") {
-            parse_ui_page(line, &mut pages, diagnostics);
-        } else if line.text.starts_with("form ") {
-            parse_ui_form(line, &mut forms, diagnostics);
-        } else if line.text.starts_with("action ") {
-            parse_ui_action(line, &mut actions, diagnostics);
-        } else {
-            diagnostics.push(Diagnostic::error(
-                "AXL-P950",
-                "parse",
-                format!("unknown ui declaration '{}'", line.text),
-                span(line),
-            ));
+    let mut cursor = 0;
+    while cursor < body.len() {
+        let line = &body[cursor];
+        if line.text.starts_with("bind ") {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P955",
+                    "parse",
+                    "a UI page binding must be nested under a page",
+                    span(line),
+                )
+                .expected(
+                    "page /path Input -> Output = Flow\n  bind field = source",
+                    &line.text,
+                ),
+            );
+            cursor += 1;
+            continue;
         }
+        if line.text.starts_with("page ") {
+            cursor = parse_ui_page_block(body, cursor, &mut pages, diagnostics);
+            continue;
+        }
+        if line.text.starts_with("form ") {
+            parse_ui_form(line, &mut forms, diagnostics);
+            cursor += 1;
+            continue;
+        }
+        if line.text.starts_with("action ") {
+            parse_ui_action(line, &mut actions, diagnostics);
+            cursor += 1;
+            continue;
+        }
+        diagnostics.push(Diagnostic::error(
+            "AXL-P950",
+            "parse",
+            format!("unknown ui declaration '{}'", line.text),
+            span(line),
+        ));
+        cursor += 1;
     }
     declarations.push(Declaration::Ui(Ui {
         name: name.into(),
@@ -2498,14 +2562,20 @@ fn parse_ui(
     }));
 }
 
-fn parse_ui_page(line: &SourceLine, pages: &mut Vec<UiPage>, diagnostics: &mut Vec<Diagnostic>) {
+fn parse_ui_page_block(
+    body: &[SourceLine],
+    start: usize,
+    pages: &mut Vec<UiPage>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> usize {
+    let line = &body[start];
     let remainder = line.text["page ".len()..].trim();
     let Some((signature, flow)) = remainder.rsplit_once('=') else {
         diagnostics.push(
             Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
                 .expected("page /path Input -> Output = Flow", &line.text),
         );
-        return;
+        return start + 1;
     };
     let Some((request, output)) = signature.split_once("->") else {
         diagnostics.push(
@@ -2517,7 +2587,7 @@ fn parse_ui_page(line: &SourceLine, pages: &mut Vec<UiPage>, diagnostics: &mut V
             )
             .expected("page /path Input -> Output = Flow", &line.text),
         );
-        return;
+        return start + 1;
     };
     let mut request = request.split_whitespace();
     let (Some(path), Some(input), None) = (request.next(), request.next(), request.next()) else {
@@ -2530,17 +2600,17 @@ fn parse_ui_page(line: &SourceLine, pages: &mut Vec<UiPage>, diagnostics: &mut V
             )
             .expected("page /path Input -> Output = Flow", &line.text),
         );
-        return;
+        return start + 1;
     };
-    let (flow, input_source, input_name) = {
-        let flow = flow.trim();
-        if flow.is_empty() {
-            diagnostics.push(
-                Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
-                    .expected("page /path Input -> Output = Flow", &line.text),
-            );
-            return;
-        }
+    let flow = flow.trim();
+    if flow.is_empty() {
+        diagnostics.push(
+            Diagnostic::error("AXL-P951", "parse", "a UI page binds a flow", span(line))
+                .expected("page /path Input -> Output = Flow", &line.text),
+        );
+        return start + 1;
+    }
+    let (flow, input_source, input_name, initial_bindings) =
         if let Some((flow, binding)) = flow.split_once(" from ") {
             let Some((source, name)) = parse_request_source(binding) else {
                 diagnostics.push(
@@ -2555,12 +2625,129 @@ fn parse_ui_page(line: &SourceLine, pages: &mut Vec<UiPage>, diagnostics: &mut V
                         binding,
                     ),
                 );
-                return;
+                return start + 1;
             };
-            (flow.trim(), source, name)
+            (
+                flow.trim(),
+                source.clone(),
+                name.clone(),
+                vec![HttpRequestBinding {
+                    target: None,
+                    source,
+                    name,
+                    span: span(line),
+                }],
+            )
         } else {
-            (flow, "body".into(), None)
+            (
+                flow,
+                "body".to_string(),
+                None,
+                vec![HttpRequestBinding {
+                    target: None,
+                    source: "body".into(),
+                    name: None,
+                    span: span(line),
+                }],
+            )
+        };
+    let mut bindings = initial_bindings;
+    let mut filters = Vec::new();
+    let mut cursor = start + 1;
+    let mut found_nested = false;
+    while cursor < body.len() && body[cursor].indent > line.indent {
+        let binding_line = &body[cursor];
+        let (is_filter, prefix) = if let Some(value) = binding_line.text.strip_prefix("filter ") {
+            (true, value)
+        } else if let Some(value) = binding_line.text.strip_prefix("bind ") {
+            (false, value)
+        } else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P956",
+                    "parse",
+                    "unknown nested UI page declaration",
+                    span(binding_line),
+                )
+                .expected(
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name",
+                    &binding_line.text,
+                ),
+            );
+            cursor += 1;
+            continue;
+        };
+        let parsed = prefix.split_once('=').and_then(|(target, source)| {
+            let target = target.trim();
+            let (source, name) = parse_request_source(source.trim())?;
+            (!target.is_empty()).then(|| (target.to_string(), source, name))
+        });
+        let Some((target, source, name)) = parsed else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P956",
+                    "parse",
+                    if is_filter {
+                        "invalid UI page filter"
+                    } else {
+                        "invalid composite UI page binding"
+                    },
+                    span(binding_line),
+                )
+                .expected(
+                    if is_filter {
+                        "filter field = query.name"
+                    } else {
+                        "bind field = body|body.field|path.name|query.name|header.name|cookie.name"
+                    },
+                    &binding_line.text,
+                ),
+            );
+            cursor += 1;
+            continue;
+        };
+        if is_filter && source != "query" {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P958",
+                    "parse",
+                    "a UI page filter must bind from query parameters",
+                    span(binding_line),
+                )
+                .expected("filter field = query.name", &binding_line.text),
+            );
+            cursor += 1;
+            continue;
         }
+        if !found_nested {
+            if input_source != "body" || input_name.is_some() {
+                diagnostics.push(Diagnostic::error(
+                    "AXL-P957",
+                    "parse",
+                    "inline and nested UI page bindings cannot be combined",
+                    span(binding_line),
+                ));
+            }
+            bindings.clear();
+            filters.clear();
+            found_nested = true;
+        }
+        let binding = HttpRequestBinding {
+            target: Some(target),
+            source,
+            name,
+            span: span(binding_line),
+        };
+        bindings.push(binding.clone());
+        if is_filter {
+            filters.push(binding);
+        }
+        cursor += 1;
+    }
+    let (input_source, input_name) = if found_nested {
+        ("composite".into(), None)
+    } else {
+        (input_source, input_name)
     };
     pages.push(UiPage {
         path: path.into(),
@@ -2569,8 +2756,11 @@ fn parse_ui_page(line: &SourceLine, pages: &mut Vec<UiPage>, diagnostics: &mut V
         flow: flow.into(),
         input_source,
         input_name,
+        bindings,
+        filters,
         span: span(line),
     });
+    cursor
 }
 
 fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut Vec<Diagnostic>) {
@@ -2681,6 +2871,28 @@ fn parse_ui_action(
     let mut remainder = line.text["action ".len()..].trim();
     let mut redirect = None;
     let mut on = None;
+    let mut clear_cookie = None;
+    if let Some((rest, cookie_name)) = remainder.rsplit_once(" clear_cookie ") {
+        let cookie_name = cookie_name.trim();
+        if cookie_name.is_empty()
+            || !cookie_name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P976",
+                    "parse",
+                    "a UI action clear_cookie requires a cookie name",
+                    span(line),
+                )
+                .expected("clear_cookie sid", cookie_name),
+            );
+            return;
+        }
+        remainder = rest.trim();
+        clear_cookie = Some(cookie_name.into());
+    }
     if let Some((rest, redirect_path)) = remainder.rsplit_once(" redirect ") {
         let redirect_path = redirect_path.trim();
         if !redirect_path.starts_with('/') {
@@ -2772,8 +2984,149 @@ fn parse_ui_action(
         submit: submit.into(),
         on,
         redirect,
+        clear_cookie,
         span: span(line),
     });
+}
+
+fn parse_route_guard(
+    value: &str,
+    line: &SourceLine,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<ApiRouteGuard> {
+    let value = value.trim();
+    let (head, binding) = value.split_once(" from ").or_else(|| {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "a route guard requires a request source binding",
+                span(line),
+            )
+            .expected(
+                "guard session|guest|can Flow [\"perm\"] from cookie.name",
+                value,
+            ),
+        );
+        None
+    })?;
+    let Some((source, name)) = parse_request_source(binding.trim()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P921",
+                "parse",
+                "a route guard binding needs a source and name",
+                span(line),
+            )
+            .expected("from path.id|query.name|header.name|cookie.name", binding),
+        );
+        return None;
+    };
+    let mut tokens = head.split_whitespace();
+    let Some(kind) = tokens.next() else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P922",
+                "parse",
+                "a route guard requires a kind",
+                span(line),
+            )
+            .expected("session|guest|can", head),
+        );
+        return None;
+    };
+    if !matches!(kind, "session" | "guest" | "can") {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P922",
+                "parse",
+                format!("unsupported route guard kind '{kind}'"),
+                span(line),
+            )
+            .expected("session|guest|can", kind),
+        );
+        return None;
+    }
+    let Some(flow) = tokens.next() else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P923",
+                "parse",
+                "a route guard requires a flow",
+                span(line),
+            )
+            .expected("guard session Flow from cookie.sid", head),
+        );
+        return None;
+    };
+    let param = tokens.next().map(|token| {
+        token
+            .strip_prefix('"')
+            .and_then(|value| value.strip_suffix('"'))
+            .unwrap_or(token)
+            .to_string()
+    });
+    if tokens.next().is_some() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P924",
+                "parse",
+                "unexpected tokens in route guard",
+                span(line),
+            )
+            .expected(
+                "guard session|guest|can Flow [\"perm\"] from cookie.name",
+                head,
+            ),
+        );
+        return None;
+    }
+    if kind == "can" && param.as_ref().is_none_or(|value| value.is_empty()) {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P925",
+                "parse",
+                "a can guard requires a permission parameter",
+                span(line),
+            )
+            .expected("guard can Flow \"perm.code\" from cookie.sid", value),
+        );
+        return None;
+    }
+    if kind != "can" && param.is_some() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P925",
+                "parse",
+                "only can guards accept a permission parameter",
+                span(line),
+            )
+            .expected("guard session|guest Flow from cookie.sid", value),
+        );
+        return None;
+    }
+    Some(ApiRouteGuard {
+        kind: kind.into(),
+        flow: flow.into(),
+        param,
+        source,
+        name,
+        span: span(line),
+    })
+}
+
+fn parse_secret_ref(value: &str) -> Option<String> {
+    let value = value.trim();
+    let inner = value.strip_prefix("secret(")?.strip_suffix(')')?.trim();
+    let name = inner
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            inner
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })?;
+    (!name.is_empty()).then(|| name.to_string())
 }
 
 fn parse_request_source(value: &str) -> Option<(String, Option<String>)> {

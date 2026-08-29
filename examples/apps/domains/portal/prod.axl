@@ -1,0 +1,240 @@
+// Portal production bindings: durable SQLite auth + session (portal.axl wires these).
+axl 4
+app PortalProd
+
+flow ValidaSessionePortal uuid -> Result<Sessione>
+  in sessioni: ArchivioSessioni = SqliteSessioni
+  call sessione = sessioni.find(input)?
+  let attiva = sessione.attiva
+  require attiva else "sessione_scaduta"
+  return sessione
+
+flow UtenteDaSessionePortal uuid -> Result<Utente>
+  in utenti: ArchivioUtenti = SqliteUtenti
+  run sessione = ValidaSessionePortal(input)?
+  call utente = utenti.find(sessione.utente_id)?
+  return utente
+
+flow LoginPortal LoginInput -> Result<LoginResult>
+  in utenti: ArchivioUtenti = SqliteUtenti
+  in sessioni: ArchivioSessioni = SqliteSessioni
+  in hasher: PasswordHasher = DemoPasswordHasher
+  in issuer: JwtIssuer = AuthDemoJwtIssuer
+  make lookup: UtenteLookup
+    field = "email"
+    value = input.email
+  call utente = utenti.find_by(lookup)?
+  let attivo = utente.attivo
+  require attivo else "utente_disattivato"
+  make check: PasswordCheck
+    password = input.password
+    hash = utente.password_hash
+  call ok = hasher.verify(check)?
+  require ok else "credenziali_non_valide"
+  make sessione: Sessione
+    id = uuid.v4
+    utente_id = utente.id
+    attiva = true
+  call salvata = sessioni.save(sessione)?
+  make claims: JwtClaims
+    sub = utente.id
+    roles = utente.permessi
+  call token = issuer.sign(claims)?
+  make result: LoginResult
+    session_id = salvata.id
+    token = token
+    utente_id = utente.id
+  return result
+
+flow LogoutPortal uuid -> Result<Sessione>
+  in sessioni: ArchivioSessioni = SqliteSessioni
+  call sessione = sessioni.find(input)?
+  make spenta: Sessione
+    id = sessione.id
+    utente_id = sessione.utente_id
+    attiva = false
+  call spenta_salvata = sessioni.save(spenta)?
+  return spenta_salvata
+
+flow RegistraPortal RegistrazioneInput -> Result<Utente>
+  in store: ArchivioUtenti = SqliteUtenti
+  in hasher: PasswordHasher = DemoPasswordHasher
+  run valida = ValidaRegistrazione(input)?
+  call hash = hasher.hash(valida.password)?
+  let sentinel = ["__none__"]
+  filter permessi_vuoti: List<text> = sentinel as codice
+    where = false
+  make utente: Utente
+    id = uuid.v4
+    email = valida.email
+    password_hash = hash
+    nome = valida.nome
+    attivo = true
+    permessi = permessi_vuoti
+  call salvato = store.save(utente)?
+  return salvato
+
+flow PaginaHomeUtentePortal uuid -> Result<HomePage>
+  in store: ArchivioUtenti = SqliteUtenti
+  run utente = UtenteDaSessionePortal(input)?
+  make query: UtenteQuery
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  make home: HomePage
+    titolo = "AXL Portal"
+    messaggio = "Bentornato nel portale (persistente)."
+    totale_utenti = pagina.total
+  return home
+
+flow BootstrapPortalProd unit -> Result<HomePage>
+  run _auth = InizializzaPortal(input)?
+  run _cliente = SeedClientiSqlite(input)?
+  run _prodotti = SeedProdottiSqlite(input)?
+  run _listino = SeedListinoSqlite(input)?
+  run _preventivo = SeedPreventivoSqlite(input)?
+  make query: UtenteQuery
+    limit = 1
+    offset = 0
+  in store: ArchivioUtenti = SqliteUtenti
+  call pagina = store.query(query)?
+  make home: HomePage
+    titolo = "AXL Portal"
+    messaggio = "Portale inizializzato con dati persistenti."
+    totale_utenti = pagina.total
+  return home
+
+flow PortalPersistenzaDemoUnit unit -> Result<ClientePage>
+  run _boot = BootstrapPortalProd(input)?
+  make credenziali: LoginInput
+    email = "admin@example.com"
+    password = "admin123"
+  run login = LoginPortal(credenziali)?
+  make gate: SessionePermessoInput
+    session_id = login.session_id
+    permesso = "vendite.clienti.read"
+  run _ = RequireSessionPermesso(gate)?
+  in store: ArchivioClienti = SqliteClienti
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow LoginAdminPortalDemoUnit unit -> Result<LoginResult>
+  run _seed = InizializzaPortal(input)?
+  make credenziali: LoginInput
+    email = "admin@example.com"
+    password = "admin123"
+  run login = LoginPortal(credenziali)?
+  return login
+
+flow UtenteHaPermessoPortal PermessoCheck -> Result<bool>
+  in utenti: ArchivioUtenti = SqliteUtenti
+  call utente = utenti.find(input.utente_id)?
+  fold ha_permesso: bool = utente.permessi from false as codice
+    next = if value then true else codice == input.codice
+  return ha_permesso
+
+flow RichiediPermessoPortal PermessoCheck -> Result<bool>
+  run autorizzato = UtenteHaPermessoPortal(input)?
+  require autorizzato else "permesso_negato"
+  return autorizzato
+
+flow PaginaUtentiAdminSessionePortal uuid -> Result<UtentePage>
+  run utente = UtenteDaSessionePortal(input)?
+  make check: PermessoCheck
+    utente_id = utente.id
+    codice = "admin.utenti.read"
+  run _ = RichiediPermessoPortal(check)?
+  in store: ArchivioUtenti = SqliteUtenti
+  make query: UtenteQuery
+    order_by = "email"
+    direction = "asc"
+    limit = 25
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaRuoliAdminSessionePortal uuid -> Result<RuoloPage>
+  run utente = UtenteDaSessionePortal(input)?
+  make check: PermessoCheck
+    utente_id = utente.id
+    codice = "admin.ruoli.read"
+  run _ = RichiediPermessoPortal(check)?
+  in store: ArchivioRuoli = SqliteRuoli
+  make query: RuoloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 25
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaPermessiAdminSessionePortal uuid -> Result<PermessoPage>
+  run utente = UtenteDaSessionePortal(input)?
+  make check: PermessoCheck
+    utente_id = utente.id
+    codice = "admin.permessi.read"
+  run _ = RichiediPermessoPortal(check)?
+  in store: ArchivioPermessi = SqlitePermessi
+  make query: PermessoQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 50
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow CreaRuoloPortal CreaRuoloInput -> Result<Ruolo>
+  in store: ArchivioRuoli = SqliteRuoli
+  let nome_presente = input.nome != ""
+  require nome_presente else "nome_ruolo_obbligatorio"
+  let sentinel = ["__none__"]
+  filter permessi_vuoti: List<text> = sentinel as codice
+    where = false
+  make ruolo: Ruolo
+    id = uuid.v4
+    nome = input.nome
+    descrizione = input.descrizione
+    permessi = permessi_vuoti
+  call salvato = store.save(ruolo)?
+  return salvato
+
+entity OAuthCallbackInput
+  code: text required
+  state: text required
+
+flow OAuthStartPortal unit -> Result<text>
+  in oauth: OAuthClient = DemoOAuthProvider
+  call url = oauth.authorize_url("portal-oauth-state")?
+  return url
+
+flow OAuthCallbackPortal OAuthCallbackInput -> Result<LoginResult>
+  in oauth: OAuthClient = DemoOAuthProvider
+  in utenti: ArchivioUtenti = SqliteUtenti
+  in sessioni: ArchivioSessioni = SqliteSessioni
+  in issuer: JwtIssuer = AuthDemoJwtIssuer
+  call token = oauth.exchange(input.code)?
+  make lookup: UtenteLookup
+    field = "email"
+    value = token.sub
+  call utente = utenti.find_by(lookup)?
+  let attivo = utente.attivo
+  require attivo else "utente_disattivato"
+  make sessione: Sessione
+    id = uuid.v4
+    utente_id = utente.id
+    attiva = true
+  call salvata = sessioni.save(sessione)?
+  make claims: JwtClaims
+    sub = utente.id
+    roles = utente.permessi
+  call jwt = issuer.sign(claims)?
+  make result: LoginResult
+    session_id = salvata.id
+    token = jwt
+    utente_id = utente.id
+  return result

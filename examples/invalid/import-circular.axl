@@ -1,0 +1,4 @@
+// Expected diagnostic: AXL-P932.
+axl 4
+app CircularImport
+import "./import-circular-a.axl"

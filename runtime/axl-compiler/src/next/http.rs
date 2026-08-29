@@ -111,6 +111,9 @@ pub fn dispatch_with_headers(
     {
         return result;
     }
+    if let Some(result) = apply_route_guards(graph, runtime, route, request_path, query, headers) {
+        return result;
+    }
     if let Some(result) = authorize_request(
         graph,
         runtime,
@@ -143,7 +146,44 @@ pub fn dispatch_with_headers(
     if method == "post" {
         apply_form_post_redirect(graph, request_path, headers, &mut result);
     }
+    apply_api_redirect(route, &mut result);
     result
+}
+
+fn apply_api_redirect(route: &super::ir::GraphNode, result: &mut HttpResult) {
+    if result.body.get("error").is_some() {
+        return;
+    }
+    let Some(type_name) = route.type_name.as_deref() else {
+        return;
+    };
+    let Some((_, output)) = type_name.split_once("->") else {
+        return;
+    };
+    let output = output.trim();
+    let Some(inner) = output.strip_prefix("redirect ") else {
+        return;
+    };
+    let Some(ok) = result.body.get("ok") else {
+        return;
+    };
+    let location = if inner == "text" {
+        ok.as_str().map(str::to_string)
+    } else if inner == "LoginResult" {
+        if let Some(session_id) = ok.get("session_id").and_then(Value::as_str) {
+            result.headers.insert(
+                "set-cookie".into(),
+                format!("sid={session_id}; Path=/; HttpOnly; SameSite=Lax"),
+            );
+        }
+        Some("/home".into())
+    } else {
+        None
+    };
+    if let Some(location) = location {
+        result.status = 302;
+        result.headers.insert("location".into(), location);
+    }
 }
 
 fn match_http_route<'a>(
@@ -344,7 +384,7 @@ fn bind_request_input(
     parse_bound_scalar(input_type, &raw)
 }
 
-fn bind_composite_input(
+pub(crate) fn bind_composite_input(
     graph: &GraphIr,
     route: &super::ir::GraphNode,
     body: Value,
@@ -669,6 +709,22 @@ fn form_redirect_location(graph: &GraphIr, submit_path: &str) -> Option<String> 
         .and_then(|path| form_parent_path(path))
 }
 
+fn form_clear_cookie(graph: &GraphIr, submit_path: &str) -> Option<String> {
+    graph.nodes.iter().find_map(|node| {
+        if node.kind != "ui_action" {
+            return None;
+        }
+        let matches = node
+            .metadata
+            .get("submit")
+            .is_some_and(|value| submit_path_matches(value, submit_path));
+        if !matches {
+            return None;
+        }
+        node.metadata.get("clear_cookie").cloned()
+    })
+}
+
 fn apply_form_post_redirect(
     graph: &GraphIr,
     submit_path: &str,
@@ -699,6 +755,12 @@ fn apply_form_post_redirect(
         result.headers.insert(
             "set-cookie".into(),
             format!("sid={session_id}; Path=/; HttpOnly; SameSite=Lax"),
+        );
+    }
+    if let Some(cookie_name) = form_clear_cookie(graph, submit_path) {
+        result.headers.insert(
+            "set-cookie".into(),
+            format!("{cookie_name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"),
         );
     }
 }
@@ -1022,6 +1084,131 @@ fn api_middlewares<'a>(
             .unwrap_or(usize::MAX)
     });
     middlewares
+}
+
+fn route_guards<'a>(
+    graph: &'a GraphIr,
+    route: &super::ir::GraphNode,
+) -> Vec<&'a super::ir::GraphNode> {
+    let mut guards = graph
+        .edges
+        .iter()
+        .filter(|edge| edge.kind == "owns" && edge.from == route.id)
+        .filter_map(|edge| graph.nodes.iter().find(|node| node.id == edge.to))
+        .filter(|node| node.kind == "route_guard")
+        .collect::<Vec<_>>();
+    guards.sort_by_key(|guard| {
+        guard
+            .metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    guards
+}
+
+fn apply_route_guards(
+    graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
+    route: &super::ir::GraphNode,
+    request_path: &str,
+    query: &str,
+    headers: &BTreeMap<String, String>,
+) -> Option<HttpResult> {
+    let guards = route_guards(graph, route);
+    if guards.is_empty() {
+        return None;
+    }
+    let path_params = route
+        .metadata
+        .get("path")
+        .and_then(|pattern| match_http_path(pattern, request_path))
+        .unwrap_or_default();
+    for guard in guards {
+        let kind = guard.metadata.get("kind").map(String::as_str).unwrap_or("");
+        let flow = guard.metadata.get("flow")?;
+        let source = guard
+            .metadata
+            .get("source")
+            .map(String::as_str)
+            .unwrap_or("cookie");
+        let name = guard.metadata.get("name").map(String::as_str);
+        let raw = match source {
+            "cookie" => name.and_then(|name| cookie_value(headers, name)),
+            "header" => name.and_then(|name| header_value(headers, name)),
+            "query" => name.and_then(|name| query_value(query, name)),
+            "path" => name.and_then(|name| path_params.get(name).cloned()),
+            _ => None,
+        };
+        match kind {
+            "guest" => {
+                let Some(raw) = raw else {
+                    continue;
+                };
+                match runtime::evaluate_flow_with_runtime(graph, flow, Value::String(raw), runtime)
+                {
+                    Ok(body) if body.get("error").is_none() => {
+                        return Some(HttpResult::new(
+                            403,
+                            json!({ "error": "already_authenticated" }),
+                        ));
+                    }
+                    _ => continue,
+                }
+            }
+            "session" => {
+                let Some(raw) = raw else {
+                    return Some(HttpResult::new(401, json!({ "error": "session_required" })));
+                };
+                match runtime::evaluate_flow_with_runtime(graph, flow, Value::String(raw), runtime)
+                {
+                    Ok(body) if body.get("error").is_none() => continue,
+                    Ok(body) => {
+                        return Some(HttpResult::new(
+                            401,
+                            json!({
+                                "error": body.get("error").cloned().unwrap_or_else(|| json!("session_invalid"))
+                            }),
+                        ));
+                    }
+                    Err(error) => {
+                        return Some(HttpResult::new(401, json!({ "error": error.to_string() })));
+                    }
+                }
+            }
+            "can" => {
+                let Some(raw) = raw else {
+                    return Some(HttpResult::new(401, json!({ "error": "session_required" })));
+                };
+                let permesso = guard.metadata.get("param").cloned().unwrap_or_default();
+                let input = json!({
+                    "session_id": raw,
+                    "permesso": permesso,
+                });
+                match runtime::evaluate_flow_with_runtime(graph, flow, input, runtime) {
+                    Ok(body) if body.get("error").is_none() => continue,
+                    Ok(body) => {
+                        return Some(HttpResult::new(
+                            403,
+                            json!({
+                                "error": body.get("error").cloned().unwrap_or_else(|| json!("permesso_negato"))
+                            }),
+                        ));
+                    }
+                    Err(error) => {
+                        return Some(HttpResult::new(403, json!({ "error": error.to_string() })));
+                    }
+                }
+            }
+            other => {
+                return Some(HttpResult::new(
+                    500,
+                    json!({ "error": format!("unsupported_route_guard:{other}") }),
+                ));
+            }
+        }
+    }
+    None
 }
 
 fn authorize_request(
@@ -1779,5 +1966,47 @@ ui PreventivoScreen
                 .unwrap()
                 .contains_key("verbose")
         );
+    }
+
+    #[test]
+    fn route_guards_session_and_can_use_axl_flows() {
+        let source = include_str!("../../../../examples/apps/route-guard-demo.axl");
+        let graph = compile_source(source).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let missing = dispatch_with_runtime(&graph, &mut runtime, "post", "/echo", json!("hi"));
+        assert_eq!(missing.status, 401);
+        assert_eq!(missing.body["error"], "session_required");
+
+        let seed = dispatch_with_runtime(&graph, &mut runtime, "post", "/seed", Value::Null);
+        assert_eq!(seed.status, 200);
+        let mut headers = BTreeMap::new();
+        headers.insert("cookie".into(), "sid=sessione-demo".into());
+        let ok =
+            dispatch_with_headers(&graph, &mut runtime, "post", "/echo", json!("hi"), &headers);
+        assert_eq!(ok.status, 200);
+        assert_eq!(ok.body, "hi");
+
+        let denied = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "post",
+            "/secure",
+            json!("hi"),
+            &headers,
+        );
+        assert_eq!(denied.status, 401);
+
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let _ = dispatch_with_runtime(&graph, &mut runtime, "post", "/seed", Value::Null);
+        let allowed = dispatch_with_headers(
+            &graph,
+            &mut runtime,
+            "post",
+            "/secure",
+            json!("hi"),
+            &headers,
+        );
+        assert_eq!(allowed.status, 200);
+        assert_eq!(allowed.body, "hi");
     }
 }

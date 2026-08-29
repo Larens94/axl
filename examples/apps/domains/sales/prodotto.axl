@@ -1,0 +1,166 @@
+// Sales aggregate: Prodotto
+axl 4
+app SalesProdotto
+entity Prodotto
+  id: uuid key
+  nome: text required
+  prezzo: money required
+  sku: text required
+  attivo: bool optional
+
+entity ProdottoQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity ProdottoPage
+  items: List<Prodotto> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioProdotti
+  op save Prodotto -> Result<Prodotto>
+  op find uuid -> Result<Prodotto> idempotent
+  op list unit -> Result<List<Prodotto>> idempotent
+  op query ProdottoQuery -> Result<ProdottoPage> idempotent
+
+skill MemoriaProdotti provides ArchivioProdotti
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteProdotti provides ArchivioProdotti
+  native rust axl::store::sqlite
+  config path: text = "./build/vendite.db"
+  effect db.read
+  effect db.write
+
+flow ValidaProdotto Prodotto -> Result<Prodotto>
+  let nome_presente = input.nome != ""
+  require nome_presente else "nome_obbligatorio"
+  let prezzo_positivo = input.prezzo > 0
+  require prezzo_positivo else "prezzo_deve_essere_positivo"
+  let sku_presente = input.sku != ""
+  require sku_presente else "sku_obbligatorio"
+  return input
+
+flow CreaProdotto Prodotto -> Result<Prodotto>
+  in store: ArchivioProdotti = MemoriaProdotti
+  run valida = ValidaProdotto(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaProdotto uuid -> Result<Prodotto>
+  in store: ArchivioProdotti = MemoriaProdotti
+  call trovato = store.find(input)?
+  return trovato
+
+flow ElencaProdotti unit -> Result<List<Prodotto>>
+  in store: ArchivioProdotti = MemoriaProdotti
+  call prodotti = store.list(input)?
+  return prodotti
+
+flow InterrogaProdotti ProdottoQuery -> Result<ProdottoPage>
+  in store: ArchivioProdotti = MemoriaProdotti
+  call pagina = store.query(input)?
+  return pagina
+
+flow CercaProdottiPerSku ProdottoQuery -> Result<ProdottoPage>
+  run pagina = InterrogaProdotti(input)?
+  return pagina
+
+flow CercaProdottiPerSkuDemoUnit ProdottoQuery -> Result<ProdottoPage>
+  in store: ArchivioProdotti = MemoriaProdotti
+  make prodotto1: Prodotto
+    id = "prodotto-001"
+    nome = "Laptop Pro"
+    prezzo = 129900
+    sku = "LP-001"
+    attivo = true
+  make prodotto2: Prodotto
+    id = "prodotto-002"
+    nome = "Mouse wireless"
+    prezzo = 2990
+    sku = "MS-002"
+    attivo = true
+  run valida1 = ValidaProdotto(prodotto1)?
+  call p1 = store.save(valida1)?
+  run valida2 = ValidaProdotto(prodotto2)?
+  call p2 = store.save(valida2)?
+  run pagina = CercaProdottiPerSku(input)?
+  return pagina
+
+flow PaginaProdotti unit -> Result<ProdottoPage>
+  in store: ArchivioProdotti = MemoriaProdotti
+  make query: ProdottoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaProdottiDemoUnit unit -> Result<ProdottoPage>
+  in store: ArchivioProdotti = MemoriaProdotti
+  make prodotto1: Prodotto
+    id = "prodotto-001"
+    nome = "Laptop Pro"
+    prezzo = 129900
+    sku = "LP-001"
+    attivo = true
+  make prodotto2: Prodotto
+    id = "prodotto-002"
+    nome = "Mouse wireless"
+    prezzo = 2990
+    sku = "MS-002"
+    attivo = true
+  run valida1 = ValidaProdotto(prodotto1)?
+  call p1 = store.save(valida1)?
+  run valida2 = ValidaProdotto(prodotto2)?
+  call p2 = store.save(valida2)?
+  make query: ProdottoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow ElencaProdottiSqlite unit -> Result<List<Prodotto>>
+  in store: ArchivioProdotti = SqliteProdotti
+  call prodotti = store.list(input)?
+  return prodotti
+
+flow CercaProdottiPerSkuSqlite ProdottoQuery -> Result<ProdottoPage>
+  run pagina = InterrogaProdottiSqlite(input)?
+  return pagina
+
+flow SeedProdottiSqlite unit -> Result<ProdottoPage>
+  in store: ArchivioProdotti = SqliteProdotti
+  make prodotto1: Prodotto
+    id = "prodotto-001"
+    nome = "Laptop Pro"
+    prezzo = 129900
+    sku = "LP-001"
+    attivo = true
+  make prodotto2: Prodotto
+    id = "prodotto-002"
+    nome = "Mouse wireless"
+    prezzo = 2990
+    sku = "MS-002"
+    attivo = true
+  run valida1 = ValidaProdotto(prodotto1)?
+  call p1 = store.save(valida1)?
+  run valida2 = ValidaProdotto(prodotto2)?
+  call p2 = store.save(valida2)?
+  make query: ProdottoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+

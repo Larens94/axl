@@ -37,3 +37,15 @@ Later waves: WP-04 UI, WP-05 AI/vector, WP-06 agents, WP-07 IoT, WP-08 security,
 
 Each iteration advances one failing example → one open primitive → proofs → docs.
 Do not skip gates by writing application logic in Rust or React.
+
+## Target languages (non-negotiable)
+
+- **AXL is the only place for application logic** — flows, entities, policies, guards,
+  admin, vendite, UI page/form wiring.
+- **Rust** = compiler + runtime **primitives** (HTTP dispatch, bindings, middleware
+  slots, manifest emission). No domain-specific controllers or auth rules in Rust.
+- **React** = **codegen target** from `axl-ui/1` manifest, not hand-written pages.
+  If React needs a pattern, extend AXL UI blocks and the generator — do not edit
+  generated components for product behavior.
+- Missing capability → new **open AXL primitive** (syntax → IR → manifest → hook),
+  then consume it from `.axl` examples.

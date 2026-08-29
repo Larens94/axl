@@ -2,12 +2,39 @@
 axl 4
 app PortalVenditePages
 
+entity ClienteSessioneQuery
+  session_id: uuid required
+  stato: text optional
+
+flow PaginaClientiSessioneQuery ClienteSessioneQuery -> Result<ClientePage>
+  make gate: SessionePermessoInput
+    session_id = input.session_id
+    permesso = "vendite.clienti.read"
+  run _ = RequireSessionPermesso(gate)?
+  in store: ArchivioClienti = SqliteClienti
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  filter items_filtrati: List<Cliente> = pagina.items as cliente
+    where = input.stato != "attivo" || cliente.stato == ClienteStato.attivo
+  fold total: int = items_filtrati from 0 as _cliente
+    next = value + 1
+  make risultato: ClientePage
+    items = items_filtrati
+    total = total
+    limit = pagina.limit
+    offset = pagina.offset
+  return risultato
+
 flow PaginaClientiSessione uuid -> Result<ClientePage>
   make gate: SessionePermessoInput
     session_id = input
     permesso = "vendite.clienti.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioClienti = MemoriaClienti
+  in store: ArchivioClienti = SqliteClienti
   make query: ClienteQuery
     order_by = "nome"
     direction = "asc"
@@ -21,7 +48,7 @@ flow PaginaProdottiSessione uuid -> Result<ProdottoPage>
     session_id = input
     permesso = "vendite.prodotti.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioProdotti = MemoriaProdotti
+  in store: ArchivioProdotti = SqliteProdotti
   make query: ProdottoQuery
     order_by = "nome"
     direction = "asc"
@@ -35,7 +62,7 @@ flow PaginaListiniSessione uuid -> Result<ListinoPage>
     session_id = input
     permesso = "vendite.listini.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioListini = MemoriaListini
+  in store: ArchivioListini = SqliteListini
   make query: ListinoQuery
     order_by = "nome"
     direction = "asc"
@@ -49,7 +76,7 @@ flow PaginaPreventiviSessione uuid -> Result<PreventivoPage>
     session_id = input
     permesso = "vendite.preventivi.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioPreventivi = MemoriaPreventivi
+  in store: ArchivioPreventivi = SqlitePreventivi
   make query: PreventivoQuery
     order_by = "id"
     direction = "asc"
@@ -63,7 +90,7 @@ flow PaginaOrdiniSessione uuid -> Result<OrdinePage>
     session_id = input
     permesso = "vendite.ordini.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioOrdini = MemoriaOrdini
+  in store: ArchivioOrdini = SqliteOrdini
   make query: OrdineQuery
     order_by = "id"
     direction = "asc"
@@ -72,6 +99,60 @@ flow PaginaOrdiniSessione uuid -> Result<OrdinePage>
   call pagina = store.query(query)?
   return pagina
 
+flow DettaglioListinoSessione DettaglioSessioneInput -> Result<Listino>
+  make gate: SessionePermessoInput
+    session_id = input.session_id
+    permesso = "vendite.listini.read"
+  run _ = RequireSessionPermesso(gate)?
+  run trovato = CercaListinoSqlite(input.id)?
+  return trovato
+
+flow DettaglioPreventivoSessione DettaglioSessioneInput -> Result<Preventivo>
+  make gate: SessionePermessoInput
+    session_id = input.session_id
+    permesso = "vendite.preventivi.read"
+  run _ = RequireSessionPermesso(gate)?
+  run trovato = CercaPreventivoSqlite(input.id)?
+  return trovato
+
+flow DettaglioOrdineSessione DettaglioSessioneInput -> Result<Ordine>
+  make gate: SessionePermessoInput
+    session_id = input.session_id
+    permesso = "vendite.ordini.read"
+  run _ = RequireSessionPermesso(gate)?
+  run trovato = CercaOrdineSqlite(input.id)?
+  return trovato
+
+flow DettaglioListinoSessioneDemoUnit unit -> Result<Listino>
+  run login = LoginAdminPortalDemoUnit(input)?
+  run _seed = SeedListinoSqlite(input)?
+  make gate: DettaglioSessioneInput
+    session_id = login.session_id
+    id = "listino-001"
+  run trovato = DettaglioListinoSessione(gate)?
+  return trovato
+
+flow DettaglioPreventivoSessioneDemoUnit unit -> Result<Preventivo>
+  run login = LoginAdminPortalDemoUnit(input)?
+  run _seed = SeedPreventivoSqlite(input)?
+  make gate: DettaglioSessioneInput
+    session_id = login.session_id
+    id = "preventivo-001"
+  run trovato = DettaglioPreventivoSessione(gate)?
+  return trovato
+
+flow DettaglioOrdineSessioneDemoUnit unit -> Result<Ordine>
+  run login = LoginAdminPortalDemoUnit(input)?
+  run seed = SeedPreventivoSqlite(input)?
+  run _inviato = InviaPreventivoSqlite(seed.id)?
+  run _confermato = ConfermaPreventivoSqlite(seed.id)?
+  run ordine = CreaOrdineDaPreventivoSqlite(seed.id)?
+  make gate: DettaglioSessioneInput
+    session_id = login.session_id
+    id = ordine.id
+  run trovato = DettaglioOrdineSessione(gate)?
+  return trovato
+
 flow PaginaClientiRbacDemoUnit unit -> Result<ClientePage>
   run _init = InizializzaAuthDemo(input)?
   make check: PermessoCheck
@@ -79,4 +160,13 @@ flow PaginaClientiRbacDemoUnit unit -> Result<ClientePage>
     codice = "vendite.clienti.read"
   run _ = RichiediPermesso(check)?
   run pagina = PaginaClientiDemoUnit(input)?
+  return pagina
+
+flow PaginaClientiSessioneQueryDemoUnit unit -> Result<ClientePage>
+  run login = LoginAdminPortalDemoUnit(input)?
+  run _seed = SeedClientiSqlite(input)?
+  make gate: ClienteSessioneQuery
+    session_id = login.session_id
+    stato = "attivo"
+  run pagina = PaginaClientiSessioneQuery(gate)?
   return pagina

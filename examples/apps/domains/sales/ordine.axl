@@ -1,0 +1,284 @@
+// Sales aggregate: Ordine
+axl 4
+app SalesOrdine
+entity Ordine
+  id: uuid key
+  preventivo_id: uuid required
+  cliente_id: uuid required
+  righe: List<RigaPreventivo> required
+  totale: money required
+  stato: StatoOrdine required
+
+entity OrdineQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity OrdinePage
+  items: List<Ordine> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioOrdini
+  op save Ordine -> Result<Ordine>
+  op find uuid -> Result<Ordine> idempotent
+  op list unit -> Result<List<Ordine>> idempotent
+  op query OrdineQuery -> Result<OrdinePage> idempotent
+
+skill MemoriaOrdini provides ArchivioOrdini
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteOrdini provides ArchivioOrdini
+  native rust axl::store::sqlite
+  config path: text = "./build/vendite.db"
+  effect db.read
+  effect db.write
+
+flow ValidaOrdine Ordine -> Result<Ordine>
+  let totale_positivo = input.totale > 0
+  require totale_positivo else "totale_deve_essere_positivo"
+  return input
+
+flow CreaOrdineDaPreventivo uuid -> Result<Ordine>
+  in preventivi: ArchivioPreventivi = MemoriaPreventivi
+  in ordini: ArchivioOrdini = MemoriaOrdini
+  call preventivo = preventivi.find(input)?
+  match confermato: bool = preventivo.stato
+    bozza => false
+    inviato => false
+    confermato => true
+  require confermato else "preventivo_non_confermato"
+  let nuovo_id = uuid.v4
+  make ordine: Ordine
+    id = nuovo_id
+    preventivo_id = preventivo.id
+    cliente_id = preventivo.cliente_id
+    righe = preventivo.righe
+    totale = preventivo.totale
+    stato = StatoOrdine.bozza
+  run valida = ValidaOrdine(ordine)?
+  call salvato = ordini.save(valida)?
+  return salvato
+
+flow CercaOrdine uuid -> Result<Ordine>
+  in store: ArchivioOrdini = MemoriaOrdini
+  call trovato = store.find(input)?
+  return trovato
+
+flow ElencaOrdini unit -> Result<List<Ordine>>
+  in store: ArchivioOrdini = MemoriaOrdini
+  call lista = store.list(input)?
+  return lista
+
+flow InterrogaOrdini OrdineQuery -> Result<OrdinePage>
+  in store: ArchivioOrdini = MemoriaOrdini
+  call pagina = store.query(input)?
+  return pagina
+
+flow PaginaOrdini unit -> Result<OrdinePage>
+  in store: ArchivioOrdini = MemoriaOrdini
+  make query: OrdineQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow CreaOrdineDaPreventivoDemoUnit unit -> Result<Ordine>
+  run confermato = ConfermaPreventivoDemoUnit(input)?
+  run ordine = CreaOrdineDaPreventivo(confermato.id)?
+  return ordine
+
+flow CreaOrdineDaPreventivoSeeded uuid -> Result<Ordine>
+  run confermato = ConfermaPreventivoSeeded(input)?
+  run ordine = CreaOrdineDaPreventivo(input)?
+  return ordine
+
+flow CreaOrdineDaPreventivoNonConfermatoDemoUnit unit -> Result<Ordine>
+  run seed = SeedPreventivoDemoUnit(input)?
+  run ordine = CreaOrdineDaPreventivo(seed.id)?
+  return ordine
+
+flow PaginaOrdiniDemoUnit unit -> Result<OrdinePage>
+  in store: ArchivioOrdini = MemoriaOrdini
+  run ordine = CreaOrdineDaPreventivoDemoUnit(input)?
+  make query: OrdineQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow ConfermaOrdine uuid -> Result<Ordine>
+  in store: ArchivioOrdini = MemoriaOrdini
+  call trovato = store.find(input)?
+  match stato_confermable: bool = trovato.stato
+    bozza => true
+    confermato => false
+    annullato => false
+  require stato_confermable else "stato_non_confermable"
+  make aggiornato: Ordine
+    id = trovato.id
+    preventivo_id = trovato.preventivo_id
+    cliente_id = trovato.cliente_id
+    righe = trovato.righe
+    totale = trovato.totale
+    stato = StatoOrdine.confermato
+  run valida = ValidaOrdine(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow AnnullaOrdine uuid -> Result<Ordine>
+  in store: ArchivioOrdini = MemoriaOrdini
+  call trovato = store.find(input)?
+  match stato_annullabile: bool = trovato.stato
+    bozza => true
+    confermato => false
+    annullato => false
+  require stato_annullabile else "stato_non_annullabile"
+  make aggiornato: Ordine
+    id = trovato.id
+    preventivo_id = trovato.preventivo_id
+    cliente_id = trovato.cliente_id
+    righe = trovato.righe
+    totale = trovato.totale
+    stato = StatoOrdine.annullato
+  run valida = ValidaOrdine(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow DettaglioOrdine uuid -> Result<Ordine>
+  run trovato = CercaOrdine(input)?
+  return trovato
+
+flow DettaglioOrdineDemoUnit unit -> Result<Ordine>
+  run seed = CreaOrdineDaPreventivoDemoUnit(input)?
+  run dettaglio = DettaglioOrdine(seed.id)?
+  return dettaglio
+
+flow RenderDettaglioOrdineDemoUnit unit -> Result<Ordine>
+  run dettaglio = DettaglioOrdineDemoUnit(input)?
+  return dettaglio
+
+flow ConfermaOrdineDemoUnit unit -> Result<Ordine>
+  run seed = CreaOrdineDaPreventivoDemoUnit(input)?
+  run confermato = ConfermaOrdine(seed.id)?
+  return confermato
+
+flow AnnullaOrdineDemoUnit unit -> Result<Ordine>
+  run seed = CreaOrdineDaPreventivoDemoUnit(input)?
+  run annullato = AnnullaOrdine(seed.id)?
+  return annullato
+
+flow ConfermaOrdineDoppioDemoUnit unit -> Result<Ordine>
+  run seed = CreaOrdineDaPreventivoDemoUnit(input)?
+  run confermato = ConfermaOrdine(seed.id)?
+  run doppio = ConfermaOrdine(seed.id)?
+  return doppio
+
+flow AnnullaOrdineConfermatoDemoUnit unit -> Result<Ordine>
+  run seed = CreaOrdineDaPreventivoDemoUnit(input)?
+  run confermato = ConfermaOrdine(seed.id)?
+  run annullato = AnnullaOrdine(seed.id)?
+  return annullato
+
+flow ConfermaOrdineSeeded uuid -> Result<Ordine>
+  run ordine = CreaOrdineDaPreventivoSeeded(input)?
+  run confermato = ConfermaOrdine(ordine.id)?
+  return confermato
+
+flow SeedOrdineDemoForm WorkflowConfirm -> Result<Ordine>
+  run confermato = ConfermaPreventivoDemoForm(input)?
+  run ordine = CreaOrdineDaPreventivo(confermato.id)?
+  return ordine
+
+flow ConfermaOrdineDemoForm WorkflowConfirm -> Result<Ordine>
+  run seed = SeedOrdineDemoForm(input)?
+  run confermato = ConfermaOrdine(seed.id)?
+  return confermato
+
+flow AnnullaOrdineDemoForm WorkflowConfirm -> Result<Ordine>
+  run seed = SeedOrdineDemoForm(input)?
+  run annullato = AnnullaOrdine(seed.id)?
+  return annullato
+
+flow CreaOrdineDaPreventivoSqlite uuid -> Result<Ordine>
+  in preventivi: ArchivioPreventivi = SqlitePreventivi
+  in ordini: ArchivioOrdini = SqliteOrdini
+  call preventivo = preventivi.find(input)?
+  match confermato: bool = preventivo.stato
+    bozza => false
+    inviato => false
+    confermato => true
+  require confermato else "preventivo_non_confermato"
+  let nuovo_id = uuid.v4
+  make ordine: Ordine
+    id = nuovo_id
+    preventivo_id = preventivo.id
+    cliente_id = preventivo.cliente_id
+    righe = preventivo.righe
+    totale = preventivo.totale
+    stato = StatoOrdine.bozza
+  run valida = ValidaOrdine(ordine)?
+  call salvato = ordini.save(valida)?
+  return salvato
+
+flow CercaOrdineSqlite uuid -> Result<Ordine>
+  in store: ArchivioOrdini = SqliteOrdini
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaOrdiniSqlite OrdineQuery -> Result<OrdinePage>
+  in store: ArchivioOrdini = SqliteOrdini
+  call pagina = store.query(input)?
+  return pagina
+
+flow ConfermaOrdineSqlite uuid -> Result<Ordine>
+  in store: ArchivioOrdini = SqliteOrdini
+  call trovato = store.find(input)?
+  match stato_confermable: bool = trovato.stato
+    bozza => true
+    confermato => false
+    annullato => false
+  require stato_confermable else "stato_non_confermable"
+  make aggiornato: Ordine
+    id = trovato.id
+    preventivo_id = trovato.preventivo_id
+    cliente_id = trovato.cliente_id
+    righe = trovato.righe
+    totale = trovato.totale
+    stato = StatoOrdine.confermato
+  run valida = ValidaOrdine(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow AnnullaOrdineSqlite uuid -> Result<Ordine>
+  in store: ArchivioOrdini = SqliteOrdini
+  call trovato = store.find(input)?
+  match stato_annullabile: bool = trovato.stato
+    bozza => true
+    confermato => false
+    annullato => false
+  require stato_annullabile else "stato_non_annullabile"
+  make aggiornato: Ordine
+    id = trovato.id
+    preventivo_id = trovato.preventivo_id
+    cliente_id = trovato.cliente_id
+    righe = trovato.righe
+    totale = trovato.totale
+    stato = StatoOrdine.annullato
+  run valida = ValidaOrdine(aggiornato)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow ElencaOrdiniSqlite unit -> Result<List<Ordine>>
+  in store: ArchivioOrdini = SqliteOrdini
+  call lista = store.list(input)?
+  return lista

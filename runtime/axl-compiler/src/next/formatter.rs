@@ -54,9 +54,14 @@ pub fn format(program: &Program) -> String {
                     output.push(format!("  native {} {}", native.target, native.symbol));
                 }
                 for config in &skill.configs {
+                    let value = config
+                        .secret_ref
+                        .as_ref()
+                        .map(|name| format!("secret(\"{name}\")"))
+                        .unwrap_or_else(|| config.value.clone());
                     output.push(format!(
                         "  config {}: {} = {}",
-                        config.name, config.type_name, config.value
+                        config.name, config.type_name, value
                     ));
                 }
                 append_values(&mut output, "effect", &skill.effects);
@@ -391,6 +396,22 @@ pub fn format(program: &Program) -> String {
                             output.push(format!("    bind {target} = {source}"));
                         }
                     }
+                    for guard in &route.guards {
+                        let binding = guard
+                            .name
+                            .as_ref()
+                            .map(|name| format!(" from {}.{name}", guard.source))
+                            .unwrap_or_else(|| format!(" from {}", guard.source));
+                        let param = guard
+                            .param
+                            .as_ref()
+                            .map(|value| format!(" \"{value}\""))
+                            .unwrap_or_default();
+                        output.push(format!(
+                            "    guard {} {}{}{}",
+                            guard.kind, guard.flow, param, binding
+                        ));
+                    }
                 }
             }
             Declaration::Ui(ui) => {
@@ -405,6 +426,26 @@ pub fn format(program: &Program) -> String {
                         "  page {} {} -> {} = {}{}",
                         page.path, page.input, page.output, page.flow, binding
                     ));
+                    if page.input_source == "composite" {
+                        for binding in &page.bindings {
+                            let target = binding.target.as_deref().unwrap_or_default();
+                            let source = binding
+                                .name
+                                .as_ref()
+                                .map(|name| format!("{}.{name}", binding.source))
+                                .unwrap_or_else(|| binding.source.clone());
+                            let is_filter = page.filters.iter().any(|filter| {
+                                filter.target == binding.target
+                                    && filter.source == binding.source
+                                    && filter.name == binding.name
+                            });
+                            if is_filter {
+                                output.push(format!("    filter {target} = {source}"));
+                            } else {
+                                output.push(format!("    bind {target} = {source}"));
+                            }
+                        }
+                    }
                 }
                 for form in &ui.forms {
                     let submit = form
@@ -433,9 +474,14 @@ pub fn format(program: &Program) -> String {
                         .as_deref()
                         .map(|path| format!(" redirect {path}"))
                         .unwrap_or_default();
+                    let clear_cookie = action
+                        .clear_cookie
+                        .as_deref()
+                        .map(|name| format!(" clear_cookie {name}"))
+                        .unwrap_or_default();
                     output.push(format!(
-                        "  action {} {} {}{}{}",
-                        action.path, action.method, action.submit, on, redirect
+                        "  action {} {} {}{}{}{}",
+                        action.path, action.method, action.submit, on, redirect, clear_cookie
                     ));
                 }
             }
