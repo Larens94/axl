@@ -2513,6 +2513,7 @@ fn parse_ui(
     let mut forms = Vec::new();
     let mut actions = Vec::new();
     let mut drawers = Vec::new();
+    let mut modals = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
         let line = &body[cursor];
@@ -2541,6 +2542,11 @@ fn parse_ui(
             cursor += 1;
             continue;
         }
+        if line.text.starts_with("modal ") {
+            parse_ui_modal(line, &mut modals, diagnostics);
+            cursor += 1;
+            continue;
+        }
         if line.text.starts_with("form ") {
             parse_ui_form(line, &mut forms, diagnostics);
             cursor += 1;
@@ -2565,6 +2571,7 @@ fn parse_ui(
         forms,
         actions,
         drawers,
+        modals,
         span: span(header),
     }));
 }
@@ -2949,6 +2956,109 @@ fn parse_ui_drawer(
         (flow.to_string(), "body".to_string(), None)
     };
     drawers.push(UiDrawer {
+        path: path.into(),
+        input: input.into(),
+        output: output.trim().into(),
+        flow,
+        input_source,
+        input_name,
+        on,
+        span: span(line),
+    });
+}
+
+fn parse_ui_modal(line: &SourceLine, modals: &mut Vec<UiModal>, diagnostics: &mut Vec<Diagnostic>) {
+    let mut remainder = line.text["modal ".len()..].trim();
+    let mut on = None;
+    if let Some((rest, on_path)) = remainder.rsplit_once(" on ") {
+        let on_path = on_path.trim();
+        if !on_path.starts_with('/') {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P991",
+                    "parse",
+                    "a UI modal on path must be absolute",
+                    span(line),
+                )
+                .expected("on /absolute/path", on_path),
+            );
+            return;
+        }
+        remainder = rest.trim();
+        on = Some(on_path.into());
+    }
+    let Some((signature, flow)) = remainder.rsplit_once('=') else {
+        diagnostics.push(
+            Diagnostic::error("AXL-P990", "parse", "a UI modal binds a flow", span(line)).expected(
+                "modal /path Input -> Output = Flow [from path.id] [on /page]",
+                &line.text,
+            ),
+        );
+        return;
+    };
+    let Some((request, output)) = signature.split_once("->") else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P990",
+                "parse",
+                "a UI modal requires an output type",
+                span(line),
+            )
+            .expected(
+                "modal /path Input -> Output = Flow [from path.id] [on /page]",
+                &line.text,
+            ),
+        );
+        return;
+    };
+    let mut request = request.split_whitespace();
+    let (Some(path), Some(input), None) = (request.next(), request.next(), request.next()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P990",
+                "parse",
+                "a UI modal requires one path and input type",
+                span(line),
+            )
+            .expected(
+                "modal /path Input -> Output = Flow [from path.id] [on /page]",
+                &line.text,
+            ),
+        );
+        return;
+    };
+    let flow = flow.trim();
+    if flow.is_empty() {
+        diagnostics.push(
+            Diagnostic::error("AXL-P990", "parse", "a UI modal binds a flow", span(line)).expected(
+                "modal /path Input -> Output = Flow [from path.id] [on /page]",
+                &line.text,
+            ),
+        );
+        return;
+    }
+    let (flow, input_source, input_name) = if let Some((flow, binding)) = flow.split_once(" from ")
+    {
+        let Some((source, name)) = parse_request_source(binding) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P990",
+                    "parse",
+                    "a UI modal binding needs a source and name",
+                    span(line),
+                )
+                .expected(
+                    "Flow from path.id|query.name|header.name|cookie.name",
+                    binding,
+                ),
+            );
+            return;
+        };
+        (flow.trim().to_string(), source, name)
+    } else {
+        (flow.to_string(), "body".to_string(), None)
+    };
+    modals.push(UiModal {
         path: path.into(),
         input: input.into(),
         output: output.trim().into(),

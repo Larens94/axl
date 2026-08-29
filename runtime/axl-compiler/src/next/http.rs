@@ -245,6 +245,15 @@ fn dispatch_ui_get(
             .insert("content-type".into(), "text/html; charset=utf-8".into());
         return Some(result);
     }
+    if let Ok(rendered) =
+        ui::render_modal_with_runtime(graph, runtime, request_path, Value::Null, headers)
+    {
+        let mut result = HttpResult::new(200, Value::String(rendered.html));
+        result
+            .headers
+            .insert("content-type".into(), "text/html; charset=utf-8".into());
+        return Some(result);
+    }
     None
 }
 

@@ -747,12 +747,12 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - `render` evaluates a bound flow and displays typed scalar/entity fields in HTML.
 
 It does not prove routing shell, component
-registry, forms validation UX, modal, KPI/charts or responsive admin UI (full Gate 4).
+registry, forms validation UX, KPI/charts or responsive admin UI (full Gate 4).
 HTTP execution, process-local memory, restart-durable configured SQLite and
 document JSON, PostgreSQL/MySQL store/tx/migrate (boundary samples when env URL
 is set), SQL pushdown store `query` on SQLite/PostgreSQL/MySQL
 (`sql-pushdown-boundary.axl`), document tx/migrate (`document-tx-boundary.axl`),
-UI drawer overlays (`drawer-boundary.axl`), typed multi-subscriber
+UI drawer overlays (`drawer-boundary.axl`), UI modal overlays (`modal-boundary.axl`), typed multi-subscriber
 events, durable jobs, Cache get/put/invalidate, Logger/Metrics/Tracer
 observability, transaction commit/rollback, migration upgrade/downgrade, typed
 store queries and the minimal UI page slice are proven.
@@ -764,4 +764,4 @@ vendite skills; OAuth demo provider is proven (`oauth-boundary.axl` →
 returning the token in the API result. `hosts/portal-web` syncs `axl-ui/1`
 codegen. Gate 2 auth adapters are otherwise complete. Next Gate 3 target:
 pooling/health/timeout configuration. Next Gate 4 target:
-component registry slots, mobile bottom nav and modal/KPI kit.
+component registry slots, mobile bottom nav and KPI/charts kit.

@@ -512,6 +512,22 @@ pub fn format(program: &Program) -> String {
                         drawer.path, drawer.input, drawer.output, drawer.flow, binding, on
                     ));
                 }
+                for modal in &ui.modals {
+                    let binding = modal
+                        .input_name
+                        .as_deref()
+                        .map(|name| format!(" from {}.{name}", modal.input_source))
+                        .unwrap_or_default();
+                    let on = modal
+                        .on
+                        .as_ref()
+                        .map(|path| format!(" on {path}"))
+                        .unwrap_or_default();
+                    output.push(format!(
+                        "  modal {} {} -> {} = {}{}{}",
+                        modal.path, modal.input, modal.output, modal.flow, binding, on
+                    ));
+                }
             }
             Declaration::Agent(agent) => {
                 output.push(format!("agent {}", agent.name));

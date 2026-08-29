@@ -174,6 +174,15 @@ fn run(args: &[String]) -> Result<()> {
                     &compilation.graph,
                     &mut runtime,
                     page,
+                    input.clone(),
+                    &headers,
+                )
+            })
+            .or_else(|_| {
+                next::ui::render_modal_with_runtime(
+                    &compilation.graph,
+                    &mut runtime,
+                    page,
                     input,
                     &headers,
                 )

@@ -517,6 +517,7 @@ pub struct Ui {
     pub forms: Vec<UiForm>,
     pub actions: Vec<UiAction>,
     pub drawers: Vec<UiDrawer>,
+    pub modals: Vec<UiModal>,
     pub span: SourceSpan,
 }
 
@@ -544,6 +545,18 @@ pub struct UiPage {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiDrawer {
+    pub path: String,
+    pub input: String,
+    pub output: String,
+    pub flow: String,
+    pub input_source: String,
+    pub input_name: Option<String>,
+    pub on: Option<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiModal {
     pub path: String,
     pub input: String,
     pub output: String,

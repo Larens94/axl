@@ -3245,13 +3245,17 @@ fn check_ui(
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if ui.pages.is_empty() && ui.forms.is_empty() && ui.actions.is_empty() && ui.drawers.is_empty()
+    if ui.pages.is_empty()
+        && ui.forms.is_empty()
+        && ui.actions.is_empty()
+        && ui.drawers.is_empty()
+        && ui.modals.is_empty()
     {
         diagnostics.push(Diagnostic::error(
             "AXL-U901",
             "ui",
             format!(
-                "ui '{}' requires at least one page, form, action or drawer",
+                "ui '{}' requires at least one page, form, action, drawer or modal",
                 ui.name
             ),
             ui.span.clone(),
@@ -3539,6 +3543,84 @@ fn check_ui(
                     "ui",
                     format!("invalid UI drawer on path '{on}'"),
                     drawer.span.clone(),
+                )
+                .expected("absolute path without query or fragment", on),
+            );
+        }
+    }
+    for modal in &ui.modals {
+        if !valid_http_path(&modal.path) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI path '{}'", modal.path),
+                    modal.span.clone(),
+                )
+                .expected("absolute path without query or fragment", &modal.path),
+            );
+        }
+        if !paths.insert(normalized_http_path(&modal.path)) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U921",
+                "ui",
+                format!(
+                    "ui '{}' declares modal '{}' more than once",
+                    ui.name, modal.path
+                ),
+                modal.span.clone(),
+            ));
+        }
+        check_type(&modal.input, &modal.span, declarations, diagnostics);
+        check_type(&modal.output, &modal.span, declarations, diagnostics);
+        match declarations.get(modal.flow.as_str()) {
+            Some(Declaration::Flow(flow)) => {
+                if flow.input != modal.input || flow.output != modal.output {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-U905",
+                            "ui",
+                            format!(
+                                "modal '{}' does not match flow '{}'",
+                                modal.path, modal.flow
+                            ),
+                            modal.span.clone(),
+                        )
+                        .expected(
+                            format!("{} -> {}", flow.input, flow.output),
+                            format!("{} -> {}", modal.input, modal.output),
+                        ),
+                    );
+                }
+            }
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U904",
+                    "ui",
+                    format!("modal target '{}' is not a flow", modal.flow),
+                    modal.span.clone(),
+                )
+                .expected("flow", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U904",
+                    "ui",
+                    format!("modal references unknown flow '{}'", modal.flow),
+                    modal.span.clone(),
+                )
+                .expected("declared flow", &modal.flow),
+            ),
+        }
+        if let Some(on) = &modal.on
+            && !valid_http_path(on)
+        {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI modal on path '{on}'"),
+                    modal.span.clone(),
                 )
                 .expected("absolute path without query or fragment", on),
             );
@@ -5264,6 +5346,31 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             &format!("flow.{}", drawer.flow),
             "dispatch",
             Some(&format!("{}->{}", drawer.input, drawer.output)),
+        ));
+    }
+    for (index, modal) in ui.modals.iter().enumerate() {
+        let id = format!("{ui_id}.modal.{index}");
+        let mut value = node(&id, "ui_modal", &modal.path);
+        value.type_name = Some(format!("{}->{}", modal.input, modal.output));
+        value.metadata.insert("path".into(), modal.path.clone());
+        value.metadata.insert("flow".into(), modal.flow.clone());
+        value
+            .metadata
+            .insert("input_source".into(), modal.input_source.clone());
+        if let Some(name) = &modal.input_name {
+            value.metadata.insert("input_name".into(), name.clone());
+        }
+        if let Some(on) = &modal.on {
+            value.metadata.insert("on".into(), on.clone());
+        }
+        value.metadata.insert("order".into(), index.to_string());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&ui_id, &id, "owns", None));
+        graph.edges.push(edge(
+            &id,
+            &format!("flow.{}", modal.flow),
+            "dispatch",
+            Some(&format!("{}->{}", modal.input, modal.output)),
         ));
     }
 }

@@ -402,6 +402,12 @@ fn reconstruct_id(
             })?;
             Ok(format!("{parent}.drawer.{order}"))
         }
+        Some(parent) if kind == "ui_modal" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("ui_modal node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.modal.{order}"))
+        }
         Some(parent) if kind == "ui_filter" => {
             let order = metadata.get("order").ok_or_else(|| {
                 PackedError(format!("ui_filter node '{name}' is missing order metadata"))
@@ -509,6 +515,7 @@ fn node_kind_code(kind: &str) -> &str {
         "ui_drawer" => "59",
         "ui_filter" => "60",
         "ui_pagination" => "61",
+        "ui_modal" => "62",
         other => other,
     }
 }
@@ -577,6 +584,7 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "59" => "ui_drawer",
         "60" => "ui_filter",
         "61" => "ui_pagination",
+        "62" => "ui_modal",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

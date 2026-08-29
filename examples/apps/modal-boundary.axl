@@ -1,0 +1,37 @@
+// Gate 4 UI modal overlay — confirm path renders as a centered dialog with close link.
+axl 4
+app ModalBoundary
+
+entity Cliente
+  id: uuid required
+  nome: text required
+  email: text required
+
+entity ClientePage
+  items: List<Cliente> required
+  total: int required
+  limit: int required
+  offset: int required
+
+flow ListaClienti unit -> Result<ClientePage>
+  make cliente: Cliente
+    id = "cliente-modal-1"
+    nome = "Modal Demo"
+    email = "modal@example.com"
+  make page: ClientePage
+    items = [cliente]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+
+flow ConfermaCliente uuid -> Result<Cliente>
+  make cliente: Cliente
+    id = input
+    nome = "Modal Demo"
+    email = "modal@example.com"
+  return cliente
+
+ui ClienteModalUi
+  page /clienti unit -> Result<ClientePage> = ListaClienti
+  modal /clienti/{id}/confirm uuid -> Result<Cliente> = ConfermaCliente from path.id on /clienti

@@ -29,11 +29,13 @@ pub struct UiFormRenderResult {
 pub fn matches_exact_ui_path(graph: &GraphIr, path: &str) -> bool {
     let normalized = normalize_path(path);
     graph.nodes.iter().any(|node| {
-        matches!(node.kind.as_str(), "page" | "form" | "ui_drawer")
-            && node
-                .metadata
-                .get("path")
-                .is_some_and(|value| !value.contains('{') && normalize_path(value) == normalized)
+        matches!(
+            node.kind.as_str(),
+            "page" | "form" | "ui_drawer" | "ui_modal"
+        ) && node
+            .metadata
+            .get("path")
+            .is_some_and(|value| !value.contains('{') && normalize_path(value) == normalized)
     })
 }
 
@@ -68,6 +70,14 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
             let mut drawers = children(graph, &ui.id, "ui_drawer");
             drawers.sort_by_key(|drawer| {
                 drawer
+                    .metadata
+                    .get("order")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
+            let mut modals = children(graph, &ui.id, "ui_modal");
+            modals.sort_by_key(|modal| {
+                modal
                     .metadata
                     .get("order")
                     .and_then(|value| value.parse::<usize>().ok())
@@ -136,6 +146,23 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "input_source": drawer.metadata.get("input_source"),
                         "input_name": drawer.metadata.get("input_name"),
                         "on": drawer.metadata.get("on"),
+                    })
+                }).collect::<Vec<_>>(),
+                "modals": modals.into_iter().map(|modal| {
+                    let (input, output) = modal.type_name.as_deref()
+                        .and_then(|value| value.split_once("->"))
+                        .unwrap_or(("", ""));
+                    let path = modal.metadata.get("path").cloned().unwrap_or_default();
+                    let template = path.contains('{').then(|| path.clone());
+                    json!({
+                        "path": path,
+                        "template": template,
+                        "input": input,
+                        "output": output,
+                        "flow": modal.metadata.get("flow"),
+                        "input_source": modal.metadata.get("input_source"),
+                        "input_name": modal.metadata.get("input_name"),
+                        "on": modal.metadata.get("on"),
                     })
                 }).collect::<Vec<_>>(),
             })
@@ -215,6 +242,51 @@ pub fn render_drawer_with_runtime(
         .unwrap_or_else(|| "/".into());
     let sidebar = render_sidebar(graph, &close_href);
     let html = render_drawer_html(
+        graph,
+        &graph.app,
+        path,
+        &output_type,
+        &data,
+        &sidebar,
+        &close_href,
+    );
+    Ok(UiRenderResult {
+        path: path.into(),
+        flow,
+        output_type,
+        data,
+        html,
+    })
+}
+
+pub fn render_modal_with_runtime(
+    graph: &GraphIr,
+    provider_runtime: &mut dyn runtime::ProviderRuntime,
+    path: &str,
+    input: Value,
+    headers: &BTreeMap<String, String>,
+) -> Result<UiRenderResult, String> {
+    let (modal, _) = find_modal(graph, path).ok_or_else(|| format!("ui_modal_not_found:{path}"))?;
+    let flow = modal
+        .metadata
+        .get("flow")
+        .cloned()
+        .ok_or_else(|| "ui_modal_has_no_flow".to_string())?;
+    let output_type = modal
+        .type_name
+        .as_deref()
+        .and_then(|value| value.split_once("->").map(|(_, output)| output.to_string()))
+        .unwrap_or_else(|| "text".to_string());
+    let input = bind_page_input(graph, modal, path, input, headers)?;
+    let data = runtime::evaluate_flow_with_runtime(graph, &flow, input, provider_runtime)
+        .map_err(|error| error.0)?;
+    let close_href = modal
+        .metadata
+        .get("on")
+        .cloned()
+        .unwrap_or_else(|| "/".into());
+    let sidebar = render_sidebar(graph, &close_href);
+    let html = render_modal_html(
         graph,
         &graph.app,
         path,
@@ -680,6 +752,49 @@ fn render_drawer_html(
         " admin-layout drawer-open"
     } else {
         " drawer-open"
+    };
+    wrap_html(app, path, &title, &heading, sidebar, &content, body_class)
+}
+
+fn render_modal_html(
+    graph: &GraphIr,
+    app: &str,
+    path: &str,
+    output_type: &str,
+    data: &Value,
+    sidebar: &str,
+    close_href: &str,
+) -> String {
+    let title = format!("{app}{path}");
+    let heading = page_heading(path);
+    let fields = collect_fields(graph, output_type, data);
+    let detail = render_detail_card(&fields);
+    let actions = render_page_actions(graph, path, data);
+    let modal = format!(
+        r#"  <a class="modal-backdrop" href="{close}" aria-label="Chiudi"></a>
+  <div class="modal-panel" role="dialog" aria-modal="true" aria-label="{heading}">
+    <div class="modal-header">
+      <h1>{heading}</h1>
+      <a class="modal-close" href="{close}">Chiudi</a>
+    </div>
+{detail}{actions}
+  </div>"#,
+        close = html_escape(close_href),
+        heading = html_escape(&heading),
+        detail = detail,
+        actions = actions,
+    );
+    let content = format!(
+        r#"  <section class="card">
+    <div class="card-header"><h2 class="card-title">Conferma</h2></div>
+    <p class="empty-state">Apri il modal per continuare.</p>
+  </section>
+{modal}"#
+    );
+    let body_class = if is_admin_path(path) {
+        " admin-layout modal-open"
+    } else {
+        " modal-open"
     };
     wrap_html(app, path, &title, &heading, sidebar, &content, body_class)
 }
@@ -1405,6 +1520,47 @@ fn dashboard_styles() -> &'static str {
       font-weight: 600;
       font-size: 0.875rem;
     }
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.45);
+      z-index: 40;
+    }
+    .modal-panel {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(32rem, calc(100% - 2rem));
+      max-height: min(80vh, 36rem);
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      padding: 1.25rem 1.35rem 1.5rem;
+      overflow-y: auto;
+    }
+    .modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .modal-header h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+    .modal-close {
+      text-decoration: none;
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
     @media (max-width: 900px) {
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
@@ -1739,6 +1895,32 @@ fn find_drawer<'a>(
         let pattern = drawer.metadata.get("path")?;
         if let Some(parameters) = match_http_path(pattern, path_only) {
             return Some((drawer, parameters));
+        }
+    }
+    None
+}
+
+fn find_modal<'a>(
+    graph: &'a GraphIr,
+    path: &str,
+) -> Option<(&'a super::ir::GraphNode, BTreeMap<String, String>)> {
+    let path_only = path.split('?').next().unwrap_or(path);
+    let normalized = normalize_path(path_only);
+    let modals = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "ui_modal")
+        .collect::<Vec<_>>();
+    for modal in &modals {
+        let pattern = modal.metadata.get("path")?;
+        if !pattern.contains('{') && normalize_path(pattern) == normalized {
+            return Some((modal, BTreeMap::new()));
+        }
+    }
+    for modal in &modals {
+        let pattern = modal.metadata.get("path")?;
+        if let Some(parameters) = match_http_path(pattern, path_only) {
+            return Some((modal, parameters));
         }
     }
     None
@@ -2374,6 +2556,46 @@ ui Screen
         assert!(rendered.html.contains("class=\"drawer-panel\""));
         assert!(rendered.html.contains("role=\"dialog\""));
         assert!(rendered.html.contains("Neri"));
+        assert!(rendered.html.contains("href=\"/clienti\""));
+    }
+
+    #[test]
+    fn render_modal_emits_centered_dialog() {
+        const SOURCE: &str = r#"axl 4
+app ModalUi
+entity Cliente
+  id: uuid required
+  nome: text required
+flow Lista unit -> text
+  return "lista"
+flow Conferma uuid -> Result<Cliente>
+  make c: Cliente
+    id = input
+    nome = "Verdi"
+  return c
+ui Screen
+  page /clienti unit -> text = Lista
+  modal /clienti/{id}/confirm uuid -> Result<Cliente> = Conferma from path.id on /clienti
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(
+            manifest["uis"][0]["modals"][0]["path"],
+            "/clienti/{id}/confirm"
+        );
+        assert_eq!(manifest["uis"][0]["modals"][0]["on"], "/clienti");
+        let mut runtime = runtime::BuiltinRuntime::new().unwrap();
+        let rendered = render_modal_with_runtime(
+            &graph,
+            &mut runtime,
+            "/clienti/c1/confirm",
+            json!(null),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert!(rendered.html.contains("class=\"modal-panel\""));
+        assert!(rendered.html.contains("role=\"dialog\""));
+        assert!(rendered.html.contains("Verdi"));
         assert!(rendered.html.contains("href=\"/clienti\""));
     }
 }

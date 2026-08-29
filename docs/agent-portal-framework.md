@@ -91,6 +91,7 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 - Gate 4 UI **filter** primitive: `filter field = query.name` on list pages renders a GET filter bar (see `/clienti?stato=attivo`).
 - Gate 4 UI **pagination** primitive: `pagination limit|offset = query.name default N` on list pages; renderer emits prev/next when `*Page.total > limit`.
 - Gate 4 UI **drawer** primitive: `drawer /path/{id} In -> Out = Flow from path.id on /list` renders a side-panel overlay (`drawer-boundary.axl`).
+- Gate 4 UI **modal** primitive: `modal /path/{id}/confirm In -> Out = Flow from path.id on /list` renders a centered dialog overlay (`modal-boundary.axl`).
 - Package registry/lockfile remain open Gate 8 items.
 
 ## Verify

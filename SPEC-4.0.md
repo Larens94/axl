@@ -893,7 +893,7 @@ server and CLI restarts.
 ### UI pages and forms
 
 UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` / `ui_action` /
-`ui_drawer` nodes in Graph IR. The HTML renderer evaluates bound flows. The React target emits open codegen artifacts from the
+`ui_drawer` and `ui_modal` nodes in Graph IR. The HTML renderer evaluates bound flows. The React target emits open codegen artifacts from the
 same manifest — `axl_routes.tsx` (React Router table + layout assignment), `axl_layouts.tsx`
 (Guest/App/Admin slots), and `axl_registry.ts` (component registry). Hosts bind concrete React
 components to those slots; product routes and forms are never authored by hand in React.
@@ -923,6 +923,17 @@ ui ClienteDrawerUi
 
 `render` and `serve` GET emit a side panel (`role="dialog"`) with a close link to `on`.
 See `examples/apps/drawer-boundary.axl`.
+
+A modal is a centered overlay bound like a drawer:
+
+```axl
+ui ClienteModalUi
+  page /clienti unit -> Result<ClientePage> = ListaClienti
+  modal /clienti/{id}/confirm uuid -> Result<Cliente> = ConfermaCliente from path.id on /clienti
+```
+
+`render` and `serve` GET emit a centered dialog (`modal-panel`, `role="dialog"`) with a
+close link to `on`. See `examples/apps/modal-boundary.axl`.
 
 A form binds an absolute path to an entity type and flow. The optional `submit` clause
 names the POST api route that receives the entity JSON; when omitted, the analyzer
@@ -993,11 +1004,15 @@ Implemented UI diagnostics:
 | `AXL-P972` | action submit path must be absolute |
 | `AXL-P973` | action method must be POST |
 | `AXL-P974` | action redirect path must be absolute |
-| `AXL-U901` | `ui` requires at least one page, form or action |
-| `AXL-U902` | invalid page or form path |
+| `AXL-P980` | drawer missing flow binding / path / output / binding |
+| `AXL-P981` | drawer on path must be absolute |
+| `AXL-P990` | modal missing flow binding / path / output / binding |
+| `AXL-P991` | modal on path must be absolute |
+| `AXL-U901` | `ui` requires at least one page, form, action, drawer or modal |
+| `AXL-U902` | invalid page, form, drawer or modal path |
 | `AXL-U903` | duplicate page path in one `ui` |
-| `AXL-U904` | unknown or non-flow page/form target |
-| `AXL-U905` | page or form signature does not match flow |
+| `AXL-U904` | unknown or non-flow page/form/drawer/modal target |
+| `AXL-U905` | page, form, drawer or modal signature does not match flow |
 | `AXL-U906` | page or form path conflicts across `ui` blocks |
 | `AXL-U907` | duplicate form path in one `ui` |
 | `AXL-U908` | unknown submit route for form |
@@ -1007,8 +1022,12 @@ Implemented UI diagnostics:
 | `AXL-U913` | invalid UI page binding name |
 | `AXL-U914` | page path binding has no matching placeholder |
 | `AXL-U915` | page path binding cannot construct input type |
+| `AXL-U920` | duplicate drawer path in one `ui` |
+| `AXL-U921` | duplicate modal path in one `ui` |
 
-Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`.
+Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`, `ui_action` = `57`,
+`route_guard` = `58`, `ui_drawer` = `59`, `ui_filter` = `60`, `ui_pagination` = `61`,
+`ui_modal` = `62`.
 
 ## 3. Type system
 
@@ -1197,6 +1216,7 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/apps/document-tx-boundary.axl` — document JSON store tx and migrate providers.
 - `examples/apps/sql-pushdown-boundary.axl` — SQLite store query SQL pushdown demo.
 - `examples/apps/drawer-boundary.axl` — Gate 4 UI drawer overlay demo.
+- `examples/apps/modal-boundary.axl` — Gate 4 UI modal overlay demo.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.
