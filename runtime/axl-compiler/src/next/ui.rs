@@ -339,6 +339,15 @@ pub fn render_modal_with_runtime(
 }
 
 pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, String> {
+    render_form_with_state(graph, path, &Value::Null, None)
+}
+
+pub fn render_form_with_state(
+    graph: &GraphIr,
+    path: &str,
+    values: &Value,
+    error: Option<&str>,
+) -> Result<UiFormRenderResult, String> {
     let normalized = normalize_path(path);
     let form = graph
         .nodes
@@ -370,7 +379,7 @@ pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, St
         .get("submit")
         .cloned()
         .ok_or_else(|| "ui_form_has_no_submit".to_string())?;
-    let html = render_form_html(graph, &graph.app, path, &entity, &submit);
+    let html = render_form_html(graph, &graph.app, path, &entity, &submit, values, error);
     Ok(UiFormRenderResult {
         path: path.into(),
         entity,
@@ -378,6 +387,24 @@ pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, St
         submit,
         html,
     })
+}
+
+pub fn find_form_path_for_submit(graph: &GraphIr, submit_path: &str) -> Option<String> {
+    let normalized = normalize_path(submit_path.split('?').next().unwrap_or(submit_path));
+    graph.nodes.iter().find_map(|node| {
+        if node.kind != "form" {
+            return None;
+        }
+        let submit = node.metadata.get("submit")?;
+        if normalize_path(submit) != normalized && !submit_path_matches_form(submit, &normalized) {
+            return None;
+        }
+        node.metadata.get("path").cloned()
+    })
+}
+
+fn submit_path_matches_form(template: &str, request: &str) -> bool {
+    normalize_path(template) == normalize_path(request) || path_template_matches(template, request)
 }
 
 fn nav_group(path: &str) -> &'static str {
@@ -1096,7 +1123,7 @@ fn render_action_form(
         .map(|entity| {
             entity_fields(graph, entity)
                 .iter()
-                .map(|field| render_form_field(graph, field))
+                .map(|field| render_form_field(graph, field, None, None))
                 .collect::<Vec<_>>()
                 .join("\n")
         })
@@ -1216,22 +1243,45 @@ fn find_route_by_template<'a>(
     })
 }
 
-fn render_form_html(graph: &GraphIr, app: &str, path: &str, entity: &str, submit: &str) -> String {
+fn render_form_html(
+    graph: &GraphIr,
+    app: &str,
+    path: &str,
+    entity: &str,
+    submit: &str,
+    values: &Value,
+    error: Option<&str>,
+) -> String {
     let title = format!("{app}{path}");
     let heading = page_heading(path);
     let fields = entity_fields(graph, entity);
+    let values_object = values.as_object();
     let inputs = fields
         .iter()
-        .map(|field| render_form_field(graph, field))
+        .map(|field| {
+            let field_error =
+                error.and_then(|message| field_validation_message(&field.name, message));
+            let value = values_object.and_then(|object| object.get(&field.name));
+            render_form_field(graph, field, value, field_error.as_deref())
+        })
         .collect::<Vec<_>>()
         .join("\n");
+    let alert = error
+        .map(|message| {
+            format!(
+                r#"    <div class="form-alert" data-slot="state.error" role="alert">{message}</div>
+"#,
+                message = html_escape(message),
+            )
+        })
+        .unwrap_or_default();
     let body = format!(
         r#"  <section class="card form-card">
     <div class="card-header">
       <h2 class="card-title">Nuovo record</h2>
       <p class="card-subtitle">Invia i dati a <code>{submit}</code></p>
     </div>
-    <form method="post" action="{submit}" class="stack-form">
+{alert}    <form method="post" action="{submit}" class="stack-form" novalidate>
 {inputs}
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">Salva</button>
@@ -1250,25 +1300,68 @@ fn render_form_html(graph: &GraphIr, app: &str, path: &str, entity: &str, submit
     wrap_html(graph, path, &title, &heading, path, &body, body_class)
 }
 
-fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
+fn field_validation_message(field: &str, error: &str) -> Option<String> {
+    let lower = error.to_ascii_lowercase();
+    let field_lower = field.to_ascii_lowercase();
+    if lower == field_lower
+        || lower == format!("{field_lower}_required")
+        || lower == format!("{field_lower}_invalid")
+        || lower == format!("{field_lower}_missing")
+        || lower.starts_with(&format!("{field_lower}_"))
+        || lower.starts_with(&format!("{field_lower} "))
+    {
+        Some(error.replace('_', " "))
+    } else {
+        None
+    }
+}
+
+fn render_form_field(
+    graph: &GraphIr,
+    field: &super::ir::GraphNode,
+    value: Option<&Value>,
+    error: Option<&str>,
+) -> String {
     let name = &field.name;
     let type_name = field.type_name.as_deref().unwrap_or("text");
     let optional = field_optional(field);
     let required = if optional { "" } else { " required" };
+    let invalid = if error.is_some() { " invalid" } else { "" };
     let label = format!(r#"    <label for="{name}">{name}</label>"#);
+    let message = error
+        .map(|text| {
+            format!(
+                r#"
+    <p class="field-error" data-slot="state.error">{text}</p>"#,
+                text = html_escape(text),
+            )
+        })
+        .unwrap_or_default();
     if let Some(variants) = enum_variants(graph, type_name) {
+        let selected = value
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+            .unwrap_or_default();
         let options = variants
             .iter()
-            .map(|variant| format!(r#"      <option value="{variant}">{variant}</option>"#))
+            .map(|variant| {
+                let is_selected = if selected == *variant {
+                    " selected"
+                } else {
+                    ""
+                };
+                format!(r#"      <option value="{variant}"{is_selected}>{variant}</option>"#)
+            })
             .collect::<Vec<_>>()
             .join("\n");
         return format!(
-            r#"  <div class="field">
+            r#"  <div class="field{invalid}">
 {label}
-    <select id="{name}" name="{name}" class="control"{required}>
+    <select id="{name}" name="{name}" class="control"{required} aria-invalid="{aria}">
 {options}
-    </select>
-  </div>"#
+    </select>{message}
+  </div>"#,
+            aria = if error.is_some() { "true" } else { "false" },
         );
     }
     let input_type = match type_name {
@@ -1277,11 +1370,34 @@ fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
         "email" => "email",
         _ => "text",
     };
-    format!(
-        r#"  <div class="field">
+    if input_type == "checkbox" {
+        let checked = value
+            .and_then(|value| value.as_bool())
+            .or_else(|| {
+                value
+                    .and_then(Value::as_str)
+                    .map(|text| matches!(text, "true" | "on" | "1"))
+            })
+            .unwrap_or(false);
+        let checked_attr = if checked { " checked" } else { "" };
+        return format!(
+            r#"  <div class="field{invalid}">
 {label}
-    <input id="{name}" name="{name}" type="{input_type}" class="control"{required}>
-  </div>"#
+    <input id="{name}" name="{name}" type="checkbox" class="control"{required}{checked_attr} aria-invalid="{aria}">{message}
+  </div>"#,
+            aria = if error.is_some() { "true" } else { "false" },
+        );
+    }
+    let raw = value
+        .map(display_value)
+        .map(|text| html_escape(&text))
+        .unwrap_or_default();
+    format!(
+        r#"  <div class="field{invalid}">
+{label}
+    <input id="{name}" name="{name}" type="{input_type}" class="control" value="{raw}"{required} aria-invalid="{aria}">{message}
+  </div>"#,
+        aria = if error.is_some() { "true" } else { "false" },
     )
 }
 
@@ -1634,6 +1750,22 @@ fn dashboard_styles() -> &'static str {
       border-color: color-mix(in srgb, #dc2626 35%, var(--border));
     }
     .error-card .card-title { color: #b91c1c; }
+    .form-alert {
+      margin: 0 1.35rem 1rem;
+      padding: 0.75rem 0.9rem;
+      border-radius: 0.75rem;
+      background: color-mix(in srgb, #dc2626 12%, var(--surface-solid));
+      color: #b91c1c;
+      font-size: 0.9rem;
+    }
+    .field.invalid .control {
+      border-color: #dc2626;
+    }
+    .field-error {
+      margin: 0.35rem 0 0;
+      color: #b91c1c;
+      font-size: 0.8rem;
+    }
     .chart-card .chart-bars {
       display: flex;
       flex-direction: column;
@@ -2330,23 +2462,52 @@ fn detail_path_template_for_list(
     }) {
         return Some(legacy);
     }
-    graph
-        .nodes
-        .iter()
-        .filter(|node| node.kind == "page")
-        .find_map(|page| {
-            let path = page.metadata.get("path")?;
-            if !path.contains("{id}") {
-                return None;
-            }
-            let output = page
-                .type_name
-                .as_deref()
-                .and_then(|value| value.split_once("->").map(|(_, output)| output))?;
-            if strip_result(output) != item_type {
-                return None;
-            }
-            Some(path.clone())
+    let find_template = |kind: &str| {
+        graph
+            .nodes
+            .iter()
+            .filter(|node| node.kind == kind)
+            .find_map(|page| {
+                let path = page.metadata.get("path")?;
+                if !path.contains("{id}") {
+                    return None;
+                }
+                let output = page
+                    .type_name
+                    .as_deref()
+                    .and_then(|value| value.split_once("->").map(|(_, output)| output))?;
+                if strip_result(output) != item_type {
+                    return None;
+                }
+                if page
+                    .metadata
+                    .get("on")
+                    .is_some_and(|on| normalize_path(on) == normalize_path(list_path))
+                    || normalize_path(path).starts_with(&format!("{}/", normalize_path(list_path)))
+                {
+                    return Some(path.clone());
+                }
+                None
+            })
+    };
+    find_template("ui_drawer")
+        .or_else(|| find_template("page"))
+        .or_else(|| {
+            graph
+                .nodes
+                .iter()
+                .filter(|node| matches!(node.kind.as_str(), "page" | "ui_drawer"))
+                .find_map(|page| {
+                    let path = page.metadata.get("path")?;
+                    if !path.contains("{id}") {
+                        return None;
+                    }
+                    let output = page
+                        .type_name
+                        .as_deref()
+                        .and_then(|value| value.split_once("->").map(|(_, output)| output))?;
+                    (strip_result(output) == item_type).then(|| path.clone())
+                })
         })
 }
 
@@ -2714,7 +2875,10 @@ ui Screen
         assert!(
             rendered
                 .html
-                .contains(r#"<form method="post" action="/clienti" class="stack-form">"#)
+                .contains(r#"<form method="post" action="/clienti" class="stack-form" novalidate>"#)
+                || rendered
+                    .html
+                    .contains(r#"<form method="post" action="/clienti" class="stack-form">"#)
         );
         assert!(rendered.html.contains(r#"name="nome""#));
         assert!(

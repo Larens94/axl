@@ -182,6 +182,7 @@ ui VenditeUi
     pagination limit = query.limit default 10
     pagination offset = query.offset default 0
   form /clienti/new Cliente -> Result<Cliente> = CreaClienteSqlite submit /clienti
+  drawer /clienti/{id} uuid -> Result<Cliente> = CercaClienteSqlite from path.id on /clienti
   page /prodotti uuid -> Result<ProdottoPage> = PaginaProdottiSessione from cookie.sid
   form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdottoSqlite submit /prodotti
   page /listini uuid -> Result<ListinoPage> = PaginaListiniSessione from cookie.sid

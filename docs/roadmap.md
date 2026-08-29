@@ -67,5 +67,6 @@ bind flows, lower to Graph IR, emit `axl-ui/1` and render typed fields to HTML
 (`balance-ui.axl`), plus filter, pagination, drawer, modal, mobile bottom-nav,
 KPI cards, bar charts and replaceable kit slots.
 Next Gate 3 target: pooling/health/timeout configuration.
-Next Gate 4 polish: timeline and form validation UX.
-Next major gate: Gate 5 AI/vector.
+Next Gate 4 polish: timeline/activity widgets.
+Gestionale path: portal CRM depth in AXL (forms validation + drawers done);
+defer Gate 5 AI/vector until needed.

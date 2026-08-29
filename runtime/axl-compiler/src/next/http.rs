@@ -131,7 +131,8 @@ pub fn dispatch_with_headers(
     let Some(flow) = route.metadata.get("flow") else {
         return HttpResult::new(500, json!({ "error": "route_has_no_flow" }));
     };
-    let mut result = match runtime::evaluate_flow_with_runtime(graph, flow, input, runtime) {
+    let mut result = match runtime::evaluate_flow_with_runtime(graph, flow, input.clone(), runtime)
+    {
         Ok(body) => HttpResult::new(
             if body.get("error").is_some() {
                 422
@@ -145,6 +146,7 @@ pub fn dispatch_with_headers(
     apply_response_middleware(graph, runtime, route, &mut result);
     if method == "post" {
         apply_form_post_redirect(graph, request_path, headers, &mut result);
+        apply_form_post_validation_html(graph, request_path, headers, &input, &mut result);
     }
     apply_api_redirect(route, &mut result);
     result
@@ -781,6 +783,35 @@ fn apply_form_post_redirect(
             format!("{cookie_name}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"),
         );
     }
+}
+
+fn apply_form_post_validation_html(
+    graph: &GraphIr,
+    submit_path: &str,
+    headers: &BTreeMap<String, String>,
+    input: &Value,
+    result: &mut HttpResult,
+) {
+    let Some(error) = result.body.get("error").and_then(Value::as_str) else {
+        return;
+    };
+    let wants_html = is_form_urlencoded(headers.get("content-type").map(String::as_str))
+        || accepts_html(headers);
+    if !wants_html {
+        return;
+    }
+    let Some(form_path) = ui::find_form_path_for_submit(graph, submit_path) else {
+        return;
+    };
+    let Ok(rendered) = ui::render_form_with_state(graph, &form_path, input, Some(error)) else {
+        return;
+    };
+    result.status = 422;
+    result.body = Value::String(rendered.html);
+    result
+        .headers
+        .insert("content-type".into(), "text/html; charset=utf-8".into());
+    result.headers.remove("location");
 }
 
 fn parse_form_urlencoded(body: &[u8]) -> Result<Value, String> {
@@ -1850,6 +1881,64 @@ flow Echo unit -> text
         );
         assert_eq!(json_only.status, 200);
         assert!(!json_only.headers.contains_key("location"));
+    }
+
+    #[test]
+    fn form_post_renders_validation_html_on_require_failure() {
+        let graph = compile_source(
+            r#"axl 4
+app FormValidationDemo
+enum Stato
+  attivo
+entity Cliente
+  nome: text required
+  email: email required
+  budget: money required
+  stato: Stato required
+flow CreaCliente Cliente -> Result<Cliente>
+  require input.nome != "" else "nome_required"
+  return input
+api ClienteApi
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+ui ClienteScreen
+  page /clienti unit -> text = Echo
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti redirect /clienti
+flow Echo unit -> text
+  return "ok"
+"#,
+        )
+        .unwrap()
+        .graph;
+        let mut headers = BTreeMap::new();
+        headers.insert(
+            "content-type".into(),
+            "application/x-www-form-urlencoded".into(),
+        );
+        headers.insert("accept".into(), "text/html".into());
+        let result = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "post",
+            "/clienti",
+            json!({
+                "nome": "",
+                "email": "alice@example.com",
+                "budget": "1000",
+                "stato": "attivo"
+            }),
+            &headers,
+        );
+        assert_eq!(result.status, 422);
+        assert_eq!(
+            result.headers.get("content-type").map(String::as_str),
+            Some("text/html; charset=utf-8")
+        );
+        let html = result.body.as_str().unwrap();
+        assert!(html.contains("form-alert"));
+        assert!(html.contains("nome_required") || html.contains("nome required"));
+        assert!(html.contains("field-error") || html.contains("invalid"));
+        assert!(html.contains(r#"value="alice@example.com""#));
+        assert!(!result.headers.contains_key("location"));
     }
 
     #[test]

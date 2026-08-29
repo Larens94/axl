@@ -1232,7 +1232,8 @@ and SQLite; capacity-backed migrations prove versioned schema history (up/down/
 status) with SQLite persistence across runtime recreate; Gate 4 UI
 (`ui` / `page` / `form` / `drawer` / `modal` / `kpi` / `chart` / `slot`, `axl-ui/1`, `render`,
 sidebar + mobile bottom-nav, kit registry slots, KPI/bar-chart, error/empty states) is executable;
-timeline widgets and advanced form validation UX remain open.
+timeline/activity widgets remain open; form validation HTML on failed POST is
+executable (`form-validation-boundary.axl`).
 
 ## 10. Verified examples and guides
 
@@ -1258,6 +1259,7 @@ timeline widgets and advanced form validation UX remain open.
 - `examples/apps/bottom-nav-boundary.axl` — Gate 4 responsive shell mobile bottom nav.
 - `examples/apps/kpi-registry-boundary.axl` — Gate 4 KPI cards + UI kit slots.
 - `examples/apps/chart-boundary.axl` — Gate 4 bar chart over List points.
+- `examples/apps/form-validation-boundary.axl` — Gate 4 form validation HTML UX.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.
