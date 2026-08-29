@@ -2653,14 +2653,17 @@ fn parse_ui_page_block(
         };
     let mut bindings = initial_bindings;
     let mut filters = Vec::new();
+    let mut pagination = Vec::new();
     let mut cursor = start + 1;
     let mut found_nested = false;
     while cursor < body.len() && body[cursor].indent > line.indent {
         let binding_line = &body[cursor];
-        let (is_filter, prefix) = if let Some(value) = binding_line.text.strip_prefix("filter ") {
-            (true, value)
+        let (kind, prefix) = if let Some(value) = binding_line.text.strip_prefix("pagination ") {
+            ("pagination", value)
+        } else if let Some(value) = binding_line.text.strip_prefix("filter ") {
+            ("filter", value)
         } else if let Some(value) = binding_line.text.strip_prefix("bind ") {
-            (false, value)
+            ("bind", value)
         } else {
             diagnostics.push(
                 Diagnostic::error(
@@ -2670,13 +2673,89 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name",
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]",
                     &binding_line.text,
                 ),
             );
             cursor += 1;
             continue;
         };
+        if kind == "pagination" {
+            let parsed = prefix.split_once('=').and_then(|(field, rest)| {
+                let field = field.trim();
+                let rest = rest.trim();
+                let (query_part, default) =
+                    if let Some((query_part, default_part)) = rest.rsplit_once(" default ") {
+                        (query_part.trim(), Some(default_part.trim().to_string()))
+                    } else {
+                        (rest, None)
+                    };
+                let (source, name) = parse_request_source(query_part)?;
+                (matches!(field, "limit" | "offset"))
+                    .then(|| (field.to_string(), source, name, default))
+            });
+            let Some((field, source, name, default)) = parsed else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P959",
+                        "parse",
+                        "invalid UI page pagination",
+                        span(binding_line),
+                    )
+                    .expected(
+                        "pagination limit|offset = query.name [default value]",
+                        &binding_line.text,
+                    ),
+                );
+                cursor += 1;
+                continue;
+            };
+            if source != "query" {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P959",
+                        "parse",
+                        "a UI page pagination must bind from query parameters",
+                        span(binding_line),
+                    )
+                    .expected(
+                        "pagination limit = query.limit default 10",
+                        &binding_line.text,
+                    ),
+                );
+                cursor += 1;
+                continue;
+            }
+            if !found_nested {
+                if input_source != "body" || input_name.is_some() {
+                    diagnostics.push(Diagnostic::error(
+                        "AXL-P957",
+                        "parse",
+                        "inline and nested UI page bindings cannot be combined",
+                        span(binding_line),
+                    ));
+                }
+                bindings.clear();
+                filters.clear();
+                pagination.clear();
+                found_nested = true;
+            }
+            let query_name = name.clone().unwrap_or_default();
+            bindings.push(HttpRequestBinding {
+                target: Some(field.clone()),
+                source,
+                name,
+                span: span(binding_line),
+            });
+            pagination.push(UiPaginationBinding {
+                field,
+                query_name,
+                default,
+                span: span(binding_line),
+            });
+            cursor += 1;
+            continue;
+        }
         let parsed = prefix.split_once('=').and_then(|(target, source)| {
             let target = target.trim();
             let (source, name) = parse_request_source(source.trim())?;
@@ -2687,7 +2766,7 @@ fn parse_ui_page_block(
                 Diagnostic::error(
                     "AXL-P956",
                     "parse",
-                    if is_filter {
+                    if kind == "filter" {
                         "invalid UI page filter"
                     } else {
                         "invalid composite UI page binding"
@@ -2695,7 +2774,7 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    if is_filter {
+                    if kind == "filter" {
                         "filter field = query.name"
                     } else {
                         "bind field = body|body.field|path.name|query.name|header.name|cookie.name"
@@ -2706,7 +2785,7 @@ fn parse_ui_page_block(
             cursor += 1;
             continue;
         };
-        if is_filter && source != "query" {
+        if kind == "filter" && source != "query" {
             diagnostics.push(
                 Diagnostic::error(
                     "AXL-P958",
@@ -2730,6 +2809,7 @@ fn parse_ui_page_block(
             }
             bindings.clear();
             filters.clear();
+            pagination.clear();
             found_nested = true;
         }
         let binding = HttpRequestBinding {
@@ -2739,7 +2819,7 @@ fn parse_ui_page_block(
             span: span(binding_line),
         };
         bindings.push(binding.clone());
-        if is_filter {
+        if kind == "filter" {
             filters.push(binding);
         }
         cursor += 1;
@@ -2758,6 +2838,7 @@ fn parse_ui_page_block(
         input_name,
         bindings,
         filters,
+        pagination,
         span: span(line),
     });
     cursor

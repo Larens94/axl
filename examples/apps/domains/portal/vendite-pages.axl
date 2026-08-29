@@ -5,6 +5,8 @@ app PortalVenditePages
 entity ClienteSessioneQuery
   session_id: uuid required
   stato: text optional
+  limit: int required
+  offset: int required
 
 flow PaginaClientiSessioneQuery ClienteSessioneQuery -> Result<ClientePage>
   make gate: SessionePermessoInput
@@ -15,16 +17,14 @@ flow PaginaClientiSessioneQuery ClienteSessioneQuery -> Result<ClientePage>
   make query: ClienteQuery
     order_by = "nome"
     direction = "asc"
-    limit = 100
-    offset = 0
+    limit = input.limit
+    offset = input.offset
   call pagina = store.query(query)?
   filter items_filtrati: List<Cliente> = pagina.items as cliente
     where = input.stato != "attivo" || cliente.stato == ClienteStato.attivo
-  fold total: int = items_filtrati from 0 as _cliente
-    next = value + 1
   make risultato: ClientePage
     items = items_filtrati
-    total = total
+    total = pagina.total
     limit = pagina.limit
     offset = pagina.offset
   return risultato
@@ -153,6 +153,17 @@ flow DettaglioOrdineSessioneDemoUnit unit -> Result<Ordine>
   run trovato = DettaglioOrdineSessione(gate)?
   return trovato
 
+flow PaginaClientiSessionePaginationDemoUnit unit -> Result<ClientePage>
+  run login = LoginAdminPortalDemoUnit(input)?
+  run _seed = SeedClientiSqlite(input)?
+  make gate: ClienteSessioneQuery
+    session_id = login.session_id
+    stato = ""
+    limit = 1
+    offset = 0
+  run pagina = PaginaClientiSessioneQuery(gate)?
+  return pagina
+
 flow PaginaClientiRbacDemoUnit unit -> Result<ClientePage>
   run _init = InizializzaAuthDemo(input)?
   make check: PermessoCheck
@@ -168,5 +179,7 @@ flow PaginaClientiSessioneQueryDemoUnit unit -> Result<ClientePage>
   make gate: ClienteSessioneQuery
     session_id = login.session_id
     stato = "attivo"
+    limit = 10
+    offset = 0
   run pagina = PaginaClientiSessioneQuery(gate)?
   return pagina

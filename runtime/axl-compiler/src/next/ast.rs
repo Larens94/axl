@@ -520,6 +520,14 @@ pub struct Ui {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiPaginationBinding {
+    pub field: String,
+    pub query_name: String,
+    pub default: Option<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiPage {
     pub path: String,
     pub input: String,
@@ -529,6 +537,7 @@ pub struct UiPage {
     pub input_name: Option<String>,
     pub bindings: Vec<HttpRequestBinding>,
     pub filters: Vec<HttpRequestBinding>,
+    pub pagination: Vec<UiPaginationBinding>,
     pub span: SourceSpan,
 }
 

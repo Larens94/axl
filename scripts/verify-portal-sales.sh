@@ -189,6 +189,12 @@ echo "== eval ConfermaOrdineDemoForm (bozza -> confermato via form flow) =="
 echo "== eval AnnullaOrdineDemoForm (bozza -> annullato via form flow) =="
 "${BIN[@]}" eval "$PORTAL" AnnullaOrdineDemoForm examples/apps/inputs/sales-workflow-confirm.json | jq -e '.ok.stato == "annullato" and .ok.totale == 268770'
 
+echo "== eval PaginaClientiSessionePaginationDemoUnit (limit=1 offset=0) =="
+"${BIN[@]}" eval "$PORTAL" PaginaClientiSessionePaginationDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.total == 2 and (.ok.items | length) == 1 and .ok.limit == 1 and .ok.offset == 0'
+
+echo "== ui pagination IR (clienti limit/offset query bindings) =="
+"${BIN[@]}" ir "$PORTAL" | jq -e '[.nodes[] | select(.kind=="ui_pagination")] | length >= 2'
+
 echo "== eval PaginaClientiSessioneQueryDemoUnit (session + stato filter) =="
 "${BIN[@]}" eval "$PORTAL" PaginaClientiSessioneQueryDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.total == 2'
 
