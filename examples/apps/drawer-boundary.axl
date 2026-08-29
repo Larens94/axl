@@ -1,0 +1,37 @@
+// Gate 4 UI drawer overlay — detail path renders as a side panel with close link.
+axl 4
+app DrawerBoundary
+
+entity Cliente
+  id: uuid required
+  nome: text required
+  email: text required
+
+entity ClientePage
+  items: List<Cliente> required
+  total: int required
+  limit: int required
+  offset: int required
+
+flow ListaClienti unit -> Result<ClientePage>
+  make cliente: Cliente
+    id = "cliente-drawer-1"
+    nome = "Drawer Demo"
+    email = "drawer@example.com"
+  make page: ClientePage
+    items = [cliente]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+
+flow DettaglioCliente uuid -> Result<Cliente>
+  make cliente: Cliente
+    id = input
+    nome = "Drawer Demo"
+    email = "drawer@example.com"
+  return cliente
+
+ui ClienteDrawerUi
+  page /clienti unit -> Result<ClientePage> = ListaClienti
+  drawer /clienti/{id} uuid -> Result<Cliente> = DettaglioCliente from path.id on /clienti

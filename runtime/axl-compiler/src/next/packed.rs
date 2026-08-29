@@ -396,6 +396,26 @@ fn reconstruct_id(
             })?;
             Ok(format!("{parent}.action.{order}"))
         }
+        Some(parent) if kind == "ui_drawer" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("ui_drawer node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.drawer.{order}"))
+        }
+        Some(parent) if kind == "ui_filter" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("ui_filter node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.ui_filter.{order}"))
+        }
+        Some(parent) if kind == "ui_pagination" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!(
+                    "ui_pagination node '{name}' is missing order metadata"
+                ))
+            })?;
+            Ok(format!("{parent}.ui_pagination.{order}"))
+        }
         Some(parent)
             if matches!(
                 kind,
@@ -486,6 +506,9 @@ fn node_kind_code(kind: &str) -> &str {
         "form" => "56",
         "ui_action" => "57",
         "route_guard" => "58",
+        "ui_drawer" => "59",
+        "ui_filter" => "60",
+        "ui_pagination" => "61",
         other => other,
     }
 }
@@ -551,6 +574,9 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "56" => "form",
         "57" => "ui_action",
         "58" => "route_guard",
+        "59" => "ui_drawer",
+        "60" => "ui_filter",
+        "61" => "ui_pagination",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

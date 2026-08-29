@@ -2512,6 +2512,7 @@ fn parse_ui(
     let mut pages = Vec::new();
     let mut forms = Vec::new();
     let mut actions = Vec::new();
+    let mut drawers = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
         let line = &body[cursor];
@@ -2533,6 +2534,11 @@ fn parse_ui(
         }
         if line.text.starts_with("page ") {
             cursor = parse_ui_page_block(body, cursor, &mut pages, diagnostics);
+            continue;
+        }
+        if line.text.starts_with("drawer ") {
+            parse_ui_drawer(line, &mut drawers, diagnostics);
+            cursor += 1;
             continue;
         }
         if line.text.starts_with("form ") {
@@ -2558,6 +2564,7 @@ fn parse_ui(
         pages,
         forms,
         actions,
+        drawers,
         span: span(header),
     }));
 }
@@ -2842,6 +2849,115 @@ fn parse_ui_page_block(
         span: span(line),
     });
     cursor
+}
+
+fn parse_ui_drawer(
+    line: &SourceLine,
+    drawers: &mut Vec<UiDrawer>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let mut remainder = line.text["drawer ".len()..].trim();
+    let mut on = None;
+    if let Some((rest, on_path)) = remainder.rsplit_once(" on ") {
+        let on_path = on_path.trim();
+        if !on_path.starts_with('/') {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P981",
+                    "parse",
+                    "a UI drawer on path must be absolute",
+                    span(line),
+                )
+                .expected("on /absolute/path", on_path),
+            );
+            return;
+        }
+        remainder = rest.trim();
+        on = Some(on_path.into());
+    }
+    let Some((signature, flow)) = remainder.rsplit_once('=') else {
+        diagnostics.push(
+            Diagnostic::error("AXL-P980", "parse", "a UI drawer binds a flow", span(line))
+                .expected(
+                    "drawer /path Input -> Output = Flow [from path.id] [on /page]",
+                    &line.text,
+                ),
+        );
+        return;
+    };
+    let Some((request, output)) = signature.split_once("->") else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P980",
+                "parse",
+                "a UI drawer requires an output type",
+                span(line),
+            )
+            .expected(
+                "drawer /path Input -> Output = Flow [from path.id] [on /page]",
+                &line.text,
+            ),
+        );
+        return;
+    };
+    let mut request = request.split_whitespace();
+    let (Some(path), Some(input), None) = (request.next(), request.next(), request.next()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P980",
+                "parse",
+                "a UI drawer requires one path and input type",
+                span(line),
+            )
+            .expected(
+                "drawer /path Input -> Output = Flow [from path.id] [on /page]",
+                &line.text,
+            ),
+        );
+        return;
+    };
+    let flow = flow.trim();
+    if flow.is_empty() {
+        diagnostics.push(
+            Diagnostic::error("AXL-P980", "parse", "a UI drawer binds a flow", span(line))
+                .expected(
+                    "drawer /path Input -> Output = Flow [from path.id] [on /page]",
+                    &line.text,
+                ),
+        );
+        return;
+    }
+    let (flow, input_source, input_name) = if let Some((flow, binding)) = flow.split_once(" from ")
+    {
+        let Some((source, name)) = parse_request_source(binding) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P980",
+                    "parse",
+                    "a UI drawer binding needs a source and name",
+                    span(line),
+                )
+                .expected(
+                    "Flow from path.id|query.name|header.name|cookie.name",
+                    binding,
+                ),
+            );
+            return;
+        };
+        (flow.trim().to_string(), source, name)
+    } else {
+        (flow.to_string(), "body".to_string(), None)
+    };
+    drawers.push(UiDrawer {
+        path: path.into(),
+        input: input.into(),
+        output: output.trim().into(),
+        flow,
+        input_source,
+        input_name,
+        on,
+        span: span(line),
+    });
 }
 
 fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut Vec<Diagnostic>) {

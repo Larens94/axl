@@ -3245,12 +3245,13 @@ fn check_ui(
     declarations: &BTreeMap<&str, &Declaration>,
     diagnostics: &mut Vec<Diagnostic>,
 ) {
-    if ui.pages.is_empty() && ui.forms.is_empty() && ui.actions.is_empty() {
+    if ui.pages.is_empty() && ui.forms.is_empty() && ui.actions.is_empty() && ui.drawers.is_empty()
+    {
         diagnostics.push(Diagnostic::error(
             "AXL-U901",
             "ui",
             format!(
-                "ui '{}' requires at least one page, form or action",
+                "ui '{}' requires at least one page, form, action or drawer",
                 ui.name
             ),
             ui.span.clone(),
@@ -3462,6 +3463,84 @@ fn check_ui(
                     action.span.clone(),
                 )
                 .expected("absolute path without query or fragment", redirect),
+            );
+        }
+    }
+    for drawer in &ui.drawers {
+        if !valid_http_path(&drawer.path) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI path '{}'", drawer.path),
+                    drawer.span.clone(),
+                )
+                .expected("absolute path without query or fragment", &drawer.path),
+            );
+        }
+        if !paths.insert(normalized_http_path(&drawer.path)) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U920",
+                "ui",
+                format!(
+                    "ui '{}' declares drawer '{}' more than once",
+                    ui.name, drawer.path
+                ),
+                drawer.span.clone(),
+            ));
+        }
+        check_type(&drawer.input, &drawer.span, declarations, diagnostics);
+        check_type(&drawer.output, &drawer.span, declarations, diagnostics);
+        match declarations.get(drawer.flow.as_str()) {
+            Some(Declaration::Flow(flow)) => {
+                if flow.input != drawer.input || flow.output != drawer.output {
+                    diagnostics.push(
+                        Diagnostic::error(
+                            "AXL-U905",
+                            "ui",
+                            format!(
+                                "drawer '{}' does not match flow '{}'",
+                                drawer.path, drawer.flow
+                            ),
+                            drawer.span.clone(),
+                        )
+                        .expected(
+                            format!("{} -> {}", flow.input, flow.output),
+                            format!("{} -> {}", drawer.input, drawer.output),
+                        ),
+                    );
+                }
+            }
+            Some(found) => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U904",
+                    "ui",
+                    format!("drawer target '{}' is not a flow", drawer.flow),
+                    drawer.span.clone(),
+                )
+                .expected("flow", declaration_kind(found)),
+            ),
+            None => diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U904",
+                    "ui",
+                    format!("drawer references unknown flow '{}'", drawer.flow),
+                    drawer.span.clone(),
+                )
+                .expected("declared flow", &drawer.flow),
+            ),
+        }
+        if let Some(on) = &drawer.on
+            && !valid_http_path(on)
+        {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U902",
+                    "ui",
+                    format!("invalid UI drawer on path '{on}'"),
+                    drawer.span.clone(),
+                )
+                .expected("absolute path without query or fragment", on),
             );
         }
     }
@@ -5161,6 +5240,31 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         }
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));
+    }
+    for (index, drawer) in ui.drawers.iter().enumerate() {
+        let id = format!("{ui_id}.drawer.{index}");
+        let mut value = node(&id, "ui_drawer", &drawer.path);
+        value.type_name = Some(format!("{}->{}", drawer.input, drawer.output));
+        value.metadata.insert("path".into(), drawer.path.clone());
+        value.metadata.insert("flow".into(), drawer.flow.clone());
+        value
+            .metadata
+            .insert("input_source".into(), drawer.input_source.clone());
+        if let Some(name) = &drawer.input_name {
+            value.metadata.insert("input_name".into(), name.clone());
+        }
+        if let Some(on) = &drawer.on {
+            value.metadata.insert("on".into(), on.clone());
+        }
+        value.metadata.insert("order".into(), index.to_string());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&ui_id, &id, "owns", None));
+        graph.edges.push(edge(
+            &id,
+            &format!("flow.{}", drawer.flow),
+            "dispatch",
+            Some(&format!("{}->{}", drawer.input, drawer.output)),
+        ));
     }
 }
 

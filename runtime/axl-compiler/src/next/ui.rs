@@ -29,7 +29,7 @@ pub struct UiFormRenderResult {
 pub fn matches_exact_ui_path(graph: &GraphIr, path: &str) -> bool {
     let normalized = normalize_path(path);
     graph.nodes.iter().any(|node| {
-        matches!(node.kind.as_str(), "page" | "form")
+        matches!(node.kind.as_str(), "page" | "form" | "ui_drawer")
             && node
                 .metadata
                 .get("path")
@@ -60,6 +60,14 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
             let mut actions = children(graph, &ui.id, "ui_action");
             actions.sort_by_key(|action| {
                 action
+                    .metadata
+                    .get("order")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
+            let mut drawers = children(graph, &ui.id, "ui_drawer");
+            drawers.sort_by_key(|drawer| {
+                drawer
                     .metadata
                     .get("order")
                     .and_then(|value| value.parse::<usize>().ok())
@@ -110,15 +118,32 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "submit": action.metadata.get("submit"),
                         "on": action.metadata.get("on"),
                         "redirect": action.metadata.get("redirect"),
+                        "clear_cookie": action.metadata.get("clear_cookie"),
+                    })
+                }).collect::<Vec<_>>(),
+                "drawers": drawers.into_iter().map(|drawer| {
+                    let (input, output) = drawer.type_name.as_deref()
+                        .and_then(|value| value.split_once("->"))
+                        .unwrap_or(("", ""));
+                    let path = drawer.metadata.get("path").cloned().unwrap_or_default();
+                    let template = path.contains('{').then(|| path.clone());
+                    json!({
+                        "path": path,
+                        "template": template,
+                        "input": input,
+                        "output": output,
+                        "flow": drawer.metadata.get("flow"),
+                        "input_source": drawer.metadata.get("input_source"),
+                        "input_name": drawer.metadata.get("input_name"),
+                        "on": drawer.metadata.get("on"),
                     })
                 }).collect::<Vec<_>>(),
             })
         })
         .collect::<Vec<_>>();
     json!({
-        "schema": graph.schema,
-        "app": graph.app,
         "protocol": "axl-ui/1",
+        "app": graph.app,
         "theme": "dashboard-apple",
         "uis": uis,
     })
@@ -152,6 +177,52 @@ pub fn render_page_with_runtime(
         .map_err(|error| error.0)?;
     let sidebar = render_sidebar(graph, path);
     let html = render_page_html(graph, page, &graph.app, path, &output_type, &data, &sidebar);
+    Ok(UiRenderResult {
+        path: path.into(),
+        flow,
+        output_type,
+        data,
+        html,
+    })
+}
+
+pub fn render_drawer_with_runtime(
+    graph: &GraphIr,
+    provider_runtime: &mut dyn runtime::ProviderRuntime,
+    path: &str,
+    input: Value,
+    headers: &BTreeMap<String, String>,
+) -> Result<UiRenderResult, String> {
+    let (drawer, _) =
+        find_drawer(graph, path).ok_or_else(|| format!("ui_drawer_not_found:{path}"))?;
+    let flow = drawer
+        .metadata
+        .get("flow")
+        .cloned()
+        .ok_or_else(|| "ui_drawer_has_no_flow".to_string())?;
+    let output_type = drawer
+        .type_name
+        .as_deref()
+        .and_then(|value| value.split_once("->").map(|(_, output)| output.to_string()))
+        .unwrap_or_else(|| "text".to_string());
+    let input = bind_page_input(graph, drawer, path, input, headers)?;
+    let data = runtime::evaluate_flow_with_runtime(graph, &flow, input, provider_runtime)
+        .map_err(|error| error.0)?;
+    let close_href = drawer
+        .metadata
+        .get("on")
+        .cloned()
+        .unwrap_or_else(|| "/".into());
+    let sidebar = render_sidebar(graph, &close_href);
+    let html = render_drawer_html(
+        graph,
+        &graph.app,
+        path,
+        &output_type,
+        &data,
+        &sidebar,
+        &close_href,
+    );
     Ok(UiRenderResult {
         path: path.into(),
         flow,
@@ -566,6 +637,49 @@ fn render_page_html(
         " admin-layout"
     } else {
         ""
+    };
+    wrap_html(app, path, &title, &heading, sidebar, &content, body_class)
+}
+
+fn render_drawer_html(
+    graph: &GraphIr,
+    app: &str,
+    path: &str,
+    output_type: &str,
+    data: &Value,
+    sidebar: &str,
+    close_href: &str,
+) -> String {
+    let title = format!("{app}{path}");
+    let heading = page_heading(path);
+    let fields = collect_fields(graph, output_type, data);
+    let detail = render_detail_card(&fields);
+    let actions = render_page_actions(graph, path, data);
+    let drawer = format!(
+        r#"  <a class="drawer-backdrop" href="{close}" aria-label="Chiudi"></a>
+  <aside class="drawer-panel" role="dialog" aria-modal="true" aria-label="{heading}">
+    <div class="drawer-header">
+      <h1>{heading}</h1>
+      <a class="drawer-close" href="{close}">Chiudi</a>
+    </div>
+{detail}{actions}
+  </aside>"#,
+        close = html_escape(close_href),
+        heading = html_escape(&heading),
+        detail = detail,
+        actions = actions,
+    );
+    let content = format!(
+        r#"  <section class="card">
+    <div class="card-header"><h2 class="card-title">Dettaglio</h2></div>
+    <p class="empty-state">Apri il drawer per i dettagli.</p>
+  </section>
+{drawer}"#
+    );
+    let body_class = if is_admin_path(path) {
+        " admin-layout drawer-open"
+    } else {
+        " drawer-open"
     };
     wrap_html(app, path, &title, &heading, sidebar, &content, body_class)
 }
@@ -1252,6 +1366,45 @@ fn dashboard_styles() -> &'static str {
       font-size: 0.75rem;
       color: var(--muted);
     }
+    .drawer-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.35);
+      z-index: 40;
+    }
+    .drawer-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: min(28rem, 100%);
+      background: var(--surface);
+      border-left: 1px solid var(--border);
+      box-shadow: -18px 0 48px rgba(15, 23, 42, 0.18);
+      z-index: 50;
+      display: flex;
+      flex-direction: column;
+      padding: 1.25rem 1.35rem 1.5rem;
+      overflow-y: auto;
+    }
+    .drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .drawer-header h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      letter-spacing: -0.02em;
+    }
+    .drawer-close {
+      text-decoration: none;
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 0.875rem;
+    }
     @media (max-width: 900px) {
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
@@ -1261,6 +1414,7 @@ fn dashboard_styles() -> &'static str {
         border-bottom: 1px solid var(--border);
       }
       .topbar, .content { padding-left: 1rem; padding-right: 1rem; }
+      .drawer-panel { width: 100%; }
     }
 "#
 }
@@ -1564,6 +1718,32 @@ fn find_page<'a>(
     None
 }
 
+fn find_drawer<'a>(
+    graph: &'a GraphIr,
+    path: &str,
+) -> Option<(&'a super::ir::GraphNode, BTreeMap<String, String>)> {
+    let path_only = path.split('?').next().unwrap_or(path);
+    let normalized = normalize_path(path_only);
+    let drawers = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "ui_drawer")
+        .collect::<Vec<_>>();
+    for drawer in &drawers {
+        let pattern = drawer.metadata.get("path")?;
+        if !pattern.contains('{') && normalize_path(pattern) == normalized {
+            return Some((drawer, BTreeMap::new()));
+        }
+    }
+    for drawer in &drawers {
+        let pattern = drawer.metadata.get("path")?;
+        if let Some(parameters) = match_http_path(pattern, path_only) {
+            return Some((drawer, parameters));
+        }
+    }
+    None
+}
+
 fn bind_page_input(
     graph: &GraphIr,
     page: &super::ir::GraphNode,
@@ -1754,6 +1934,14 @@ fn normalize_path(path: &str) -> String {
         return "/".into();
     }
     path.trim_end_matches('/').to_string()
+}
+
+fn html_escape(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 fn children<'a>(graph: &'a GraphIr, owner: &str, kind: &str) -> Vec<&'a super::ir::GraphNode> {
@@ -2150,5 +2338,42 @@ ui PreventivoScreen
         assert!(rendered.html.contains("<th>quantita</th>"));
         assert!(rendered.html.contains("prodotto-001"));
         assert!(!rendered.html.contains(r#"<dd>[{"#));
+    }
+
+    #[test]
+    fn render_drawer_emits_dialog_overlay() {
+        const SOURCE: &str = r#"axl 4
+app DrawerUi
+entity Cliente
+  id: uuid required
+  nome: text required
+flow Lista unit -> text
+  return "lista"
+flow Dettaglio uuid -> Result<Cliente>
+  make c: Cliente
+    id = input
+    nome = "Neri"
+  return c
+ui Screen
+  page /clienti unit -> text = Lista
+  drawer /clienti/{id} uuid -> Result<Cliente> = Dettaglio from path.id on /clienti
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(manifest["uis"][0]["drawers"][0]["path"], "/clienti/{id}");
+        assert_eq!(manifest["uis"][0]["drawers"][0]["on"], "/clienti");
+        let mut runtime = runtime::BuiltinRuntime::new().unwrap();
+        let rendered = render_drawer_with_runtime(
+            &graph,
+            &mut runtime,
+            "/clienti/c1",
+            json!(null),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        assert!(rendered.html.contains("class=\"drawer-panel\""));
+        assert!(rendered.html.contains("role=\"dialog\""));
+        assert!(rendered.html.contains("Neri"));
+        assert!(rendered.html.contains("href=\"/clienti\""));
     }
 }

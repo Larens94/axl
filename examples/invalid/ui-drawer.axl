@@ -1,0 +1,14 @@
+axl 4
+app InvalidDrawer
+entity Cliente
+  id: uuid required
+capacity ClienteStore
+  op find uuid -> Result<Cliente> idempotent
+skill MemoryClienti provides ClienteStore
+  native rust axl::store::memory
+flow Find uuid -> Result<Cliente>
+  in store: ClienteStore = MemoryClienti
+  call found = store.find(input)?
+  return found
+ui BadDrawerUi
+  drawer clienti/{id} uuid -> Result<Cliente> = Find from path.id

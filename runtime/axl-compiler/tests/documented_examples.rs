@@ -581,6 +581,10 @@ fn documented_invalid_examples_report_stable_codes() {
             "AXL-U914",
             include_str!("../../../examples/invalid/ui-path-binding.axl"),
         ),
+        (
+            "AXL-U902",
+            include_str!("../../../examples/invalid/ui-drawer.axl"),
+        ),
     ];
 
     for (code, source) in cases {

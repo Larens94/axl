@@ -166,9 +166,18 @@ fn run(args: &[String]) -> Result<()> {
                 &compilation.graph,
                 &mut runtime,
                 page,
-                input,
+                input.clone(),
                 &headers,
             )
+            .or_else(|_| {
+                next::ui::render_drawer_with_runtime(
+                    &compilation.graph,
+                    &mut runtime,
+                    page,
+                    input,
+                    &headers,
+                )
+            })
             .map_err(|error| anyhow::anyhow!(error))?;
             if args.iter().any(|argument| argument == "--json") {
                 println!(

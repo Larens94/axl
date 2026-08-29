@@ -496,6 +496,22 @@ pub fn format(program: &Program) -> String {
                         action.path, action.method, action.submit, on, redirect, clear_cookie
                     ));
                 }
+                for drawer in &ui.drawers {
+                    let binding = drawer
+                        .input_name
+                        .as_deref()
+                        .map(|name| format!(" from {}.{name}", drawer.input_source))
+                        .unwrap_or_default();
+                    let on = drawer
+                        .on
+                        .as_ref()
+                        .map(|path| format!(" on {path}"))
+                        .unwrap_or_default();
+                    output.push(format!(
+                        "  drawer {} {} -> {} = {}{}{}",
+                        drawer.path, drawer.input, drawer.output, drawer.flow, binding, on
+                    ));
+                }
             }
             Declaration::Agent(agent) => {
                 output.push(format!("agent {}", agent.name));

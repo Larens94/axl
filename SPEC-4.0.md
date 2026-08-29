@@ -892,12 +892,12 @@ server and CLI restarts.
 
 ### UI pages and forms
 
-UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` / `ui_action` nodes in Graph
-IR. The HTML renderer evaluates bound flows. The React target emits open codegen artifacts from the
+UI declarations compile to `axl-ui/1` and lower to `ui` / `page` / `form` / `ui_action` /
+`ui_drawer` nodes in Graph IR. The HTML renderer evaluates bound flows. The React target emits open codegen artifacts from the
 same manifest — `axl_routes.tsx` (React Router table + layout assignment), `axl_layouts.tsx`
 (Guest/App/Admin slots), and `axl_registry.ts` (component registry). Hosts bind concrete React
 components to those slots; product routes and forms are never authored by hand in React.
-IR. The built-in HTML renderer emits a dashboard shell (`theme: dashboard-apple` in the UI manifest):
+The built-in HTML renderer emits a dashboard shell (`theme: dashboard-apple` in the UI manifest):
 sidebar navigation grouped by section, top bar, cards, stat blocks, and responsive tables/forms styled
 with system typography and light/dark support. Application layout stays in the open renderer; domain
 logic remains in AXL flows. A page binds an absolute path to a flow with an exact input/output signature. Pages may
@@ -912,9 +912,17 @@ ui PreventivoScreen
   page /preventivi/{id} uuid -> Result<Preventivo> = CercaPreventivo from path.id
 ```
 
-When a page declares `from path.name`, `serve` GET and `render` bind the matching path
-segment to the flow input (for example `render portal.axl /preventivi/preventivo-001 null`).
-The manifest records the template path in `path` and `template` when placeholders are present.
+A drawer is a detail overlay bound like a templated page, optionally anchored to a list
+page with `on`:
+
+```axl
+ui ClienteDrawerUi
+  page /clienti unit -> Result<ClientePage> = ListaClienti
+  drawer /clienti/{id} uuid -> Result<Cliente> = DettaglioCliente from path.id on /clienti
+```
+
+`render` and `serve` GET emit a side panel (`role="dialog"`) with a close link to `on`.
+See `examples/apps/drawer-boundary.axl`.
 
 A form binds an absolute path to an entity type and flow. The optional `submit` clause
 names the POST api route that receives the entity JSON; when omitted, the analyzer
@@ -1188,6 +1196,7 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/apps/mysql-boundary.axl` — MySQL store, tx and migrate providers.
 - `examples/apps/document-tx-boundary.axl` — document JSON store tx and migrate providers.
 - `examples/apps/sql-pushdown-boundary.axl` — SQLite store query SQL pushdown demo.
+- `examples/apps/drawer-boundary.axl` — Gate 4 UI drawer overlay demo.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.
