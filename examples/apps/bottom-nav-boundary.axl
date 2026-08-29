@@ -1,0 +1,17 @@
+// Gate 4 responsive shell — desktop sidebar + mobile bottom navigation from page routes.
+axl 4
+app BottomNavBoundary
+
+flow ListaClienti unit -> text
+  return "clienti"
+
+flow ListaOrdini unit -> text
+  return "ordini"
+
+flow Home unit -> text
+  return "home"
+
+ui ShellUi
+  page / unit -> text = Home
+  page /clienti unit -> text = ListaClienti
+  page /ordini unit -> text = ListaOrdini

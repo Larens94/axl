@@ -898,9 +898,10 @@ same manifest — `axl_routes.tsx` (React Router table + layout assignment), `ax
 (Guest/App/Admin slots), and `axl_registry.ts` (component registry). Hosts bind concrete React
 components to those slots; product routes and forms are never authored by hand in React.
 The built-in HTML renderer emits a dashboard shell (`theme: dashboard-apple` in the UI manifest):
-sidebar navigation grouped by section, top bar, cards, stat blocks, and responsive tables/forms styled
-with system typography and light/dark support. Application layout stays in the open renderer; domain
-logic remains in AXL flows. A page binds an absolute path to a flow with an exact input/output signature. Pages may
+sidebar navigation grouped by section on desktop, fixed **mobile bottom navigation**
+(`shell.mobile = bottom-nav`) from declared page routes, top bar, cards, stat blocks, and
+responsive tables/forms styled with system typography and light/dark support. Application
+layout stays in the open renderer; domain logic remains in AXL flows. A page binds an absolute path to a flow with an exact input/output signature. Pages may
 use path templates with `{param}` placeholders, reusing the same `from path.name` binding
 model as HTTP routes:
 
@@ -1192,9 +1193,10 @@ ABI. HTTP Runtime 1 dispatches exact JSON routes through Axum. Durable persisten
 proven; Logger/Metrics/Tracer observability is proven through memory skills;
 capacity-backed transactions prove commit durability and rollback across memory
 and SQLite; capacity-backed migrations prove versioned schema history (up/down/
-status) with SQLite persistence across runtime recreate; the minimal Gate 4 UI
-page slice (`ui` / `page`, `axl-ui/1`, `render`) is executable; full routing
-shell, component registry and admin UI kit are not implemented yet.
+status) with SQLite persistence across runtime recreate; the Gate 4 UI slice
+(`ui` / `page` / `form` / `drawer` / `modal`, `axl-ui/1`, `render`, sidebar +
+mobile bottom-nav shell) is executable; component registry slots and KPI/charts
+kit are not implemented yet.
 
 ## 10. Verified examples and guides
 
@@ -1217,6 +1219,7 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/apps/sql-pushdown-boundary.axl` — SQLite store query SQL pushdown demo.
 - `examples/apps/drawer-boundary.axl` — Gate 4 UI drawer overlay demo.
 - `examples/apps/modal-boundary.axl` — Gate 4 UI modal overlay demo.
+- `examples/apps/bottom-nav-boundary.axl` — Gate 4 responsive shell mobile bottom nav.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.

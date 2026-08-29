@@ -172,6 +172,10 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
         "protocol": "axl-ui/1",
         "app": graph.app,
         "theme": "dashboard-apple",
+        "shell": {
+            "desktop": "sidebar",
+            "mobile": "bottom-nav",
+        },
         "uis": uis,
     })
 }
@@ -404,8 +408,7 @@ fn nav_group_order(group: &str) -> u8 {
     }
 }
 
-fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
-    let current = normalize_path(current_path);
+fn collect_nav_links(graph: &GraphIr) -> Vec<(&'static str, String, String, String, bool)> {
     let mut links = Vec::new();
     for node in &graph.nodes {
         if node.kind != "page" && node.kind != "form" {
@@ -428,6 +431,12 @@ fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
             .cmp(&nav_group_order(right.0))
             .then_with(|| left.2.cmp(&right.2))
     });
+    links
+}
+
+fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
+    let current = normalize_path(current_path);
+    let links = collect_nav_links(graph);
     if links.is_empty() {
         return String::new();
     }
@@ -482,6 +491,41 @@ fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
   </aside>"#,
         app = graph.app,
         sections = sections.join("\n")
+    )
+}
+
+fn render_bottom_nav(graph: &GraphIr, current_path: &str) -> String {
+    let current = normalize_path(current_path);
+    let links = collect_nav_links(graph)
+        .into_iter()
+        .filter(|(_, _, _, _, is_form)| !is_form)
+        .take(5)
+        .collect::<Vec<_>>();
+    if links.is_empty() {
+        return String::new();
+    }
+    let items = links
+        .into_iter()
+        .map(|(_, normalized, path, label, _)| {
+            let active = if normalized == current || current.starts_with(&format!("{normalized}/"))
+            {
+                " active"
+            } else {
+                ""
+            };
+            format!(
+                r#"    <a class="bottom-nav-link{active}" href="{path}">
+      <span class="bottom-nav-icon" aria-hidden="true"></span>
+      <span class="bottom-nav-label">{label}</span>
+    </a>
+"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    format!(
+        r#"  <nav class="bottom-nav" aria-label="Navigazione principale">
+{items}  </nav>"#
     )
 }
 
@@ -710,7 +754,17 @@ fn render_page_html(
     } else {
         ""
     };
-    wrap_html(app, path, &title, &heading, sidebar, &content, body_class)
+    let bottom_nav = render_bottom_nav(graph, path);
+    wrap_html(
+        app,
+        path,
+        &title,
+        &heading,
+        sidebar,
+        &bottom_nav,
+        &content,
+        body_class,
+    )
 }
 
 fn render_drawer_html(
@@ -753,7 +807,17 @@ fn render_drawer_html(
     } else {
         " drawer-open"
     };
-    wrap_html(app, path, &title, &heading, sidebar, &content, body_class)
+    let bottom_nav = render_bottom_nav(graph, close_href);
+    wrap_html(
+        app,
+        path,
+        &title,
+        &heading,
+        sidebar,
+        &bottom_nav,
+        &content,
+        body_class,
+    )
 }
 
 fn render_modal_html(
@@ -796,7 +860,17 @@ fn render_modal_html(
     } else {
         " modal-open"
     };
-    wrap_html(app, path, &title, &heading, sidebar, &content, body_class)
+    let bottom_nav = render_bottom_nav(graph, close_href);
+    wrap_html(
+        app,
+        path,
+        &title,
+        &heading,
+        sidebar,
+        &bottom_nav,
+        &content,
+        body_class,
+    )
 }
 
 fn render_page_actions(graph: &GraphIr, page_path: &str, page_data: &Value) -> String {
@@ -1020,7 +1094,17 @@ fn render_form_html(
     } else {
         ""
     };
-    wrap_html(app, path, &title, &heading, sidebar, &body, body_class)
+    let bottom_nav = render_bottom_nav(graph, path);
+    wrap_html(
+        app,
+        path,
+        &title,
+        &heading,
+        sidebar,
+        &bottom_nav,
+        &body,
+        body_class,
+    )
 }
 
 fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
@@ -1561,16 +1645,66 @@ fn dashboard_styles() -> &'static str {
       font-weight: 600;
       font-size: 0.875rem;
     }
+    .bottom-nav {
+      display: none;
+    }
     @media (max-width: 900px) {
       .app-shell { grid-template-columns: 1fr; }
       .sidebar {
-        position: relative;
-        height: auto;
-        border-right: none;
-        border-bottom: 1px solid var(--border);
+        display: none;
       }
       .topbar, .content { padding-left: 1rem; padding-right: 1rem; }
       .drawer-panel { width: 100%; }
+      .main {
+        padding-bottom: 4.75rem;
+      }
+      .bottom-nav {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 30;
+        gap: 0.25rem;
+        padding: 0.45rem 0.5rem calc(0.45rem + env(safe-area-inset-bottom, 0px));
+        background: var(--surface-solid);
+        border-top: 1px solid var(--border);
+        box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
+      }
+      .bottom-nav-link {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.2rem;
+        min-height: 3.25rem;
+        padding: 0.35rem 0.25rem;
+        border-radius: 0.75rem;
+        color: var(--muted);
+        text-decoration: none;
+        font-size: 0.7rem;
+        font-weight: 600;
+      }
+      .bottom-nav-link:hover { text-decoration: none; color: var(--text); }
+      .bottom-nav-link.active {
+        color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 12%, transparent);
+      }
+      .bottom-nav-icon {
+        width: 1.15rem;
+        height: 1.15rem;
+        border-radius: 0.35rem;
+        background: currentColor;
+        opacity: 0.35;
+      }
+      .bottom-nav-link.active .bottom-nav-icon { opacity: 0.85; }
+      .bottom-nav-label {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
     }
 "#
 }
@@ -1627,6 +1761,7 @@ fn wrap_html(
     document_title: &str,
     heading: &str,
     sidebar: &str,
+    bottom_nav: &str,
     body: &str,
     body_class: &str,
 ) -> String {
@@ -1657,6 +1792,7 @@ fn wrap_html(
       <p class="footer-note">AXL UI · axl-ui/1 · dashboard kit</p>
     </div>
   </div>
+{bottom_nav}
 </body>
 </html>
 "#,
@@ -2267,6 +2403,33 @@ flow EchoClienti unit -> text
         assert!(rendered.html.contains("class=\"topbar\""));
         assert!(rendered.html.contains("dashboard kit"));
         assert!(rendered.html.contains("-apple-system"));
+    }
+
+    #[test]
+    fn render_page_emits_mobile_bottom_nav() {
+        const SOURCE: &str = r#"axl 4
+app BottomNavUi
+flow Lista unit -> text
+  return "lista"
+flow Ordini unit -> text
+  return "ordini"
+ui Screen
+  page /clienti unit -> text = Lista
+  page /ordini unit -> text = Ordini
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(manifest["shell"]["mobile"], "bottom-nav");
+        assert_eq!(manifest["shell"]["desktop"], "sidebar");
+        let rendered = render_page(&graph, "/clienti", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"bottom-nav\""));
+        assert!(rendered.html.contains("class=\"bottom-nav-link active\""));
+        assert!(rendered.html.contains("href=\"/ordini\""));
+        assert!(
+            rendered
+                .html
+                .contains("aria-label=\"Navigazione principale\"")
+        );
     }
 
     #[test]

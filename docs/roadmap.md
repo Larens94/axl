@@ -64,6 +64,6 @@ paths survive recreate). Gate 3 document/JSON-file store
 (`rust::axl::store::document`) shares save/find/query with memory and SQLite;
 cashflow switches providers by skill binding only. Gate 4 has started: `ui` pages
 bind flows, lower to Graph IR, emit `axl-ui/1` and render typed fields to HTML
-(`balance-ui.axl`), plus filter, pagination, drawer and modal overlays.
+(`balance-ui.axl`), plus filter, pagination, drawer, modal and mobile bottom-nav shell.
 Next Gate 3 target: pooling/health/timeout configuration.
-Next Gate 4 target: component registry slots, mobile bottom nav and KPI/charts.
+Next Gate 4 target: component registry slots and KPI/charts.
