@@ -1182,6 +1182,8 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/apps/import-diamond-demo.axl` — diamond import merges shared email once.
 - `examples/apps/oauth-boundary.axl` — OAuth capacity + demo `rust::axl::auth::oauth` provider.
 - `examples/apps/postgres-boundary.axl` — PostgreSQL store, tx and migrate providers.
+- `examples/apps/mysql-boundary.axl` — MySQL store, tx and migrate providers.
+- `examples/apps/document-tx-boundary.axl` — document JSON store tx and migrate providers.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.
