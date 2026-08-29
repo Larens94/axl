@@ -3289,6 +3289,7 @@ fn check_ui(
         check_type(&page.output, &page.span, declarations, diagnostics);
         check_page_bindings(page, declarations, diagnostics);
         check_page_kpis(page, declarations, diagnostics);
+        check_page_charts(page, declarations, diagnostics);
         match declarations.get(page.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
                 if flow.input != page.input || flow.output != page.output {
@@ -3638,7 +3639,7 @@ fn check_ui(
                     slot.span.clone(),
                 )
                 .expected(
-                    "kpi.card|data.table|overlay.drawer|overlay.modal|shell.sidebar|shell.bottomNav|state.empty|state.error|state.loading",
+                    "kpi.card|chart.bar|data.table|overlay.drawer|overlay.modal|shell.sidebar|shell.bottomNav|state.empty|state.error|state.loading",
                     &slot.name,
                 ),
             );
@@ -3659,6 +3660,7 @@ fn check_ui(
 
 const UI_KIT_SLOTS: &[&str] = &[
     "kpi.card",
+    "chart.bar",
     "data.table",
     "overlay.drawer",
     "overlay.modal",
@@ -3727,6 +3729,124 @@ fn check_page_kpis(
                         .join("|"),
                     &kpi.field,
                 ),
+            );
+        }
+    }
+}
+
+fn check_page_charts(
+    page: &UiPage,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if page.charts.is_empty() {
+        return;
+    }
+    let output = page
+        .output
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(page.output.as_str());
+    let Some(Declaration::Entity(entity)) = declarations.get(output) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U925",
+                "ui",
+                format!("chart pages require an entity output, found '{output}'"),
+                page.span.clone(),
+            )
+            .expected("Result<Entity> or Entity", &page.output),
+        );
+        return;
+    };
+    let mut fields = BTreeSet::new();
+    for chart in &page.charts {
+        if !fields.insert(chart.field.as_str()) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U925",
+                "ui",
+                format!(
+                    "page '{}' declares chart '{}' more than once",
+                    page.path, chart.field
+                ),
+                chart.span.clone(),
+            ));
+        }
+        let Some(field) = entity.fields.iter().find(|field| field.name == chart.field) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U925",
+                    "ui",
+                    format!(
+                        "chart field '{}' is not on entity '{}'",
+                        chart.field, entity.name
+                    ),
+                    chart.span.clone(),
+                )
+                .expected(
+                    entity
+                        .fields
+                        .iter()
+                        .map(|field| field.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("|"),
+                    &chart.field,
+                ),
+            );
+            continue;
+        };
+        let Some(item_type) = field
+            .type_name
+            .strip_prefix("List<")
+            .and_then(|value| value.strip_suffix('>'))
+        else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U925",
+                    "ui",
+                    format!(
+                        "chart field '{}' must be List<Entity>, found '{}'",
+                        chart.field, field.type_name
+                    ),
+                    chart.span.clone(),
+                )
+                .expected("List<Entity>", &field.type_name),
+            );
+            continue;
+        };
+        let Some(Declaration::Entity(point)) = declarations.get(item_type) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U925",
+                    "ui",
+                    format!("chart list item '{item_type}' is not an entity"),
+                    chart.span.clone(),
+                )
+                .expected("declared entity", item_type),
+            );
+            continue;
+        };
+        let has_label = point.fields.iter().any(|field| {
+            matches!(field.type_name.as_str(), "text" | "email" | "uuid")
+                || declarations
+                    .get(field.type_name.as_str())
+                    .is_some_and(|declaration| matches!(declaration, Declaration::Enum(_)))
+        });
+        let has_value = point
+            .fields
+            .iter()
+            .any(|field| matches!(field.type_name.as_str(), "int" | "float" | "money"));
+        if !has_label || !has_value {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U925",
+                    "ui",
+                    format!(
+                        "chart point entity '{item_type}' needs a label field and a numeric value field"
+                    ),
+                    chart.span.clone(),
+                )
+                .expected("text + int|float|money fields", item_type),
             );
         }
     }
@@ -5385,6 +5505,16 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             value.metadata.insert("order".into(), kpi_index.to_string());
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &kpi_id, "owns", None));
+        }
+        for (chart_index, chart) in page.charts.iter().enumerate() {
+            let chart_id = format!("{id}.ui_chart.{chart_index}");
+            let mut value = node(&chart_id, "ui_chart", &chart.field);
+            value.metadata.insert("label".into(), chart.label.clone());
+            value
+                .metadata
+                .insert("order".into(), chart_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &chart_id, "owns", None));
         }
         graph.edges.push(edge(
             &id,

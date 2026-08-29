@@ -953,6 +953,18 @@ UI kit **slots** bind replaceable host components (`kpi.card`, `data.table`,
 See `examples/apps/kpi-registry-boundary.axl`. Result `error` payloads render an
 `state.error` card; empty lists use `state.empty`.
 
+A page may also declare bar charts over `List<Entity>` fields where each point
+has a text label and a numeric value:
+
+```axl
+ui DashboardUi
+  slot chart.bar = DefaultChartBar
+  page / unit -> Result<Dashboard> = PaginaDashboard
+    chart serie "Andamento mensile"
+```
+
+See `examples/apps/chart-boundary.axl`.
+
 A form binds an absolute path to an entity type and flow. The optional `submit` clause
 names the POST api route that receives the entity JSON; when omitted, the analyzer
 infers a POST route at the same path as the form. The optional `redirect` clause
@@ -1045,12 +1057,14 @@ Implemented UI diagnostics:
 | `AXL-U922` | invalid or unknown kpi field on page output entity |
 | `AXL-U923` | unknown UI kit slot name |
 | `AXL-U924` | duplicate UI slot in one `ui` |
+| `AXL-U925` | invalid chart field (must be List of label+value entity) |
 | `AXL-P992` | kpi missing field / quoted label |
 | `AXL-P993` | invalid UI slot binding |
+| `AXL-P994` | chart missing field / quoted title |
 
 Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`, `ui_action` = `57`,
 `route_guard` = `58`, `ui_drawer` = `59`, `ui_filter` = `60`, `ui_pagination` = `61`,
-`ui_modal` = `62`, `ui_kpi` = `63`, `ui_slot` = `64`.
+`ui_modal` = `62`, `ui_kpi` = `63`, `ui_slot` = `64`, `ui_chart` = `65`.
 
 ## 3. Type system
 
@@ -1216,9 +1230,9 @@ proven; Logger/Metrics/Tracer observability is proven through memory skills;
 capacity-backed transactions prove commit durability and rollback across memory
 and SQLite; capacity-backed migrations prove versioned schema history (up/down/
 status) with SQLite persistence across runtime recreate; Gate 4 UI
-(`ui` / `page` / `form` / `drawer` / `modal` / `kpi` / `slot`, `axl-ui/1`, `render`,
-sidebar + mobile bottom-nav, kit registry slots, error/empty states) is executable;
-rich chart/timeline widgets and advanced form validation UX remain open.
+(`ui` / `page` / `form` / `drawer` / `modal` / `kpi` / `chart` / `slot`, `axl-ui/1`, `render`,
+sidebar + mobile bottom-nav, kit registry slots, KPI/bar-chart, error/empty states) is executable;
+timeline widgets and advanced form validation UX remain open.
 
 ## 10. Verified examples and guides
 
@@ -1243,6 +1257,7 @@ rich chart/timeline widgets and advanced form validation UX remain open.
 - `examples/apps/modal-boundary.axl` — Gate 4 UI modal overlay demo.
 - `examples/apps/bottom-nav-boundary.axl` — Gate 4 responsive shell mobile bottom nav.
 - `examples/apps/kpi-registry-boundary.axl` — Gate 4 KPI cards + UI kit slots.
+- `examples/apps/chart-boundary.axl` — Gate 4 bar chart over List points.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.

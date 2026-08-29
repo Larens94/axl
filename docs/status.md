@@ -11,7 +11,7 @@ This table is the short source of truth for the current experiment.
 | Safety | diagnostics (`axl-check/1` JSON envelope, file paths, repair candidates, safety levels) | automatic application of risky repairs |
 | Policies | effects and capabilities validated and stored | runtime budgets and enforcement |
 | Agents | belief/goal/plan graph model | planning and execution runtime |
-| Runtime | records, transforms, `parallel`, `race`, retry/timeout, flow/capacity calls, typed `emit`/subscriptions, jobs (`enqueue`/`tick`), `Result` propagation, forkable configured provider ABI and HTTP | state; Gate 4 chart/timeline + advanced form validation UX |
+| Runtime | records, transforms, `parallel`, `race`, retry/timeout, flow/capacity calls, typed `emit`/subscriptions, jobs (`enqueue`/`tick`), `Result` propagation, forkable configured provider ABI and HTTP | state; Gate 4 timeline + advanced form validation UX |
 | Storage | generic memory, SQLite, PostgreSQL and MySQL (store + tx + migrate + **SQL pushdown query**) and document/JSON-file providers (store + tx + migrate); typed durable paths; capacity-backed transactions; capacity-backed migrations; typed store `query` | document pooling; health/timeout |
 | Backend | scalar and composite body/path/query/header/cookie binding, Axum, typed bearer auth (static + HS256 JWT skills), **OAuth demo provider** (`rust::axl::auth::oauth` — `authorize_url`/`exchange`; see `oauth-boundary.axl`), **HTTP redirect routes** (`redirect text` / `redirect LoginResult`), ordered request and response middleware, **per-route guards** (`session`/`can`/`guest` → AXL flows), capacity-backed rate-limit (`allow` → 429), capacity-backed CORS (`Access-Control-*` + OPTIONS preflight), typed events/subscriptions, capacity-backed jobs, Cache get/put/invalidate (memory + durable SQLite), Logger/Metrics/Tracer observability (memory) and durable SQLite; memory `EmailSender` send/list/**latest** and `PdfRenderer` render/get stubs; password reset via `EmailSender` (token only in mailbox); **portal production SQLite** (auth + vendite APIs); SQLite **`find_by`** on store capacities; **Gate 8 secret refs** (`secret("ENV")` → runtime env, redacted in IR/manifest) | OAuth HTTP redirect/callback routes; typed `OAuthStart`/`OAuthToken` records |
 | Targets | Rust/React/SQL contracts plus agent, block, flow, HTTP, UI and provider manifests; **React routes/layouts/registry** from `axl-ui/1`; **Vite host** `hosts/portal-web` (same-origin cookie proxy) | executable full-stack application generation |
@@ -65,9 +65,9 @@ executable via `axl::tx::document` and `axl::migrate::document` with durable
 SQLite/PostgreSQL/MySQL uses SQL pushdown for equality `filter`, `order_by` and
 `limit`/`offset` over JSON payload fields.
 Gate 4 foundation is executable: `ui` / `page` / `form` / **`drawer`** / **`modal`** /
-**`kpi`** / **`slot`** lower to Graph IR, emit `axl-ui/1` (with `kit.slots` + shell), and
+**`kpi`** / **`chart`** / **`slot`** lower to Graph IR, emit `axl-ui/1` (with `kit.slots` + shell), and
 `render` / `serve` produce HTML with sidebar + mobile bottom nav, KPI dashboards,
-overlays and error/empty states (`balance-ui.axl`, `form-demo.axl`,
+bar charts, overlays and error/empty states (`balance-ui.axl`, `form-demo.axl`,
 `drawer-boundary.axl`, `modal-boundary.axl`, `bottom-nav-boundary.axl`,
-`kpi-registry-boundary.axl`). Remaining Gate 4 polish: chart/timeline widgets and
-richer form validation UX.
+`kpi-registry-boundary.axl`, `chart-boundary.axl`). Remaining Gate 4 polish:
+timeline widgets and richer form validation UX.

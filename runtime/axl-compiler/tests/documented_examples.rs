@@ -593,6 +593,10 @@ fn documented_invalid_examples_report_stable_codes() {
             "AXL-U922",
             include_str!("../../../examples/invalid/ui-kpi.axl"),
         ),
+        (
+            "AXL-U925",
+            include_str!("../../../examples/invalid/ui-chart.axl"),
+        ),
     ];
 
     for (code, source) in cases {

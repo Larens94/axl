@@ -1,0 +1,13 @@
+axl 4
+app InvalidChart
+entity HomePage
+  titolo: text required
+  totale: int required
+flow Home unit -> Result<HomePage>
+  make home: HomePage
+    titolo = "x"
+    totale = 1
+  return home
+ui BadChartUi
+  page / unit -> Result<HomePage> = Home
+    chart totale "Not a list"

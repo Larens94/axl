@@ -2676,6 +2676,7 @@ fn parse_ui_page_block(
     let mut filters = Vec::new();
     let mut pagination = Vec::new();
     let mut kpis = Vec::new();
+    let mut charts = Vec::new();
     let mut cursor = start + 1;
     let mut found_nested = false;
     while cursor < body.len() && body[cursor].indent > line.indent {
@@ -2683,6 +2684,13 @@ fn parse_ui_page_block(
         if let Some(value) = binding_line.text.strip_prefix("kpi ") {
             if let Some(kpi) = parse_ui_kpi(value.trim(), span(binding_line), diagnostics) {
                 kpis.push(kpi);
+            }
+            cursor += 1;
+            continue;
+        }
+        if let Some(value) = binding_line.text.strip_prefix("chart ") {
+            if let Some(chart) = parse_ui_chart(value.trim(), span(binding_line), diagnostics) {
+                charts.push(chart);
             }
             cursor += 1;
             continue;
@@ -2702,7 +2710,7 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]",
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"",
                     &binding_line.text,
                 ),
             );
@@ -2869,6 +2877,7 @@ fn parse_ui_page_block(
         filters,
         pagination,
         kpis,
+        charts,
         span: span(line),
     });
     cursor
@@ -3128,6 +3137,68 @@ fn parse_ui_kpi(
         field: field.into(),
         label,
         hint,
+        span,
+    })
+}
+
+fn parse_ui_chart(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiChart> {
+    let mut parts = source.split_whitespace();
+    let Some(field) = parts.next() else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P994",
+                "parse",
+                "a UI chart requires a field name",
+                span,
+            )
+            .expected("chart field \"Title\"", source),
+        );
+        return None;
+    };
+    if !valid_name(field, false) {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P994",
+                "parse",
+                format!("invalid UI chart field '{field}'"),
+                span,
+            )
+            .expected("identifier field name", field),
+        );
+        return None;
+    }
+    let rest = source[field.len()..].trim();
+    let Some((label, rest_after)) = take_quoted_string(rest) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P994",
+                "parse",
+                "a UI chart requires a quoted title",
+                span,
+            )
+            .expected("chart field \"Title\"", source),
+        );
+        return None;
+    };
+    if !rest_after.trim().is_empty() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P994",
+                "parse",
+                "a UI chart takes one quoted title",
+                span,
+            )
+            .expected("chart field \"Title\"", source),
+        );
+        return None;
+    }
+    Some(UiChart {
+        field: field.into(),
+        label,
         span,
     })
 }

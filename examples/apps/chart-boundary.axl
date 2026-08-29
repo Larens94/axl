@@ -1,0 +1,37 @@
+// Gate 4 UI bar chart — List<point> fields render as horizontal bars.
+axl 4
+app ChartBoundary
+
+entity ChartPoint
+  label: text required
+  value: int required
+
+entity Dashboard
+  titolo: text required
+  messaggio: text required
+  totale: int required
+  serie: List<ChartPoint> required
+
+flow PaginaDashboard unit -> Result<Dashboard>
+  make p1: ChartPoint
+    label = "Gen"
+    value = 4
+  make p2: ChartPoint
+    label = "Feb"
+    value = 9
+  make p3: ChartPoint
+    label = "Mar"
+    value = 6
+  make home: Dashboard
+    titolo = "Vendite"
+    messaggio = "Serie mensile"
+    totale = 19
+    serie = [p1, p2, p3]
+  return home
+
+ui DashboardUi
+  slot chart.bar = DefaultChartBar
+  slot kpi.card = DefaultKpiCard
+  page / unit -> Result<Dashboard> = PaginaDashboard
+    kpi totale "Totale" "Punti serie"
+    chart serie "Andamento mensile"

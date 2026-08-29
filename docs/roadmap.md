@@ -65,7 +65,7 @@ paths survive recreate). Gate 3 document/JSON-file store
 cashflow switches providers by skill binding only. Gate 4 has started: `ui` pages
 bind flows, lower to Graph IR, emit `axl-ui/1` and render typed fields to HTML
 (`balance-ui.axl`), plus filter, pagination, drawer, modal, mobile bottom-nav,
-KPI cards and replaceable kit slots (`kpi-registry-boundary.axl`).
+KPI cards, bar charts and replaceable kit slots.
 Next Gate 3 target: pooling/health/timeout configuration.
-Next Gate 4 polish: chart/timeline and form validation UX.
+Next Gate 4 polish: timeline and form validation UX.
 Next major gate: Gate 5 AI/vector.

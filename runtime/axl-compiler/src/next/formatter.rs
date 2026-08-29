@@ -470,6 +470,13 @@ pub fn format(program: &Program) -> String {
                             kpi.label.replace('"', "\\\"")
                         ));
                     }
+                    for chart in &page.charts {
+                        output.push(format!(
+                            "    chart {} \"{}\"",
+                            chart.field,
+                            chart.label.replace('"', "\\\"")
+                        ));
+                    }
                 }
                 for slot in &ui.slots {
                     output.push(format!("  slot {} = {}", slot.name, slot.component));

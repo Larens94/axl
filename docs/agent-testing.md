@@ -746,13 +746,13 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - `ui` / `page` nodes lower to Graph IR and emit `axl-ui/1`;
 - `render` evaluates a bound flow and displays typed scalar/entity fields in HTML.
 
-It does not prove chart/timeline widgets or advanced forms validation UX (Gate 4 polish).
+It does not prove timeline widgets or advanced forms validation UX (Gate 4 polish).
 HTTP execution, process-local memory, restart-durable configured SQLite and
 document JSON, PostgreSQL/MySQL store/tx/migrate (boundary samples when env URL
 is set), SQL pushdown store `query` on SQLite/PostgreSQL/MySQL
 (`sql-pushdown-boundary.axl`), document tx/migrate (`document-tx-boundary.axl`),
 UI drawer/modal overlays, mobile bottom nav, KPI + kit slots
-(`kpi-registry-boundary.axl`), typed multi-subscriber
+(`kpi-registry-boundary.axl`), bar charts (`chart-boundary.axl`), typed multi-subscriber
 events, durable jobs, Cache get/put/invalidate, Logger/Metrics/Tracer
 observability, transaction commit/rollback, migration upgrade/downgrade, typed
 store queries and the UI page slice are proven.
@@ -764,4 +764,4 @@ vendite skills; OAuth demo provider is proven (`oauth-boundary.axl` →
 returning the token in the API result. `hosts/portal-web` syncs `axl-ui/1`
 codegen. Gate 2 auth adapters are otherwise complete. Next Gate 3 target:
 pooling/health/timeout configuration. Next Gate 4 polish:
-chart/timeline widgets and advanced form validation UX. Next major gate: Gate 5 AI/vector.
+timeline widgets and advanced form validation UX. Next major gate: Gate 5 AI/vector.

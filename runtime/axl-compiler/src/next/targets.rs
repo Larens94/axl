@@ -413,6 +413,7 @@ pub fn react_registry(graph: &GraphIr) -> String {
     }
     for kit in [
         "kpi.card",
+        "chart.bar",
         "data.table",
         "overlay.drawer",
         "overlay.modal",

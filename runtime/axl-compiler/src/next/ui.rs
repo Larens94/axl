@@ -105,6 +105,14 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                             .and_then(|value| value.parse::<usize>().ok())
                             .unwrap_or(usize::MAX)
                     });
+                    let mut charts = children(graph, &page.id, "ui_chart");
+                    charts.sort_by_key(|chart| {
+                        chart
+                            .metadata
+                            .get("order")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .unwrap_or(usize::MAX)
+                    });
                     json!({
                         "path": path,
                         "template": template,
@@ -124,6 +132,10 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                             "field": kpi.name,
                             "label": kpi.metadata.get("label"),
                             "hint": kpi.metadata.get("hint"),
+                        })).collect::<Vec<_>>(),
+                        "charts": charts.into_iter().map(|chart| json!({
+                            "field": chart.name,
+                            "label": chart.metadata.get("label"),
                         })).collect::<Vec<_>>(),
                     })
                 }).collect::<Vec<_>>(),
@@ -202,6 +214,7 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
         "kit": {
             "slots": [
                 "kpi.card",
+                "chart.bar",
                 "data.table",
                 "overlay.drawer",
                 "overlay.modal",
@@ -566,11 +579,19 @@ fn render_kpi_dashboard(
     data: &Value,
 ) -> Option<String> {
     let mut kpis = children(graph, &page.id, "ui_kpi");
-    if kpis.is_empty() {
+    let mut charts = children(graph, &page.id, "ui_chart");
+    if kpis.is_empty() && charts.is_empty() {
         return None;
     }
     kpis.sort_by_key(|kpi| {
         kpi.metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    charts.sort_by_key(|chart| {
+        chart
+            .metadata
             .get("order")
             .and_then(|value| value.parse::<usize>().ok())
             .unwrap_or(usize::MAX)
@@ -592,36 +613,121 @@ fn render_kpi_dashboard(
         ),
         _ => String::new(),
     };
-    let cards = kpis
-        .into_iter()
-        .map(|kpi| {
-            let label = kpi
-                .metadata
-                .get("label")
-                .cloned()
-                .unwrap_or_else(|| kpi.name.clone());
-            let hint = kpi.metadata.get("hint").cloned().unwrap_or_default();
-            let value = map
-                .get(&kpi.name)
-                .map(display_value)
-                .unwrap_or_else(|| "—".into());
-            format!(
-                r#"    <article class="stat-card" data-slot="kpi.card">
+    let cards = if kpis.is_empty() {
+        String::new()
+    } else {
+        let cards = kpis
+            .into_iter()
+            .map(|kpi| {
+                let label = kpi
+                    .metadata
+                    .get("label")
+                    .cloned()
+                    .unwrap_or_else(|| kpi.name.clone());
+                let hint = kpi.metadata.get("hint").cloned().unwrap_or_default();
+                let value = map
+                    .get(&kpi.name)
+                    .map(display_value)
+                    .unwrap_or_else(|| "—".into());
+                format!(
+                    r#"    <article class="stat-card" data-slot="kpi.card">
       <p class="stat-label">{label}</p>
       <p class="stat-value">{value}</p>
       <p class="stat-hint">{hint}</p>
     </article>"#,
+                    label = html_escape(&label),
+                    value = html_escape(&value),
+                    hint = html_escape(&hint),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("  <section class=\"stat-grid\">\n{cards}\n  </section>\n")
+    };
+    let chart_html = charts
+        .into_iter()
+        .filter_map(|chart| render_bar_chart(graph, chart, map))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let quick = render_quick_links(graph);
+    Some(format!("{hero}{cards}{chart_html}{quick}"))
+}
+
+fn render_bar_chart(
+    graph: &GraphIr,
+    chart: &super::ir::GraphNode,
+    map: &serde_json::Map<String, Value>,
+) -> Option<String> {
+    let title = chart
+        .metadata
+        .get("label")
+        .cloned()
+        .unwrap_or_else(|| chart.name.clone());
+    let items = map.get(&chart.name)?.as_array()?;
+    if items.is_empty() {
+        return Some(format!(
+            r#"  <section class="card chart-card" data-slot="chart.bar">
+    <div class="card-header"><h2 class="card-title">{title}</h2></div>
+    <p class="empty-state" data-slot="state.empty">Nessun dato nel grafico.</p>
+  </section>"#,
+            title = html_escape(&title),
+        ));
+    }
+    let (label_key, value_key) = chart_point_keys(graph, items.first()?)?;
+    let max = items
+        .iter()
+        .filter_map(|item| {
+            item.get(&value_key)
+                .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|n| n as f64)))
+        })
+        .fold(0.0_f64, f64::max)
+        .max(1.0);
+    let bars = items
+        .iter()
+        .map(|item| {
+            let label = item
+                .get(&label_key)
+                .map(display_value)
+                .unwrap_or_else(|| "—".into());
+            let raw = item
+                .get(&value_key)
+                .and_then(|value| value.as_f64().or_else(|| value.as_i64().map(|n| n as f64)))
+                .unwrap_or(0.0);
+            let width = ((raw / max) * 100.0).clamp(0.0, 100.0);
+            format!(
+                r#"      <div class="chart-row">
+        <span class="chart-label">{label}</span>
+        <span class="chart-track"><span class="chart-bar" style="width:{width:.1}%"></span></span>
+        <span class="chart-value">{value}</span>
+      </div>"#,
                 label = html_escape(&label),
-                value = html_escape(&value),
-                hint = html_escape(&hint),
+                value = html_escape(&display_value(item.get(&value_key).unwrap_or(&Value::Null))),
             )
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let quick = render_quick_links(graph);
     Some(format!(
-        "{hero}  <section class=\"stat-grid\">\n{cards}\n  </section>\n{quick}"
+        r#"  <section class="card chart-card" data-slot="chart.bar">
+    <div class="card-header"><h2 class="card-title">{title}</h2></div>
+    <div class="chart-bars">
+{bars}
+    </div>
+  </section>"#,
+        title = html_escape(&title),
     ))
+}
+
+fn chart_point_keys(_graph: &GraphIr, sample: &Value) -> Option<(String, String)> {
+    let object = sample.as_object()?;
+    let label = object
+        .iter()
+        .find(|(_, value)| value.is_string())
+        .map(|(key, _)| key.clone())?;
+    let value = object
+        .iter()
+        .find(|(key, value)| *key != &label && value.is_number())
+        .map(|(key, _)| key.clone())?;
+    Some((label, value))
 }
 
 fn render_quick_links(graph: &GraphIr) -> String {
@@ -1528,6 +1634,36 @@ fn dashboard_styles() -> &'static str {
       border-color: color-mix(in srgb, #dc2626 35%, var(--border));
     }
     .error-card .card-title { color: #b91c1c; }
+    .chart-card .chart-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+      padding: 0 1.35rem 1.35rem;
+    }
+    .chart-row {
+      display: grid;
+      grid-template-columns: minmax(4.5rem, 7rem) minmax(0, 1fr) 3.5rem;
+      gap: 0.65rem;
+      align-items: center;
+    }
+    .chart-label, .chart-value {
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .chart-value { text-align: right; font-variant-numeric: tabular-nums; color: var(--text); }
+    .chart-track {
+      display: block;
+      height: 0.65rem;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 12%, var(--border));
+      overflow: hidden;
+    }
+    .chart-bar {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: var(--accent);
+    }
     .filter-card .filter-form, .pagination-bar {
       display: flex;
       flex-wrap: wrap;
@@ -2510,6 +2646,44 @@ ui Screen
         assert!(rendered.html.contains("data-slot=\"kpi.card\""));
         assert!(rendered.html.contains("Utenti"));
         assert!(rendered.html.contains(">7<"));
+    }
+
+    #[test]
+    fn render_page_emits_bar_chart() {
+        const SOURCE: &str = r#"axl 4
+app ChartUi
+entity ChartPoint
+  label: text required
+  value: int required
+entity Dashboard
+  titolo: text required
+  serie: List<ChartPoint> required
+flow Home unit -> Result<Dashboard>
+  make a: ChartPoint
+    label = "A"
+    value = 2
+  make b: ChartPoint
+    label = "B"
+    value = 5
+  make home: Dashboard
+    titolo = "Demo"
+    serie = [a, b]
+  return home
+ui Screen
+  page / unit -> Result<Dashboard> = Home
+    chart serie "Serie"
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(
+            manifest["uis"][0]["pages"][0]["charts"][0]["field"],
+            "serie"
+        );
+        let rendered = render_page(&graph, "/", json!(null)).unwrap();
+        assert!(rendered.html.contains("data-slot=\"chart.bar\""));
+        assert!(rendered.html.contains("Serie"));
+        assert!(rendered.html.contains("class=\"chart-bar\""));
+        assert!(rendered.html.contains(">A<") || rendered.html.contains("A</span>"));
     }
 
     #[test]
