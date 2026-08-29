@@ -44,6 +44,11 @@ echo "== eval ResetPasswordDemoUnit (email outbox, no token in API result) =="
 echo "== eval PaginaClientiRbacDemoUnit (RBAC + vendite list) =="
 "${BIN[@]}" eval "$PORTAL" PaginaClientiRbacDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.total >= 0'
 
+echo "== eval PortalPersistenzaDemoUnit (sqlite auth + vendite seed) =="
+mkdir -p ./build
+rm -f ./build/portal-auth.db ./build/vendite.db
+"${BIN[@]}" eval "$PORTAL" PortalPersistenzaDemoUnit examples/apps/inputs/unit.json | jq -e '.ok.total >= 2'
+
 echo "== diamond imports (shared email merged once) =="
 "${BIN[@]}" check examples/apps/import-diamond-demo.axl --json | jq -e '.ok == true'
 
@@ -93,6 +98,13 @@ grep -q 'GuestLayout' hosts/portal-web/src/generated/axl_layouts.tsx
 
 echo "== HTTP route guard smoke (401 without session, 200 with session) =="
 GPORT=18088
+pkill -f 'axl-compiler.*serve' 2>/dev/null || true
+if command -v fuser >/dev/null 2>&1; then
+  fuser -k "${GPORT}/tcp" 2>/dev/null || true
+fi
+sleep 0.5
+mkdir -p ./build
+rm -f ./build/portal-auth.db ./build/vendite.db
 (
   "${BIN[@]}" serve "$PORTAL" "127.0.0.1:${GPORT}" &
   GPID=$!
@@ -123,6 +135,10 @@ GPORT=18088
     | jq -e '.ok.id == "cliente-guard"'
   curl -s --max-time 2 -H "Cookie: sid=${SID}" "http://127.0.0.1:${GPORT}/auth/admin/utenti" \
     | jq -e '.ok.total >= 2'
+  curl -sf --max-time 2 -H "Cookie: sid=${SID}" "http://127.0.0.1:${GPORT}/clienti/query" \
+    -H 'content-type: application/json' \
+    -d '{"order_by":"nome","direction":"asc","limit":10,"offset":0}' \
+    | jq -e '.ok.total >= 1'
 )
 
 echo "OK auth gates"

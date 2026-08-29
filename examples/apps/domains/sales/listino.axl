@@ -232,6 +232,53 @@ flow RisolviPrezzoSqlite PrezzoListinoQuery -> Result<money>
   let prezzo = if in_listino then prezzo_listino else prodotto.prezzo
   return prezzo
 
+flow ElencaListiniSqlite unit -> Result<List<Listino>>
+  in store: ArchivioListini = SqliteListini
+  call listini = store.list(input)?
+  return listini
+
+flow SeedListinoSqlite unit -> Result<Listino>
+  in store: ArchivioListini = SqliteListini
+  in prodotti: ArchivioProdotti = SqliteProdotti
+  make prodotto1: Prodotto
+    id = "prodotto-001"
+    nome = "Laptop Pro"
+    prezzo = 129900
+    sku = "LP-001"
+    attivo = true
+  make prodotto2: Prodotto
+    id = "prodotto-002"
+    nome = "Mouse wireless"
+    prezzo = 2990
+    sku = "MS-002"
+    attivo = true
+  make prodotto3: Prodotto
+    id = "prodotto-003"
+    nome = "Tastiera meccanica"
+    prezzo = 8900
+    sku = "KB-003"
+    attivo = true
+  run valida1 = ValidaProdotto(prodotto1)?
+  call p1 = prodotti.save(valida1)?
+  run valida2 = ValidaProdotto(prodotto2)?
+  call p2 = prodotti.save(valida2)?
+  run valida3 = ValidaProdotto(prodotto3)?
+  call p3 = prodotti.save(valida3)?
+  make riga1: RigaListino
+    prodotto_id = "prodotto-001"
+    prezzo = 119900
+  make riga2: RigaListino
+    prodotto_id = "prodotto-002"
+    prezzo = 2490
+  make listino: Listino
+    id = "listino-001"
+    nome = "Promo estate"
+    attivo = true
+    righe = [riga1, riga2]
+  run valida = ValidaListino(listino)?
+  call salvato = store.save(valida)?
+  return salvato
+
 enum StatoPreventivo
   bozza
   inviato

@@ -650,6 +650,82 @@ flow AnnullaPreventivoSqlite uuid -> Result<Preventivo>
   call salvato = store.save(valida)?
   return salvato
 
+flow ElencaPreventiviSqlite unit -> Result<List<Preventivo>>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  call preventivi = store.list(input)?
+  return preventivi
+
+flow CercaPreventiviPerStatoSqlite PreventivoQuery -> Result<PreventivoPage>
+  run pagina = InterrogaPreventiviSqlite(input)?
+  return pagina
+
+flow CostruisciRigaDaListinoSqlite RigaPreventivoDaListino -> Result<RigaPreventivo>
+  make query: PrezzoListinoQuery
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id
+  run prezzo = RisolviPrezzoSqlite(query)?
+  make riga: RigaPreventivo
+    prodotto_id = input.prodotto_id
+    quantita = input.quantita
+    prezzo_unitario = prezzo
+    importo = 0
+  run valida = ValidaRigaPreventivo(riga)?
+  return valida
+
+flow CreaPreventivoConListinoSqlite PreventivoConListinoInput -> Result<Preventivo>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  parallel righe: List<RigaPreventivo> = input.righe as riga_input
+    run = CostruisciRigaDaListinoSqlite(riga_input)?
+  make preventivo: Preventivo
+    id = input.id
+    cliente_id = input.cliente_id
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 0
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CreaPreventivoListinoFormSqlite PreventivoListinoForm -> Result<Preventivo>
+  make riga1: RigaPreventivoDaListino
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id_1
+    quantita = input.quantita_1
+  make riga2: RigaPreventivoDaListino
+    listino_id = input.listino_id
+    prodotto_id = input.prodotto_id_2
+    quantita = input.quantita_2
+  make payload: PreventivoConListinoInput
+    id = input.id
+    cliente_id = input.cliente_id
+    righe = [riga1, riga2]
+  run preventivo = CreaPreventivoConListinoSqlite(payload)?
+  return preventivo
+
+flow SeedPreventivoSqlite unit -> Result<Preventivo>
+  in store: ArchivioPreventivi = SqlitePreventivi
+  run _cliente = SeedClientiSqlite(input)?
+  make riga1: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+    prezzo_unitario = 129900
+    importo = 259800
+  make riga2: RigaPreventivo
+    prodotto_id = "prodotto-002"
+    quantita = 3
+    prezzo_unitario = 2990
+    importo = 8970
+  let righe = [riga1, riga2]
+  make preventivo: Preventivo
+    id = "preventivo-001"
+    cliente_id = "cliente-001"
+    stato = StatoPreventivo.bozza
+    righe = righe
+    totale = 268770
+  run valida = ValidaPreventivo(preventivo)?
+  call salvato = store.save(valida)?
+  return salvato
+
 enum StatoOrdine
   bozza
   confermato

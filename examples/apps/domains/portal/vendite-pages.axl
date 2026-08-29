@@ -7,7 +7,7 @@ flow PaginaClientiSessione uuid -> Result<ClientePage>
     session_id = input
     permesso = "vendite.clienti.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioClienti = MemoriaClienti
+  in store: ArchivioClienti = SqliteClienti
   make query: ClienteQuery
     order_by = "nome"
     direction = "asc"
@@ -21,7 +21,7 @@ flow PaginaProdottiSessione uuid -> Result<ProdottoPage>
     session_id = input
     permesso = "vendite.prodotti.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioProdotti = MemoriaProdotti
+  in store: ArchivioProdotti = SqliteProdotti
   make query: ProdottoQuery
     order_by = "nome"
     direction = "asc"
@@ -35,7 +35,7 @@ flow PaginaListiniSessione uuid -> Result<ListinoPage>
     session_id = input
     permesso = "vendite.listini.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioListini = MemoriaListini
+  in store: ArchivioListini = SqliteListini
   make query: ListinoQuery
     order_by = "nome"
     direction = "asc"
@@ -49,7 +49,7 @@ flow PaginaPreventiviSessione uuid -> Result<PreventivoPage>
     session_id = input
     permesso = "vendite.preventivi.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioPreventivi = MemoriaPreventivi
+  in store: ArchivioPreventivi = SqlitePreventivi
   make query: PreventivoQuery
     order_by = "id"
     direction = "asc"
@@ -63,7 +63,7 @@ flow PaginaOrdiniSessione uuid -> Result<OrdinePage>
     session_id = input
     permesso = "vendite.ordini.read"
   run _ = RequireSessionPermesso(gate)?
-  in store: ArchivioOrdini = MemoriaOrdini
+  in store: ArchivioOrdini = SqliteOrdini
   make query: OrdineQuery
     order_by = "id"
     direction = "asc"
@@ -77,7 +77,7 @@ flow DettaglioListinoSessione DettaglioSessioneInput -> Result<Listino>
     session_id = input.session_id
     permesso = "vendite.listini.read"
   run _ = RequireSessionPermesso(gate)?
-  run trovato = CercaListino(input.id)?
+  run trovato = CercaListinoSqlite(input.id)?
   return trovato
 
 flow DettaglioPreventivoSessione DettaglioSessioneInput -> Result<Preventivo>
@@ -85,7 +85,7 @@ flow DettaglioPreventivoSessione DettaglioSessioneInput -> Result<Preventivo>
     session_id = input.session_id
     permesso = "vendite.preventivi.read"
   run _ = RequireSessionPermesso(gate)?
-  run trovato = CercaPreventivo(input.id)?
+  run trovato = CercaPreventivoSqlite(input.id)?
   return trovato
 
 flow DettaglioOrdineSessione DettaglioSessioneInput -> Result<Ordine>
@@ -93,12 +93,12 @@ flow DettaglioOrdineSessione DettaglioSessioneInput -> Result<Ordine>
     session_id = input.session_id
     permesso = "vendite.ordini.read"
   run _ = RequireSessionPermesso(gate)?
-  run trovato = CercaOrdine(input.id)?
+  run trovato = CercaOrdineSqlite(input.id)?
   return trovato
 
 flow DettaglioListinoSessioneDemoUnit unit -> Result<Listino>
-  run login = LoginAdminDemoUnit(input)?
-  run _seed = SeedListinoDemoUnit(input)?
+  run login = LoginAdminPortalDemoUnit(input)?
+  run _seed = SeedListinoSqlite(input)?
   make gate: DettaglioSessioneInput
     session_id = login.session_id
     id = "listino-001"
@@ -106,8 +106,8 @@ flow DettaglioListinoSessioneDemoUnit unit -> Result<Listino>
   return trovato
 
 flow DettaglioPreventivoSessioneDemoUnit unit -> Result<Preventivo>
-  run login = LoginAdminDemoUnit(input)?
-  run _seed = SeedPreventivoDemoUnit(input)?
+  run login = LoginAdminPortalDemoUnit(input)?
+  run _seed = SeedPreventivoSqlite(input)?
   make gate: DettaglioSessioneInput
     session_id = login.session_id
     id = "preventivo-001"
@@ -115,8 +115,11 @@ flow DettaglioPreventivoSessioneDemoUnit unit -> Result<Preventivo>
   return trovato
 
 flow DettaglioOrdineSessioneDemoUnit unit -> Result<Ordine>
-  run login = LoginAdminDemoUnit(input)?
-  run ordine = CreaOrdineDaPreventivoDemoUnit(input)?
+  run login = LoginAdminPortalDemoUnit(input)?
+  run seed = SeedPreventivoSqlite(input)?
+  run _inviato = InviaPreventivoSqlite(seed.id)?
+  run _confermato = ConfermaPreventivoSqlite(seed.id)?
+  run ordine = CreaOrdineDaPreventivoSqlite(seed.id)?
   make gate: DettaglioSessioneInput
     session_id = login.session_id
     id = ordine.id

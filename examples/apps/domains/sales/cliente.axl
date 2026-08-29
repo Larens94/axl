@@ -130,3 +130,39 @@ flow PaginaClientiDemoUnit unit -> Result<ClientePage>
   call pagina = store.query(query)?
   return pagina
 
+flow ElencaClientiSqlite unit -> Result<List<Cliente>>
+  in store: ArchivioClienti = SqliteClienti
+  call clienti = store.list(input)?
+  return clienti
+
+flow CercaClientiAttiviSqlite ClienteQuery -> Result<ClientePage>
+  run pagina = InterrogaClientiSqlite(input)?
+  return pagina
+
+flow SeedClientiSqlite unit -> Result<ClientePage>
+  in store: ArchivioClienti = SqliteClienti
+  make cliente1: Cliente
+    id = "cliente-001"
+    nome = "Alice Rossi"
+    email = "alice@example.com"
+    budget = 250000
+    priorita = 1
+    stato = ClienteStato.attivo
+  make cliente2: Cliente
+    id = "cliente-002"
+    nome = "Bob Bianchi"
+    email = "bob@example.com"
+    budget = 180000
+    stato = ClienteStato.attivo
+  run valida1 = ValidaCliente(cliente1)?
+  call c1 = store.save(valida1)?
+  run valida2 = ValidaCliente(cliente2)?
+  call c2 = store.save(valida2)?
+  make query: ClienteQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 10
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+

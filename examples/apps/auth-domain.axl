@@ -240,6 +240,48 @@ skill MemoriaUtenteRuoli provides ArchivioUtenteRuoli
   effect db.read
   effect db.write
 
+skill SqliteUtenti provides ArchivioUtenti
+  native rust axl::store::sqlite
+  config path: text = "./build/portal-auth.db"
+  effect db.read
+  effect db.write
+
+skill SqliteSessioni provides ArchivioSessioni
+  native rust axl::store::sqlite
+  config path: text = "./build/portal-auth.db"
+  effect db.read
+  effect db.write
+
+skill SqliteRuoli provides ArchivioRuoli
+  native rust axl::store::sqlite
+  config path: text = "./build/portal-auth.db"
+  effect db.read
+  effect db.write
+
+skill SqlitePermessi provides ArchivioPermessi
+  native rust axl::store::sqlite
+  config path: text = "./build/portal-auth.db"
+  effect db.read
+  effect db.write
+
+skill SqliteRuoloPermessi provides ArchivioRuoloPermessi
+  native rust axl::store::sqlite
+  config path: text = "./build/portal-auth.db"
+  effect db.read
+  effect db.write
+
+skill SqliteUtenteRuoli provides ArchivioUtenteRuoli
+  native rust axl::store::sqlite
+  config path: text = "./build/portal-auth.db"
+  effect db.read
+  effect db.write
+
+skill SqliteTokenReset provides ArchivioTokenReset
+  native rust axl::store::sqlite
+  config path: text = "./build/portal-auth.db"
+  effect db.read
+  effect db.write
+
 flow ValidaRegistrazione RegistrazioneInput -> Result<RegistrazioneInput>
   let password_lunga = input.password != ""
   require password_lunga else "password_obbligatoria"
@@ -600,12 +642,187 @@ flow SeedUtenteRuoliDemo unit -> Result<List<UtenteRuolo>>
   call s2 = store.save(a2)?
   return [s1, s2]
 
+flow SeedPermessiSqlite unit -> Result<List<Permesso>>
+  in store: ArchivioPermessi = SqlitePermessi
+  make p1: Permesso
+    id = "admin.utenti.read"
+    descrizione = "Leggere utenti"
+  make p2: Permesso
+    id = "admin.ruoli.read"
+    descrizione = "Leggere ruoli"
+  make p2b: Permesso
+    id = "admin.permessi.read"
+    descrizione = "Leggere permessi IAM"
+  make p3: Permesso
+    id = "admin.ruoli.write"
+    descrizione = "Gestire ruoli e permessi"
+  make p4: Permesso
+    id = "vendite.clienti.read"
+    descrizione = "Leggere clienti vendite"
+  make p5: Permesso
+    id = "vendite.prodotti.read"
+    descrizione = "Leggere prodotti"
+  make p6: Permesso
+    id = "vendite.listini.read"
+    descrizione = "Leggere listini"
+  make p7: Permesso
+    id = "vendite.preventivi.read"
+    descrizione = "Leggere preventivi"
+  make p8: Permesso
+    id = "vendite.preventivi.write"
+    descrizione = "Scrivere preventivi"
+  make p9: Permesso
+    id = "vendite.ordini.read"
+    descrizione = "Leggere ordini"
+  call s1 = store.save(p1)?
+  call s2 = store.save(p2)?
+  call s2b = store.save(p2b)?
+  call s3 = store.save(p3)?
+  call s4 = store.save(p4)?
+  call s5 = store.save(p5)?
+  call s6 = store.save(p6)?
+  call s7 = store.save(p7)?
+  call s8 = store.save(p8)?
+  call s9 = store.save(p9)?
+  return [s1, s2, s2b, s3, s4, s5, s6, s7, s8, s9]
+
+flow SeedRuoliSqlite unit -> Result<List<Ruolo>>
+  in store: ArchivioRuoli = SqliteRuoli
+  let permessi_admin = [
+    "admin.utenti.read",
+    "admin.ruoli.read",
+    "admin.permessi.read",
+    "admin.ruoli.write",
+    "vendite.clienti.read",
+    "vendite.prodotti.read",
+    "vendite.listini.read",
+    "vendite.preventivi.read",
+    "vendite.preventivi.write",
+    "vendite.ordini.read"
+  ]
+  let permessi_venditore = [
+    "vendite.clienti.read",
+    "vendite.prodotti.read",
+    "vendite.listini.read",
+    "vendite.preventivi.read",
+    "vendite.preventivi.write",
+    "vendite.ordini.read"
+  ]
+  make admin: Ruolo
+    id = "ruolo-admin"
+    nome = "admin"
+    descrizione = "Amministratore"
+    permessi = permessi_admin
+  make venditore: Ruolo
+    id = "ruolo-venditore"
+    nome = "venditore"
+    descrizione = "Venditore"
+    permessi = permessi_venditore
+  call s1 = store.save(admin)?
+  call s2 = store.save(venditore)?
+  return [s1, s2]
+
+flow SeedUtentiSqlite unit -> Result<List<Utente>>
+  in store: ArchivioUtenti = SqliteUtenti
+  in hasher: PasswordHasher = DemoPasswordHasher
+  call admin_hash = hasher.hash("admin123")?
+  let permessi_admin = [
+    "admin.utenti.read",
+    "admin.ruoli.read",
+    "admin.permessi.read",
+    "admin.ruoli.write",
+    "vendite.clienti.read",
+    "vendite.prodotti.read",
+    "vendite.listini.read",
+    "vendite.preventivi.read",
+    "vendite.preventivi.write",
+    "vendite.ordini.read"
+  ]
+  let permessi_venditore = [
+    "vendite.clienti.read",
+    "vendite.prodotti.read",
+    "vendite.listini.read",
+    "vendite.preventivi.read",
+    "vendite.preventivi.write",
+    "vendite.ordini.read"
+  ]
+  make admin: Utente
+    id = "utente-admin"
+    email = "admin@example.com"
+    password_hash = admin_hash
+    nome = "Admin Demo"
+    attivo = true
+    permessi = permessi_admin
+  call vend_hash = hasher.hash("vend123")?
+  make venditore: Utente
+    id = "utente-venditore"
+    email = "venditore@example.com"
+    password_hash = vend_hash
+    nome = "Venditore Demo"
+    attivo = true
+    permessi = permessi_venditore
+  call s1 = store.save(admin)?
+  call s2 = store.save(venditore)?
+  return [s1, s2]
+
+flow SeedUtenteRuoliSqlite unit -> Result<List<UtenteRuolo>>
+  in store: ArchivioUtenteRuoli = SqliteUtenteRuoli
+  make a1: UtenteRuolo
+    id = "ur-admin"
+    utente_id = "utente-admin"
+    ruolo_id = "ruolo-admin"
+  make a2: UtenteRuolo
+    id = "ur-venditore"
+    utente_id = "utente-venditore"
+    ruolo_id = "ruolo-venditore"
+  call s1 = store.save(a1)?
+  call s2 = store.save(a2)?
+  return [s1, s2]
+
 flow InizializzaAuthDemo unit -> Result<UtentePage>
   run _permessi = SeedPermessiBase(input)?
   run _ruoli = SeedRuoliBase(input)?
   run _utenti = SeedUtentiDemo(input)?
   run _links = SeedUtenteRuoliDemo(input)?
   run pagina = PaginaUtentiAdmin(input)?
+  return pagina
+
+flow InizializzaPortal unit -> Result<UtentePage>
+  run _permessi = SeedPermessiSqlite(input)?
+  run _ruoli = SeedRuoliSqlite(input)?
+  run _utenti = SeedUtentiSqlite(input)?
+  run _links = SeedUtenteRuoliSqlite(input)?
+  run pagina = PaginaUtentiAdminSqlite(input)?
+  return pagina
+
+flow PaginaUtentiAdminSqlite unit -> Result<UtentePage>
+  in store: ArchivioUtenti = SqliteUtenti
+  make query: UtenteQuery
+    order_by = "email"
+    direction = "asc"
+    limit = 25
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaRuoliAdminSqlite unit -> Result<RuoloPage>
+  in store: ArchivioRuoli = SqliteRuoli
+  make query: RuoloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 25
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaPermessiAdminSqlite unit -> Result<PermessoPage>
+  in store: ArchivioPermessi = SqlitePermessi
+  make query: PermessoQuery
+    order_by = "id"
+    direction = "asc"
+    limit = 50
+    offset = 0
+  call pagina = store.query(query)?
   return pagina
 
 flow PaginaUtentiAdmin unit -> Result<UtentePage>

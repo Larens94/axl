@@ -83,6 +83,7 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 - **Per-route HTTP guards** (`session` / `can` / `guest`) protect Auth admin and VenditeApi mutations.
 - **React codegen** emits routes/layouts/registry from `axl-ui/1` (`experiment` → `targets/react/`).
 - **Vite host** `hosts/portal-web` consumes codegen and proxies to `axl-compiler serve` (same-origin `sid` cookies).
+- **Production persistence**: `VenditeApi` + auth/session use SQLite (`./build/portal-auth.db`, `./build/vendite.db`); demo `*DemoUnit` flows keep memory bindings.
 - **Gate 8 secret refs** (`secret("ENV")`) used by portal auth/vendite demo skills.
 - **Password reset** sends token via `EmailSender` (`MemoriaEmail`); API returns only `messaggio`.
 - Nested `List<>` form rows still use flat workaround forms.

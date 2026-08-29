@@ -1210,6 +1210,20 @@ fn sqlite_store_call(connection: &Connection, call: ProviderCall<'_>) -> Result<
             }
             store_query(values, &call.input)
         }
+        "find_by" => {
+            let mut statement = connection
+                .prepare("SELECT payload FROM axl_records WHERE provider = ?1 ORDER BY record_id")
+                .map_err(|error| error.to_string())?;
+            let rows = statement
+                .query_map(params![call.provider], |row| row.get::<_, String>(0))
+                .map_err(|error| error.to_string())?;
+            let mut values = Vec::new();
+            for row in rows {
+                let payload = row.map_err(|error| error.to_string())?;
+                values.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+            }
+            store_find_by(values, &call.input)
+        }
         operation => Err(format!(
             "SQLite store does not implement operation '{operation}' for {}",
             call.capacity

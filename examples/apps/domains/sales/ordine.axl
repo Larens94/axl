@@ -277,3 +277,8 @@ flow AnnullaOrdineSqlite uuid -> Result<Ordine>
   run valida = ValidaOrdine(aggiornato)?
   call salvato = store.save(valida)?
   return salvato
+
+flow ElencaOrdiniSqlite unit -> Result<List<Ordine>>
+  in store: ArchivioOrdini = SqliteOrdini
+  call lista = store.list(input)?
+  return lista

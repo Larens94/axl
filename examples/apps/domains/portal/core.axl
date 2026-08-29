@@ -11,13 +11,13 @@ entity DettaglioSessioneInput
   id: uuid required
 
 flow RequireSession uuid -> Result<Utente>
-  run utente = UtenteDaSessione(input)?
+  run utente = UtenteDaSessionePortal(input)?
   return utente
 
 flow RequireSessionPermesso SessionePermessoInput -> Result<Utente>
-  run utente = UtenteDaSessione(input.session_id)?
+  run utente = UtenteDaSessionePortal(input.session_id)?
   make check: PermessoCheck
     utente_id = utente.id
     codice = input.permesso
-  run _ = RichiediPermesso(check)?
+  run _ = RichiediPermessoPortal(check)?
   return utente
