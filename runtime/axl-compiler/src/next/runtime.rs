@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
+use postgres::{Client, NoTls};
 use rusqlite::{Connection, params};
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
@@ -63,6 +64,7 @@ pub struct BuiltinRuntime {
     job_stores: Arc<Mutex<BTreeMap<String, BTreeMap<String, Value>>>>,
     sqlite: Arc<Mutex<BTreeMap<String, Arc<Mutex<Connection>>>>>,
     sqlite_tx: Arc<Mutex<BTreeMap<String, Vec<String>>>>,
+    postgres: Arc<Mutex<BTreeMap<String, Arc<Mutex<Client>>>>>,
     documents: Arc<Mutex<BTreeMap<String, Arc<Mutex<DocumentStoreMap>>>>>,
 }
 
@@ -96,6 +98,7 @@ impl BuiltinRuntime {
             job_stores: Arc::new(Mutex::new(BTreeMap::new())),
             sqlite: Arc::new(Mutex::new(BTreeMap::new())),
             sqlite_tx: Arc::new(Mutex::new(BTreeMap::new())),
+            postgres: Arc::new(Mutex::new(BTreeMap::new())),
             documents: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
@@ -162,6 +165,28 @@ impl BuiltinRuntime {
         connections.insert(key, connection.clone());
         Ok(connection)
     }
+
+    fn postgres_connection(&self, call: &ProviderCall<'_>) -> Result<Arc<Mutex<Client>>, String> {
+        let url = call
+            .config
+            .get("url")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "postgres store requires config url".to_string())?;
+        let key = url.to_string();
+        let mut connections = self
+            .postgres
+            .lock()
+            .map_err(|_| "PostgreSQL connection registry is unavailable".to_string())?;
+        if let Some(connection) = connections.get(&key) {
+            return Ok(connection.clone());
+        }
+        let mut client = Client::connect(url, NoTls)
+            .map_err(|error| format!("cannot initialize PostgreSQL provider: {error}"))?;
+        initialize_postgres(&mut client)?;
+        let connection = Arc::new(Mutex::new(client));
+        connections.insert(key, connection.clone());
+        Ok(connection)
+    }
 }
 
 impl ProviderRuntime for BuiltinRuntime {
@@ -180,6 +205,13 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "SQLite provider state is unavailable".to_string())?;
                 sqlite_store_call(&sqlite, call)
+            }
+            "rust::axl::store::postgres" => {
+                let connection = self.postgres_connection(&call)?;
+                let mut postgres = connection
+                    .lock()
+                    .map_err(|_| "PostgreSQL provider state is unavailable".to_string())?;
+                postgres_store_call(&mut postgres, call)
             }
             "rust::axl::store::document" => {
                 let store = self.document_store(&call)?;
@@ -1227,6 +1259,95 @@ fn sqlite_store_call(connection: &Connection, call: ProviderCall<'_>) -> Result<
         }
         operation => Err(format!(
             "SQLite store does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
+fn postgres_store_call(client: &mut Client, call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "save" => {
+            let id = record_id(&call.input)?;
+            let payload = serde_json::to_string(&call.input).map_err(|error| error.to_string())?;
+            client
+                .execute(
+                    "INSERT INTO axl_records (provider, record_id, payload) VALUES ($1, $2, $3) \
+                     ON CONFLICT (provider, record_id) DO UPDATE SET payload = EXCLUDED.payload",
+                    &[&call.provider, &id, &payload],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(call.input)
+        }
+        "find" => {
+            let id = string_input(&call.input, "find")?;
+            let row = client
+                .query_opt(
+                    "SELECT payload FROM axl_records WHERE provider = $1 AND record_id = $2",
+                    &[&call.provider, &id],
+                )
+                .map_err(|error| error.to_string())?;
+            match row {
+                Some(row) => {
+                    let payload: String = row.get(0);
+                    serde_json::from_str(&payload).map_err(|error| error.to_string())
+                }
+                None => Err("not_found".into()),
+            }
+        }
+        "delete" => {
+            let id = string_input(&call.input, "delete")?;
+            let removed = client
+                .execute(
+                    "DELETE FROM axl_records WHERE provider = $1 AND record_id = $2",
+                    &[&call.provider, &id],
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(Value::Bool(removed > 0))
+        }
+        "list" => {
+            let rows = client
+                .query(
+                    "SELECT payload FROM axl_records WHERE provider = $1 ORDER BY record_id",
+                    &[&call.provider],
+                )
+                .map_err(|error| error.to_string())?;
+            let mut values = Vec::new();
+            for row in rows {
+                let payload: String = row.get(0);
+                values.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+            }
+            Ok(Value::Array(values))
+        }
+        "query" => {
+            let rows = client
+                .query(
+                    "SELECT payload FROM axl_records WHERE provider = $1 ORDER BY record_id",
+                    &[&call.provider],
+                )
+                .map_err(|error| error.to_string())?;
+            let mut values = Vec::new();
+            for row in rows {
+                let payload: String = row.get(0);
+                values.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+            }
+            store_query(values, &call.input)
+        }
+        "find_by" => {
+            let rows = client
+                .query(
+                    "SELECT payload FROM axl_records WHERE provider = $1 ORDER BY record_id",
+                    &[&call.provider],
+                )
+                .map_err(|error| error.to_string())?;
+            let mut values = Vec::new();
+            for row in rows {
+                let payload: String = row.get(0);
+                values.push(serde_json::from_str(&payload).map_err(|error| error.to_string())?);
+            }
+            store_find_by(values, &call.input)
+        }
+        operation => Err(format!(
+            "PostgreSQL store does not implement operation '{operation}' for {}",
             call.capacity
         )),
     }
@@ -3009,6 +3130,18 @@ fn initialize_sqlite(connection: &Connection) -> Result<(), String> {
         .map_err(|error| format!("cannot initialize SQLite schema: {error}"))
 }
 
+fn initialize_postgres(client: &mut Client) -> Result<(), String> {
+    client
+        .batch_execute(
+            "CREATE TABLE IF NOT EXISTS axl_records (\
+             provider TEXT NOT NULL, \
+             record_id TEXT NOT NULL, \
+             payload TEXT NOT NULL, \
+             PRIMARY KEY (provider, record_id));",
+        )
+        .map_err(|error| format!("cannot initialize PostgreSQL schema: {error}"))
+}
+
 fn record_id(value: &Value) -> Result<String, String> {
     value
         .as_object()
@@ -4473,6 +4606,113 @@ flow Query RecordQuery -> Result<RecordPage>
             assert_eq!(page["ok"]["items"][0]["id"], "q3");
         }
         drop(database.exists().then(|| std::fs::remove_file(&database)));
+    }
+
+    #[test]
+    fn postgres_store_query_filters_orders_pages_and_survives_restart() {
+        let url = match std::env::var("AXL_POSTGRES_URL") {
+            Ok(url) if !url.is_empty() => url,
+            _ => {
+                eprintln!("skipping postgres_store_query: AXL_POSTGRES_URL not set");
+                return;
+            }
+        };
+        let url_json = serde_json::to_string(&url).unwrap();
+        let source = format!(
+            r#"axl 4
+app PostgresQuery
+entity Record
+  id: uuid required
+  kind: text required
+  account: text required
+  occurred_at: text required
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+  op query RecordQuery -> Result<RecordPage> idempotent
+skill PostgresRecords provides RecordStore
+  native rust axl::store::postgres
+  config url: text = {url_json}
+  effect db.read
+  effect db.write
+flow Save Record -> Result<Record>
+  in store: RecordStore = PostgresRecords
+  call saved = store.save(input)?
+  return saved
+flow Query RecordQuery -> Result<RecordPage>
+  in store: RecordStore = PostgresRecords
+  call page = store.query(input)?
+  return page
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let suffix = format!(
+            "{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let records = [
+            json!({"id": format!("pg-q1-{suffix}"), "kind": "income", "account": "a1", "occurred_at": "2026-08-27T09:00:00Z"}),
+            json!({"id": format!("pg-q2-{suffix}"), "kind": "expense", "account": "a1", "occurred_at": "2026-08-27T10:00:00Z"}),
+            json!({"id": format!("pg-q3-{suffix}"), "kind": "income", "account": "a1", "occurred_at": "2026-08-27T11:00:00Z"}),
+        ];
+        {
+            let mut first = BuiltinRuntime::new().unwrap();
+            for record in &records {
+                let saved =
+                    evaluate_flow_with_runtime(&graph, "Save", record.clone(), &mut first).unwrap();
+                assert_eq!(saved["ok"]["id"], record["id"]);
+            }
+            let page = evaluate_flow_with_runtime(
+                &graph,
+                "Query",
+                json!({
+                    "filter": {"kind": "income", "account": "a1"},
+                    "order_by": "occurred_at",
+                    "direction": "desc",
+                    "limit": 1,
+                    "offset": 0
+                }),
+                &mut first,
+            )
+            .unwrap();
+            assert_eq!(page["ok"]["total"], 2);
+            assert_eq!(page["ok"]["limit"], 1);
+            assert_eq!(page["ok"]["offset"], 0);
+            assert_eq!(page["ok"]["items"][0]["id"], records[2]["id"]);
+        }
+        {
+            let mut second = BuiltinRuntime::new().unwrap();
+            let page = evaluate_flow_with_runtime(
+                &graph,
+                "Query",
+                json!({
+                    "filter": {"kind": "income", "account": "a1"},
+                    "order_by": "occurred_at",
+                    "direction": "desc",
+                    "limit": 1,
+                    "offset": 0
+                }),
+                &mut second,
+            )
+            .unwrap();
+            assert_eq!(page["ok"]["total"], 2);
+            assert_eq!(page["ok"]["items"][0]["id"], records[2]["id"]);
+        }
     }
 
     #[test]

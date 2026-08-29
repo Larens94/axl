@@ -270,13 +270,16 @@ compiler checks every expression, call argument and return type.
 The public Rust `ProviderRuntime` ABI receives provider, capacity,
 implementation, typed configuration, operation and JSON input. The built-in experiment implements
 generic `save`, `find`, `delete` and `list` operations for
-`rust::axl::store::memory`, `rust::axl::store::sqlite` and
+`rust::axl::store::memory`, `rust::axl::store::sqlite`,
+`rust::axl::store::postgres` and
 `rust::axl::store::document`. They are not tied to
 `Movement` or to the cashflow application. SQLite uses an in-memory connection
 when no path is configured and opens a durable file when the skill declares a
 `path` config. Document skills use the same path model: process-local JSON when
-unconfigured, a durable JSON object file when `path` is set. Independent
-runtimes configured with the same file observe the same records.
+unconfigured, a durable JSON object file when `path` is set. PostgreSQL skills
+require `config url` (typically `secret("AXL_POSTGRES_URL")`); connections are
+pooled per URL inside a runtime and independent runtimes share the same records.
+Independent runtimes configured with the same file observe the same records.
 
 Flows compose other flows with the same explicit `Result` propagation:
 
@@ -819,15 +822,18 @@ flow QueryDurableMovements MovementQuery -> Result<MovementPage>
   return page
 ```
 
-Runtime `rust::axl::store::memory`, `rust::axl::store::sqlite` and
+Runtime `rust::axl::store::memory`, `rust::axl::store::sqlite`,
+`rust::axl::store::postgres` and
 `rust::axl::store::document` interpret conventional fields: `filter` is equality
 on stored JSON fields (map values are text; numbers and booleans coerce),
 `order_by`/`direction` sort stably, `offset`/`limit` page after filtering.
 `total` is the filtered count before paging. Skills that declare `query` must
 use an idempotent entity → `Result<PageEntity>` contract (`AXL-D903`). No new
 Graph IR opcodes. Document skills persist a JSON object file when `config path`
-is set (same path model as SQLite). SQL pushdown and PostgreSQL/MySQL remain
-later Gate 3 work.
+is set (same path model as SQLite). SQL pushdown and MySQL remain
+later Gate 3 work. PostgreSQL store (`rust::axl::store::postgres`) is
+executable with the same save/find/query contract; see
+`examples/apps/postgres-boundary.axl`.
 
 Route inputs use the JSON body by default. A scalar or enum input can instead
 come directly from a named path, query, header or cookie value:
@@ -1172,6 +1178,7 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/apps/import-demo.axl` — multi-file import of a shared module.
 - `examples/apps/import-diamond-demo.axl` — diamond import merges shared email once.
 - `examples/apps/oauth-boundary.axl` — OAuth capacity + demo `rust::axl::auth::oauth` provider.
+- `examples/apps/postgres-boundary.axl` — PostgreSQL store + `rust::axl::store::postgres` provider.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.

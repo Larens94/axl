@@ -1,0 +1,7 @@
+{
+  "filter": { "kind": "income", "account": "a1" },
+  "order_by": "occurred_at",
+  "direction": "desc",
+  "limit": 5,
+  "offset": 0
+}

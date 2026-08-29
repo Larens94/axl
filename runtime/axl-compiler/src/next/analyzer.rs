@@ -315,7 +315,10 @@ fn check_skill(
         && native.target == "rust"
         && matches!(
             native.symbol.as_str(),
-            "axl::store::memory" | "axl::store::sqlite" | "axl::store::document"
+            "axl::store::memory"
+                | "axl::store::sqlite"
+                | "axl::store::postgres"
+                | "axl::store::document"
         )
     {
         match declarations.get(skill.provides.as_str()) {

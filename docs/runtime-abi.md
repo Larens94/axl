@@ -53,6 +53,7 @@ Flow Runtime 2 recognizes these implementation identifiers:
 ```text
 rust::axl::store::memory
 rust::axl::store::sqlite
+rust::axl::store::postgres
 rust::axl::store::document
 ```
 
@@ -62,7 +63,16 @@ skill. `query` accepts a single object with optional `filter`
 (`Map<text,text>` or JSON object text), `order_by`, `direction` (`asc`/`desc`),
 `limit` and `offset`, and returns `{ items, total, limit, offset }`. SQLite and
 document stores are in-memory when the skill has no `path`. A typed path makes
-them durable (SQLite database file or JSON object file):
+them durable (SQLite database file or JSON object file). PostgreSQL requires
+`config url`:
+
+```axl
+skill PostgresMovements provides MovementStore
+  native rust axl::store::postgres
+  config url: text = secret("AXL_POSTGRES_URL")
+```
+
+SQLite/document example:
 
 ```axl
 skill DurableMovements provides MovementStore

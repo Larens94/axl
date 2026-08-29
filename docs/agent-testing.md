@@ -746,10 +746,11 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - `ui` / `page` nodes lower to Graph IR and emit `axl-ui/1`;
 - `render` evaluates a bound flow and displays typed scalar/entity fields in HTML.
 
-It does not prove PostgreSQL/MySQL, document tx/migrate, routing shell, component
+It does not prove MySQL, document tx/migrate, routing shell, component
 registry, forms, tables or responsive admin UI (full Gate 4).
 HTTP execution, process-local memory, restart-durable configured SQLite and
-document JSON, typed multi-subscriber events, durable jobs, Cache get/put/invalidate,
+document JSON, PostgreSQL store (`postgres-boundary.axl` when `AXL_POSTGRES_URL`
+is set), typed multi-subscriber events, durable jobs, Cache get/put/invalidate,
 Logger/Metrics/Tracer observability, transaction commit/rollback, migration
 upgrade/downgrade, typed store queries and the minimal UI page slice are proven.
 Generated target files are not yet a deployable app. Capacity-backed rate-limit

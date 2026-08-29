@@ -1,0 +1,51 @@
+// PostgreSQL boundary sample — same store contract as memory/SQLite/document.
+// Runtime uses rust::axl::store::postgres with config url (secret ref in production).
+// Set AXL_POSTGRES_URL before eval (e.g. postgresql://user:pass@localhost/axl_test).
+axl 4
+app PostgresBoundary
+
+entity Record
+  id: uuid required
+  kind: text required
+  account: text required
+  occurred_at: text required
+
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+  op query RecordQuery -> Result<RecordPage> idempotent
+
+skill PostgresRecords provides RecordStore
+  native rust axl::store::postgres
+  config url: text = secret("AXL_POSTGRES_URL")
+  effect db.read
+  effect db.write
+  capability storage.postgres
+
+flow PostgresSaveDemo Record -> Result<Record>
+  in store: RecordStore = PostgresRecords
+  call saved = store.save(input)?
+  return saved
+
+flow PostgresFindDemo uuid -> Result<Record>
+  in store: RecordStore = PostgresRecords
+  call found = store.find(input)?
+  return found
+
+flow PostgresQueryDemo RecordQuery -> Result<RecordPage>
+  in store: RecordStore = PostgresRecords
+  call page = store.query(input)?
+  return page

@@ -189,6 +189,7 @@ Two general storage implementations exist today:
 |---|---|---|
 | `rust::axl::store::memory` | `save`, `find`, `delete`, `list`, `query` | one runtime |
 | `rust::axl::store::sqlite` | `save`, `find`, `delete`, `list`, `query` | in-memory by default; durable with `config path` |
+| `rust::axl::store::postgres` | `save`, `find`, `delete`, `list`, `query`, `find_by` | requires `config url` (e.g. `secret("AXL_POSTGRES_URL")`) |
 | `rust::axl::store::document` | `save`, `find`, `delete`, `list`, `query` | in-memory by default; durable JSON file with `config path` |
 
 Skill configuration is a checked, first-class graph surface. `config path:
