@@ -89,6 +89,7 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 - Nested `List<>` form rows still use flat workaround forms.
 - OAuth demo provider: `examples/apps/oauth-boundary.axl` exercises `rust::axl::auth::oauth` (`authorize_url` / `exchange`). Portal `/auth/oauth/start` and `/auth/oauth/callback` use `redirect` API routes.
 - Gate 4 UI **filter** primitive: `filter field = query.name` on list pages renders a GET filter bar (see `/clienti?stato=attivo`).
+- Gate 4 UI **pagination** primitive: `pagination limit|offset = query.name default N` on list pages; renderer emits prev/next when `*Page.total > limit`.
 - Package registry/lockfile remain open Gate 8 items.
 
 ## Verify

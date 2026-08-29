@@ -439,8 +439,20 @@ pub fn format(program: &Program) -> String {
                                     && filter.source == binding.source
                                     && filter.name == binding.name
                             });
+                            let is_pagination = page.pagination.iter().any(|pagination| {
+                                pagination.field == binding.target.as_deref().unwrap_or_default()
+                            });
                             if is_filter {
                                 output.push(format!("    filter {target} = {source}"));
+                            } else if is_pagination {
+                                let default = page
+                                    .pagination
+                                    .iter()
+                                    .find(|pagination| pagination.field == target)
+                                    .and_then(|pagination| pagination.default.as_deref())
+                                    .map(|value| format!(" default {value}"))
+                                    .unwrap_or_default();
+                                output.push(format!("    pagination {target} = {source}{default}"));
                             } else {
                                 output.push(format!("    bind {target} = {source}"));
                             }

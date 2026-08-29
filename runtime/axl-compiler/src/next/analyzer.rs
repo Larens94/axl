@@ -5083,6 +5083,21 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &filter_id, "owns", None));
         }
+        for (pagination_index, pagination) in page.pagination.iter().enumerate() {
+            let pagination_id = format!("{id}.ui_pagination.{pagination_index}");
+            let mut value = node(&pagination_id, "ui_pagination", &pagination.field);
+            value
+                .metadata
+                .insert("query_name".into(), pagination.query_name.clone());
+            if let Some(default) = &pagination.default {
+                value.metadata.insert("default".into(), default.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), pagination_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &pagination_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", page.flow),

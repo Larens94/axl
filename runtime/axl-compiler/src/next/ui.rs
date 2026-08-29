@@ -406,6 +406,106 @@ fn render_detail_card(fields: &[(String, String)]) -> String {
     )
 }
 
+fn apply_ui_pagination_defaults(
+    graph: &GraphIr,
+    page: &super::ir::GraphNode,
+    value: Value,
+) -> Result<Value, String> {
+    let Value::Object(map) = value else {
+        return Ok(value);
+    };
+    let input_type = page
+        .type_name
+        .as_deref()
+        .and_then(|value| value.split_once("->"))
+        .map(|value| value.0)
+        .ok_or_else(|| "ui_page_has_no_input_type".to_string())?;
+    let entity = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "entity" && node.name == input_type)
+        .ok_or_else(|| format!("composite_input_is_not_entity:{input_type}"))?;
+    let mut result = map.clone();
+    for pagination in children(graph, &page.id, "ui_pagination") {
+        let field = pagination.name.as_str();
+        if result.contains_key(field) {
+            continue;
+        }
+        let Some(default) = pagination.metadata.get("default") else {
+            return Err(format!("missing_query_parameter:{field}"));
+        };
+        let field_type = children(graph, &entity.id, "field")
+            .iter()
+            .find(|candidate| candidate.name == field)
+            .and_then(|candidate| candidate.type_name.as_deref())
+            .unwrap_or("int");
+        result.insert(
+            field.into(),
+            super::http::parse_bound_scalar(field_type, default)?,
+        );
+    }
+    Ok(Value::Object(result))
+}
+
+fn merge_query_param(query: &str, key: &str, value: &str) -> String {
+    let mut pairs = BTreeMap::new();
+    for pair in query.split('&').filter(|pair| !pair.is_empty()) {
+        if let Some((name, current)) = pair.split_once('=') {
+            pairs.insert(name.to_string(), current.to_string());
+        }
+    }
+    pairs.insert(key.to_string(), value.to_string());
+    pairs
+        .into_iter()
+        .map(|(name, value)| format!("{name}={value}"))
+        .collect::<Vec<_>>()
+        .join("&")
+}
+
+fn render_page_pagination(page_path: &str, request_path: &str, data: &Value) -> Option<String> {
+    let payload = data.get("ok").unwrap_or(data);
+    let Value::Object(map) = payload else {
+        return None;
+    };
+    let total = map.get("total")?.as_i64()?;
+    let limit = map.get("limit")?.as_i64()?;
+    let offset = map.get("offset")?.as_i64()?;
+    if limit <= 0 || total <= limit {
+        return None;
+    }
+    let base_path = page_path.split('?').next().unwrap_or(page_path);
+    let query = request_path
+        .split_once('?')
+        .map(|(_, query)| query)
+        .unwrap_or("");
+    let current_page = offset / limit + 1;
+    let total_pages = (total + limit - 1) / limit;
+    let prev_offset = (offset - limit).max(0);
+    let next_offset = offset + limit;
+    let prev_query = merge_query_param(query, "offset", &prev_offset.to_string());
+    let next_query = merge_query_param(query, "offset", &next_offset.to_string());
+    let mut controls = Vec::new();
+    if offset > 0 {
+        controls.push(format!(
+            r#"<a class="page-link" href="{base_path}?{prev_query}">Precedente</a>"#
+        ));
+    }
+    controls.push(format!(
+        r#"<span class="page-status">Pagina {current_page} di {total_pages}</span>"#
+    ));
+    if next_offset < total {
+        controls.push(format!(
+            r#"<a class="page-link" href="{base_path}?{next_query}">Successiva</a>"#
+        ));
+    }
+    Some(format!(
+        r#"  <nav class="pagination-bar" aria-label="Paginazione">
+    {}
+  </nav>"#,
+        controls.join("\n    ")
+    ))
+}
+
 fn render_page_filters(graph: &GraphIr, page: &super::ir::GraphNode, path: &str) -> Option<String> {
     let filters = children(graph, &page.id, "ui_filter");
     if filters.is_empty() {
@@ -451,7 +551,8 @@ fn render_page_html(
             .unwrap_or_else(|| render_detail_card(&collect_fields(graph, output_type, data)))
     } else if let Some(table) = render_items_table(graph, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
-        format!("{filters}{table}")
+        let pagination = render_page_pagination(path, path, data).unwrap_or_default();
+        format!("{filters}{table}{pagination}")
     } else {
         let fields = collect_fields(graph, output_type, data);
         render_detail_card(&fields)
@@ -1073,6 +1174,32 @@ fn dashboard_styles() -> &'static str {
       text-align: center;
       color: var(--muted);
     }
+    .filter-card .filter-form, .pagination-bar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+      padding: 1rem 1.35rem 1.35rem;
+    }
+    .filter-field input {
+      margin-left: 0.35rem;
+      padding: 0.45rem 0.65rem;
+      border: 1px solid var(--border);
+      border-radius: 0.65rem;
+      background: var(--surface-solid);
+      color: var(--text);
+      font: inherit;
+    }
+    .pagination-bar {
+      justify-content: flex-end;
+      border-top: 1px solid var(--border);
+    }
+    .page-link, .filter-reset {
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .page-status { color: var(--muted); font-size: 0.875rem; }
     .stack-form { padding: 1rem 1.35rem 1.35rem; }
     .field { margin-bottom: 1rem; }
     .field label {
@@ -1456,14 +1583,15 @@ fn bind_page_input(
             .get("path")
             .and_then(|pattern| super::http::match_http_path(pattern, path_only))
             .unwrap_or_default();
-        return super::http::bind_composite_input(
+        let bound = super::http::bind_composite_input(
             graph,
             page,
             explicit_input,
             &path_params,
             query,
             headers,
-        );
+        )?;
+        return apply_ui_pagination_defaults(graph, page, bound);
     }
     if source == "body" {
         return Ok(explicit_input);
