@@ -367,6 +367,7 @@ pub fn react_registry(graph: &GraphIr) -> String {
             "path": path,
             "flow": node.metadata.get("flow"),
             "layout": react_layout_for_path(&path),
+            "slot": "data.table",
         }));
     }
     for node in graph.nodes.iter().filter(|node| node.kind == "form") {
@@ -379,7 +380,72 @@ pub fn react_registry(graph: &GraphIr) -> String {
             "entity": entity,
             "submit": node.metadata.get("submit"),
             "layout": react_layout_for_path(&path),
+            "slot": "data.table",
         }));
+    }
+    for node in graph.nodes.iter().filter(|node| node.kind == "ui_drawer") {
+        let path = node.metadata.get("path").cloned().unwrap_or_default();
+        components.push(json!({
+            "kind": "drawer",
+            "name": "DrawerOverlay",
+            "path": path,
+            "flow": node.metadata.get("flow"),
+            "slot": "overlay.drawer",
+        }));
+    }
+    for node in graph.nodes.iter().filter(|node| node.kind == "ui_modal") {
+        let path = node.metadata.get("path").cloned().unwrap_or_default();
+        components.push(json!({
+            "kind": "modal",
+            "name": "ModalOverlay",
+            "path": path,
+            "flow": node.metadata.get("flow"),
+            "slot": "overlay.modal",
+        }));
+    }
+    for node in graph.nodes.iter().filter(|node| node.kind == "ui_slot") {
+        components.push(json!({
+            "kind": "slot",
+            "name": node.name,
+            "component": node.metadata.get("component"),
+            "slot": node.name,
+        }));
+    }
+    for kit in [
+        "kpi.card",
+        "data.table",
+        "overlay.drawer",
+        "overlay.modal",
+        "shell.sidebar",
+        "shell.bottomNav",
+        "state.empty",
+        "state.error",
+        "state.loading",
+    ] {
+        if !components.iter().any(|entry| {
+            entry
+                .get("slot")
+                .and_then(|value| value.as_str())
+                .is_some_and(|value| value == kit)
+                && entry.get("kind").and_then(|value| value.as_str()) == Some("slot")
+        }) {
+            let default_name = kit
+                .split('.')
+                .map(|part| {
+                    let mut chars = part.chars();
+                    match chars.next() {
+                        Some(first) => format!("{}{}", first.to_ascii_uppercase(), chars.as_str()),
+                        None => String::new(),
+                    }
+                })
+                .collect::<String>();
+            components.push(json!({
+                "kind": "slot",
+                "name": kit,
+                "component": format!("Default{default_name}"),
+                "slot": kit,
+            }));
+        }
     }
     components.sort_by(|left, right| {
         left.get("name")
@@ -394,6 +460,10 @@ export const axlComponentRegistry = {components} as const;
 
 export function axlComponentForPath(path: string) {{
   return axlComponentRegistry.find((entry) => entry.path === path);
+}}
+
+export function axlSlotComponent(slot: string) {{
+  return axlComponentRegistry.find((entry) => entry.kind === "slot" && entry.slot === slot);
 }}
 "#,
         components =

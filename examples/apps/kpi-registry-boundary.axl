@@ -1,0 +1,35 @@
+// Gate 4 KPI + component registry slots — dashboard KPIs from entity fields.
+axl 4
+app KpiRegistryBoundary
+
+entity HomePage
+  titolo: text required
+  messaggio: text required
+  totale_utenti: int required
+  ordini_aperti: int required
+
+flow PaginaHome unit -> Result<HomePage>
+  make home: HomePage
+    titolo = "Portale demo"
+    messaggio = "KPI da AXL"
+    totale_utenti = 12
+    ordini_aperti = 3
+  return home
+
+ui DashboardUi
+  slot kpi.card = DefaultKpiCard
+  slot data.table = DefaultDataTable
+  slot overlay.drawer = DefaultDrawer
+  slot overlay.modal = DefaultModal
+  slot shell.sidebar = DefaultSidebar
+  slot shell.bottomNav = DefaultBottomNav
+  slot state.empty = DefaultEmptyState
+  slot state.error = DefaultErrorState
+  slot state.loading = DefaultLoadingState
+  page / unit -> Result<HomePage> = PaginaHome
+    kpi totale_utenti "Utenti registrati" "Totale nel sistema"
+    kpi ordini_aperti "Ordini aperti" "In lavorazione"
+  page /clienti unit -> text = ListaClienti
+
+flow ListaClienti unit -> text
+  return "clienti"

@@ -83,6 +83,13 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                     .and_then(|value| value.parse::<usize>().ok())
                     .unwrap_or(usize::MAX)
             });
+            let mut slots = children(graph, &ui.id, "ui_slot");
+            slots.sort_by_key(|slot| {
+                slot.metadata
+                    .get("order")
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
+            });
             json!({
                 "name": ui.name,
                 "pages": pages.into_iter().map(|page| {
@@ -91,6 +98,13 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         .unwrap_or(("", ""));
                     let path = page.metadata.get("path").cloned().unwrap_or_default();
                     let template = path.contains('{').then(|| path.clone());
+                    let mut kpis = children(graph, &page.id, "ui_kpi");
+                    kpis.sort_by_key(|kpi| {
+                        kpi.metadata
+                            .get("order")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .unwrap_or(usize::MAX)
+                    });
                     json!({
                         "path": path,
                         "template": template,
@@ -106,6 +120,11 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         } else {
                             "app"
                         },
+                        "kpis": kpis.into_iter().map(|kpi| json!({
+                            "field": kpi.name,
+                            "label": kpi.metadata.get("label"),
+                            "hint": kpi.metadata.get("hint"),
+                        })).collect::<Vec<_>>(),
                     })
                 }).collect::<Vec<_>>(),
                 "forms": forms.into_iter().map(|form| {
@@ -165,6 +184,10 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "on": modal.metadata.get("on"),
                     })
                 }).collect::<Vec<_>>(),
+                "slots": slots.into_iter().map(|slot| json!({
+                    "name": slot.name,
+                    "component": slot.metadata.get("component"),
+                })).collect::<Vec<_>>(),
             })
         })
         .collect::<Vec<_>>();
@@ -175,6 +198,19 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
         "shell": {
             "desktop": "sidebar",
             "mobile": "bottom-nav",
+        },
+        "kit": {
+            "slots": [
+                "kpi.card",
+                "data.table",
+                "overlay.drawer",
+                "overlay.modal",
+                "shell.sidebar",
+                "shell.bottomNav",
+                "state.empty",
+                "state.error",
+                "state.loading"
+            ]
         },
         "uis": uis,
     })
@@ -524,35 +560,101 @@ fn payload_object(data: &Value) -> Option<&serde_json::Map<String, Value>> {
         .or_else(|| data.as_object())
 }
 
-fn render_home_dashboard(data: &Value) -> Option<String> {
+fn render_kpi_dashboard(
+    graph: &GraphIr,
+    page: &super::ir::GraphNode,
+    data: &Value,
+) -> Option<String> {
+    let mut kpis = children(graph, &page.id, "ui_kpi");
+    if kpis.is_empty() {
+        return None;
+    }
+    kpis.sort_by_key(|kpi| {
+        kpi.metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
     let map = payload_object(data)?;
-    let titolo = map.get("titolo").and_then(|v| v.as_str())?;
-    let messaggio = map.get("messaggio").and_then(|v| v.as_str()).unwrap_or("");
-    let totale = map
-        .get("totale_utenti")
-        .map(display_value)
-        .unwrap_or_else(|| "—".into());
-    Some(format!(
-        r#"  <section class="hero">
+    let hero = match (
+        map.get("titolo").and_then(|value| value.as_str()),
+        map.get("messaggio").and_then(|value| value.as_str()),
+    ) {
+        (Some(titolo), messaggio) => format!(
+            r#"  <section class="hero" data-slot="state.loading">
     <p class="eyebrow">Benvenuto</p>
     <h2 class="hero-title">{titolo}</h2>
     <p class="hero-subtitle">{messaggio}</p>
   </section>
-  <section class="stat-grid">
-    <article class="stat-card">
-      <p class="stat-label">Utenti registrati</p>
-      <p class="stat-value">{totale}</p>
-      <p class="stat-hint">Totale nel sistema</p>
-    </article>
-  </section>
-  <section class="quick-grid">
-    <a class="quick-card" href="/clienti/demo"><span class="quick-label">Clienti</span><span class="quick-hint">Anagrafica e CRM</span></a>
-    <a class="quick-card" href="/preventivi/demo"><span class="quick-label">Preventivi</span><span class="quick-hint">Offerte e workflow</span></a>
-    <a class="quick-card" href="/ordini/demo"><span class="quick-label">Ordini</span><span class="quick-hint">Conferme e stati</span></a>
-    <a class="quick-card" href="/login"><span class="quick-label">Accedi</span><span class="quick-hint">Sessione e permessi</span></a>
-    <a class="quick-card" href="/admin/utenti"><span class="quick-label">Admin</span><span class="quick-hint">Utenti e ruoli</span></a>
-  </section>"#
+"#,
+            titolo = html_escape(titolo),
+            messaggio = html_escape(messaggio.unwrap_or("")),
+        ),
+        _ => String::new(),
+    };
+    let cards = kpis
+        .into_iter()
+        .map(|kpi| {
+            let label = kpi
+                .metadata
+                .get("label")
+                .cloned()
+                .unwrap_or_else(|| kpi.name.clone());
+            let hint = kpi.metadata.get("hint").cloned().unwrap_or_default();
+            let value = map
+                .get(&kpi.name)
+                .map(display_value)
+                .unwrap_or_else(|| "—".into());
+            format!(
+                r#"    <article class="stat-card" data-slot="kpi.card">
+      <p class="stat-label">{label}</p>
+      <p class="stat-value">{value}</p>
+      <p class="stat-hint">{hint}</p>
+    </article>"#,
+                label = html_escape(&label),
+                value = html_escape(&value),
+                hint = html_escape(&hint),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let quick = render_quick_links(graph);
+    Some(format!(
+        "{hero}  <section class=\"stat-grid\">\n{cards}\n  </section>\n{quick}"
     ))
+}
+
+fn render_quick_links(graph: &GraphIr) -> String {
+    let links = collect_nav_links(graph)
+        .into_iter()
+        .filter(|(_, normalized, _, _, is_form)| !is_form && normalized != "/")
+        .take(5)
+        .collect::<Vec<_>>();
+    if links.is_empty() {
+        return String::new();
+    }
+    let cards = links
+        .into_iter()
+        .map(|(_, _, path, label, _)| {
+            format!(
+                r#"    <a class="quick-card" href="{path}"><span class="quick-label">{label}</span><span class="quick-hint">{path}</span></a>"#,
+                path = html_escape(&path),
+                label = html_escape(&label),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    format!("  <section class=\"quick-grid\">\n{cards}\n  </section>")
+}
+
+fn render_error_state(error: &Value) -> String {
+    format!(
+        r#"  <section class="card error-card" data-slot="state.error" role="alert">
+    <div class="card-header"><h2 class="card-title">Errore</h2></div>
+    <p class="empty-state">{message}</p>
+  </section>"#,
+        message = html_escape(&display_value(error)),
+    )
 }
 
 fn render_detail_card(fields: &[(String, String)]) -> String {
@@ -712,9 +814,10 @@ fn render_page_html(
 ) -> String {
     let title = format!("{app}{path}");
     let heading = page_heading(path);
-    let body = if strip_result(output_type) == "HomePage" {
-        render_home_dashboard(data)
-            .unwrap_or_else(|| render_detail_card(&collect_fields(graph, output_type, data)))
+    let body = if let Some(error) = data.get("error") {
+        render_error_state(error)
+    } else if let Some(dashboard) = render_kpi_dashboard(graph, page, data) {
+        dashboard
     } else if let Some(table) = render_items_table(graph, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
         let pagination = render_page_pagination(path, path, data).unwrap_or_default();
@@ -1421,6 +1524,10 @@ fn dashboard_styles() -> &'static str {
       text-align: center;
       color: var(--muted);
     }
+    .error-card {
+      border-color: color-mix(in srgb, #dc2626 35%, var(--border));
+    }
+    .error-card .card-title { color: #b91c1c; }
     .filter-card .filter-form, .pagination-bar {
       display: flex;
       flex-wrap: wrap;
@@ -1810,7 +1917,7 @@ fn render_items_table(
         return Some(
             r#"  <section class="card table-card">
     <div class="card-header"><h2 class="card-title">Elenco</h2></div>
-    <p class="empty-state">Nessun elemento da mostrare.</p>
+    <p class="empty-state" data-slot="state.empty">Nessun elemento da mostrare.</p>
   </section>"#
                 .into(),
         );
@@ -2366,6 +2473,43 @@ ui Screen
                 .html
                 .contains("aria-label=\"Navigazione principale\"")
         );
+    }
+
+    #[test]
+    fn render_page_emits_kpi_cards_and_slots() {
+        const SOURCE: &str = r#"axl 4
+app KpiUi
+entity HomePage
+  titolo: text required
+  messaggio: text required
+  totale_utenti: int required
+flow Home unit -> Result<HomePage>
+  make home: HomePage
+    titolo = "Ciao"
+    messaggio = "Demo"
+    totale_utenti = 7
+  return home
+ui Screen
+  slot kpi.card = DefaultKpiCard
+  page / unit -> Result<HomePage> = Home
+    kpi totale_utenti "Utenti" "Totale"
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(
+            manifest["uis"][0]["pages"][0]["kpis"][0]["field"],
+            "totale_utenti"
+        );
+        assert_eq!(manifest["uis"][0]["slots"][0]["name"], "kpi.card");
+        assert!(
+            manifest["kit"]["slots"]
+                .as_array()
+                .is_some_and(|slots| slots.iter().any(|slot| slot == "kpi.card"))
+        );
+        let rendered = render_page(&graph, "/", json!(null)).unwrap();
+        assert!(rendered.html.contains("data-slot=\"kpi.card\""));
+        assert!(rendered.html.contains("Utenti"));
+        assert!(rendered.html.contains(">7<"));
     }
 
     #[test]

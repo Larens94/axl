@@ -746,17 +746,16 @@ must reconstruct exactly the same canonical Semantic Graph IR.
 - `ui` / `page` nodes lower to Graph IR and emit `axl-ui/1`;
 - `render` evaluates a bound flow and displays typed scalar/entity fields in HTML.
 
-It does not prove routing shell, component
-registry, forms validation UX, KPI/charts or full responsive admin UI kit (Gate 4).
+It does not prove chart/timeline widgets or advanced forms validation UX (Gate 4 polish).
 HTTP execution, process-local memory, restart-durable configured SQLite and
 document JSON, PostgreSQL/MySQL store/tx/migrate (boundary samples when env URL
 is set), SQL pushdown store `query` on SQLite/PostgreSQL/MySQL
 (`sql-pushdown-boundary.axl`), document tx/migrate (`document-tx-boundary.axl`),
-UI drawer overlays (`drawer-boundary.axl`), UI modal overlays (`modal-boundary.axl`),
-mobile bottom nav shell (`bottom-nav-boundary.axl`), typed multi-subscriber
+UI drawer/modal overlays, mobile bottom nav, KPI + kit slots
+(`kpi-registry-boundary.axl`), typed multi-subscriber
 events, durable jobs, Cache get/put/invalidate, Logger/Metrics/Tracer
 observability, transaction commit/rollback, migration upgrade/downgrade, typed
-store queries and the minimal UI page slice are proven.
+store queries and the UI page slice are proven.
 Generated target files are not yet a deployable app. Capacity-backed rate-limit
 and CORS middleware are proven. Capacity-backed HS256 JWT auth is proven with
 demo config secrets. True secret references (Gate 8) are proven on portal auth/
@@ -764,5 +763,5 @@ vendite skills; OAuth demo provider is proven (`oauth-boundary.axl` →
 `authorize_url` + `exchange`). Password reset uses `EmailSender.latest` without
 returning the token in the API result. `hosts/portal-web` syncs `axl-ui/1`
 codegen. Gate 2 auth adapters are otherwise complete. Next Gate 3 target:
-pooling/health/timeout configuration. Next Gate 4 target:
-component registry slots and KPI/charts kit.
+pooling/health/timeout configuration. Next Gate 4 polish:
+chart/timeline widgets and advanced form validation UX. Next major gate: Gate 5 AI/vector.

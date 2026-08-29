@@ -3288,6 +3288,7 @@ fn check_ui(
         check_type(&page.input, &page.span, declarations, diagnostics);
         check_type(&page.output, &page.span, declarations, diagnostics);
         check_page_bindings(page, declarations, diagnostics);
+        check_page_kpis(page, declarations, diagnostics);
         match declarations.get(page.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
                 if flow.input != page.input || flow.output != page.output {
@@ -3623,6 +3624,109 @@ fn check_ui(
                     modal.span.clone(),
                 )
                 .expected("absolute path without query or fragment", on),
+            );
+        }
+    }
+    let mut slot_names = BTreeSet::new();
+    for slot in &ui.slots {
+        if !UI_KIT_SLOTS.contains(&slot.name.as_str()) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U923",
+                    "ui",
+                    format!("unknown UI kit slot '{}'", slot.name),
+                    slot.span.clone(),
+                )
+                .expected(
+                    "kpi.card|data.table|overlay.drawer|overlay.modal|shell.sidebar|shell.bottomNav|state.empty|state.error|state.loading",
+                    &slot.name,
+                ),
+            );
+        }
+        if !slot_names.insert(slot.name.as_str()) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U924",
+                "ui",
+                format!(
+                    "ui '{}' declares slot '{}' more than once",
+                    ui.name, slot.name
+                ),
+                slot.span.clone(),
+            ));
+        }
+    }
+}
+
+const UI_KIT_SLOTS: &[&str] = &[
+    "kpi.card",
+    "data.table",
+    "overlay.drawer",
+    "overlay.modal",
+    "shell.sidebar",
+    "shell.bottomNav",
+    "state.empty",
+    "state.error",
+    "state.loading",
+];
+
+fn check_page_kpis(
+    page: &UiPage,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if page.kpis.is_empty() {
+        return;
+    }
+    let output = page
+        .output
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(page.output.as_str());
+    let Some(Declaration::Entity(entity)) = declarations.get(output) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U922",
+                "ui",
+                format!("kpi pages require an entity output, found '{output}'"),
+                page.span.clone(),
+            )
+            .expected("Result<Entity> or Entity", &page.output),
+        );
+        return;
+    };
+    let mut fields = BTreeSet::new();
+    for kpi in &page.kpis {
+        if !fields.insert(kpi.field.as_str()) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U922",
+                "ui",
+                format!(
+                    "page '{}' declares kpi '{}' more than once",
+                    page.path, kpi.field
+                ),
+                kpi.span.clone(),
+            ));
+        }
+        if !entity.fields.iter().any(|field| field.name == kpi.field) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U922",
+                    "ui",
+                    format!(
+                        "kpi field '{}' is not on entity '{}'",
+                        kpi.field, entity.name
+                    ),
+                    kpi.span.clone(),
+                )
+                .expected(
+                    entity
+                        .fields
+                        .iter()
+                        .map(|field| field.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("|"),
+                    &kpi.field,
+                ),
             );
         }
     }
@@ -5271,6 +5375,17 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &pagination_id, "owns", None));
         }
+        for (kpi_index, kpi) in page.kpis.iter().enumerate() {
+            let kpi_id = format!("{id}.ui_kpi.{kpi_index}");
+            let mut value = node(&kpi_id, "ui_kpi", &kpi.field);
+            value.metadata.insert("label".into(), kpi.label.clone());
+            if let Some(hint) = &kpi.hint {
+                value.metadata.insert("hint".into(), hint.clone());
+            }
+            value.metadata.insert("order".into(), kpi_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &kpi_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", page.flow),
@@ -5372,6 +5487,16 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             "dispatch",
             Some(&format!("{}->{}", modal.input, modal.output)),
         ));
+    }
+    for (index, slot) in ui.slots.iter().enumerate() {
+        let id = format!("{ui_id}.slot.{index}");
+        let mut value = node(&id, "ui_slot", &slot.name);
+        value
+            .metadata
+            .insert("component".into(), slot.component.clone());
+        value.metadata.insert("order".into(), index.to_string());
+        graph.nodes.push(value);
+        graph.edges.push(edge(&ui_id, &id, "owns", None));
     }
 }
 

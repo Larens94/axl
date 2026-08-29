@@ -93,6 +93,7 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 - Gate 4 UI **drawer** primitive: `drawer /path/{id} In -> Out = Flow from path.id on /list` renders a side-panel overlay (`drawer-boundary.axl`).
 - Gate 4 UI **modal** primitive: `modal /path/{id}/confirm In -> Out = Flow from path.id on /list` renders a centered dialog overlay (`modal-boundary.axl`).
 - Gate 4 responsive shell: desktop sidebar + mobile `bottom-nav` from declared page routes (`bottom-nav-boundary.axl`; `shell.mobile` in `axl-ui/1`).
+- Gate 4 **KPI** + **kit slots**: `kpi field "Label" ["Hint"]` and `slot kpi.card = DefaultKpiCard` (`kpi-registry-boundary.axl`).
 - Package registry/lockfile remain open Gate 8 items.
 
 ## Verify

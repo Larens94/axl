@@ -518,6 +518,7 @@ pub struct Ui {
     pub actions: Vec<UiAction>,
     pub drawers: Vec<UiDrawer>,
     pub modals: Vec<UiModal>,
+    pub slots: Vec<UiSlot>,
     pub span: SourceSpan,
 }
 
@@ -526,6 +527,21 @@ pub struct UiPaginationBinding {
     pub field: String,
     pub query_name: String,
     pub default: Option<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiKpi {
+    pub field: String,
+    pub label: String,
+    pub hint: Option<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiSlot {
+    pub name: String,
+    pub component: String,
     pub span: SourceSpan,
 }
 
@@ -540,6 +556,7 @@ pub struct UiPage {
     pub bindings: Vec<HttpRequestBinding>,
     pub filters: Vec<HttpRequestBinding>,
     pub pagination: Vec<UiPaginationBinding>,
+    pub kpis: Vec<UiKpi>,
     pub span: SourceSpan,
 }
 

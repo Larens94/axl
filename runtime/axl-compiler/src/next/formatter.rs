@@ -458,6 +458,21 @@ pub fn format(program: &Program) -> String {
                             }
                         }
                     }
+                    for kpi in &page.kpis {
+                        let hint = kpi
+                            .hint
+                            .as_ref()
+                            .map(|value| format!(" \"{}\"", value.replace('"', "\\\"")))
+                            .unwrap_or_default();
+                        output.push(format!(
+                            "    kpi {} \"{}\"{hint}",
+                            kpi.field,
+                            kpi.label.replace('"', "\\\"")
+                        ));
+                    }
+                }
+                for slot in &ui.slots {
+                    output.push(format!("  slot {} = {}", slot.name, slot.component));
                 }
                 for form in &ui.forms {
                     let submit = form

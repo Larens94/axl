@@ -936,6 +936,23 @@ ui ClienteModalUi
 `render` and `serve` GET emit a centered dialog (`modal-panel`, `role="dialog"`) with a
 close link to `on`. See `examples/apps/modal-boundary.axl`.
 
+A page may declare KPIs over entity output fields. The HTML renderer emits a dashboard
+stat grid (`data-slot="kpi.card"`) instead of hardcoding domain labels:
+
+```axl
+ui DashboardUi
+  slot kpi.card = DefaultKpiCard
+  page / unit -> Result<HomePage> = PaginaHome
+    kpi totale_utenti "Utenti registrati" "Totale nel sistema"
+```
+
+UI kit **slots** bind replaceable host components (`kpi.card`, `data.table`,
+`overlay.drawer`, `overlay.modal`, `shell.sidebar`, `shell.bottomNav`,
+`state.empty`, `state.error`, `state.loading`). The `axl-ui/1` manifest lists
+`kit.slots` and per-ui bindings; React codegen exposes `axlSlotComponent`.
+See `examples/apps/kpi-registry-boundary.axl`. Result `error` payloads render an
+`state.error` card; empty lists use `state.empty`.
+
 A form binds an absolute path to an entity type and flow. The optional `submit` clause
 names the POST api route that receives the entity JSON; when omitted, the analyzer
 infers a POST route at the same path as the form. The optional `redirect` clause
@@ -1025,10 +1042,15 @@ Implemented UI diagnostics:
 | `AXL-U915` | page path binding cannot construct input type |
 | `AXL-U920` | duplicate drawer path in one `ui` |
 | `AXL-U921` | duplicate modal path in one `ui` |
+| `AXL-U922` | invalid or unknown kpi field on page output entity |
+| `AXL-U923` | unknown UI kit slot name |
+| `AXL-U924` | duplicate UI slot in one `ui` |
+| `AXL-P992` | kpi missing field / quoted label |
+| `AXL-P993` | invalid UI slot binding |
 
 Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`, `ui_action` = `57`,
 `route_guard` = `58`, `ui_drawer` = `59`, `ui_filter` = `60`, `ui_pagination` = `61`,
-`ui_modal` = `62`.
+`ui_modal` = `62`, `ui_kpi` = `63`, `ui_slot` = `64`.
 
 ## 3. Type system
 
@@ -1193,10 +1215,10 @@ ABI. HTTP Runtime 1 dispatches exact JSON routes through Axum. Durable persisten
 proven; Logger/Metrics/Tracer observability is proven through memory skills;
 capacity-backed transactions prove commit durability and rollback across memory
 and SQLite; capacity-backed migrations prove versioned schema history (up/down/
-status) with SQLite persistence across runtime recreate; the Gate 4 UI slice
-(`ui` / `page` / `form` / `drawer` / `modal`, `axl-ui/1`, `render`, sidebar +
-mobile bottom-nav shell) is executable; component registry slots and KPI/charts
-kit are not implemented yet.
+status) with SQLite persistence across runtime recreate; Gate 4 UI
+(`ui` / `page` / `form` / `drawer` / `modal` / `kpi` / `slot`, `axl-ui/1`, `render`,
+sidebar + mobile bottom-nav, kit registry slots, error/empty states) is executable;
+rich chart/timeline widgets and advanced form validation UX remain open.
 
 ## 10. Verified examples and guides
 
@@ -1220,6 +1242,7 @@ kit are not implemented yet.
 - `examples/apps/drawer-boundary.axl` — Gate 4 UI drawer overlay demo.
 - `examples/apps/modal-boundary.axl` — Gate 4 UI modal overlay demo.
 - `examples/apps/bottom-nav-boundary.axl` — Gate 4 responsive shell mobile bottom nav.
+- `examples/apps/kpi-registry-boundary.axl` — Gate 4 KPI cards + UI kit slots.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.

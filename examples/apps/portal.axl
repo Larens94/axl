@@ -155,8 +155,16 @@ api PortalRbacDemoApi
   post /rbac/clienti text -> Result<ClientePage> = PaginaClientiRbac from header.authorization
 
 ui AuthUi
+  slot kpi.card = DefaultKpiCard
+  slot data.table = DefaultDataTable
+  slot shell.sidebar = DefaultSidebar
+  slot shell.bottomNav = DefaultBottomNav
+  slot state.empty = DefaultEmptyState
+  slot state.error = DefaultErrorState
   page / unit -> Result<HomePage> = PaginaHome
+    kpi totale_utenti "Utenti registrati" "Totale nel sistema"
   page /home uuid -> Result<HomePage> = PaginaHomeUtentePortal from cookie.sid
+    kpi totale_utenti "Utenti registrati" "Totale nel sistema"
   form /login LoginInput -> Result<LoginResult> = LoginPortal submit /auth/login redirect /home
   form /register RegistrazioneInput -> Result<Utente> = RegistraPortal submit /auth/register redirect /login
   form /password-dimenticata RichiestaResetPasswordInput -> Result<ResetPasswordResult> = RichiediResetPassword submit /auth/password/reset-request redirect /reimposta-password

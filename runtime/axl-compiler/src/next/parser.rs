@@ -2514,6 +2514,7 @@ fn parse_ui(
     let mut actions = Vec::new();
     let mut drawers = Vec::new();
     let mut modals = Vec::new();
+    let mut slots = Vec::new();
     let mut cursor = 0;
     while cursor < body.len() {
         let line = &body[cursor];
@@ -2547,6 +2548,11 @@ fn parse_ui(
             cursor += 1;
             continue;
         }
+        if line.text.starts_with("slot ") {
+            parse_ui_slot(line, &mut slots, diagnostics);
+            cursor += 1;
+            continue;
+        }
         if line.text.starts_with("form ") {
             parse_ui_form(line, &mut forms, diagnostics);
             cursor += 1;
@@ -2572,6 +2578,7 @@ fn parse_ui(
         actions,
         drawers,
         modals,
+        slots,
         span: span(header),
     }));
 }
@@ -2668,10 +2675,18 @@ fn parse_ui_page_block(
     let mut bindings = initial_bindings;
     let mut filters = Vec::new();
     let mut pagination = Vec::new();
+    let mut kpis = Vec::new();
     let mut cursor = start + 1;
     let mut found_nested = false;
     while cursor < body.len() && body[cursor].indent > line.indent {
         let binding_line = &body[cursor];
+        if let Some(value) = binding_line.text.strip_prefix("kpi ") {
+            if let Some(kpi) = parse_ui_kpi(value.trim(), span(binding_line), diagnostics) {
+                kpis.push(kpi);
+            }
+            cursor += 1;
+            continue;
+        }
         let (kind, prefix) = if let Some(value) = binding_line.text.strip_prefix("pagination ") {
             ("pagination", value)
         } else if let Some(value) = binding_line.text.strip_prefix("filter ") {
@@ -2687,7 +2702,7 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]",
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]",
                     &binding_line.text,
                 ),
             );
@@ -2853,6 +2868,7 @@ fn parse_ui_page_block(
         bindings,
         filters,
         pagination,
+        kpis,
         span: span(line),
     });
     cursor
@@ -3066,6 +3082,119 @@ fn parse_ui_modal(line: &SourceLine, modals: &mut Vec<UiModal>, diagnostics: &mu
         input_source,
         input_name,
         on,
+        span: span(line),
+    });
+}
+
+fn parse_ui_kpi(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiKpi> {
+    let mut parts = source.split_whitespace();
+    let Some(field) = parts.next() else {
+        diagnostics.push(
+            Diagnostic::error("AXL-P992", "parse", "a UI kpi requires a field name", span)
+                .expected("kpi field \"Label\" [\"Hint\"]", source),
+        );
+        return None;
+    };
+    if !valid_name(field, false) {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P992",
+                "parse",
+                format!("invalid UI kpi field '{field}'"),
+                span,
+            )
+            .expected("identifier field name", field),
+        );
+        return None;
+    }
+    let rest = source[field.len()..].trim();
+    let Some((label, hint)) = parse_one_or_two_quoted_strings(rest) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P992",
+                "parse",
+                "a UI kpi requires a quoted label",
+                span,
+            )
+            .expected("kpi field \"Label\" [\"Hint\"]", source),
+        );
+        return None;
+    };
+    Some(UiKpi {
+        field: field.into(),
+        label,
+        hint,
+        span,
+    })
+}
+
+fn parse_one_or_two_quoted_strings(source: &str) -> Option<(String, Option<String>)> {
+    let (first, rest) = take_quoted_string(source)?;
+    let rest = rest.trim();
+    if rest.is_empty() {
+        return Some((first, None));
+    }
+    let (second, rest) = take_quoted_string(rest)?;
+    rest.trim().is_empty().then_some((first, Some(second)))
+}
+
+fn take_quoted_string(source: &str) -> Option<(String, &str)> {
+    let source = source.trim_start();
+    let inner = source.strip_prefix('"')?;
+    let mut escaped = false;
+    for (index, character) in inner.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if character == '\\' {
+            escaped = true;
+            continue;
+        }
+        if character == '"' {
+            let value = inner[..index].replace("\\\"", "\"").replace("\\\\", "\\");
+            return Some((value, &inner[index + 1..]));
+        }
+    }
+    None
+}
+
+fn parse_ui_slot(line: &SourceLine, slots: &mut Vec<UiSlot>, diagnostics: &mut Vec<Diagnostic>) {
+    let remainder = line.text["slot ".len()..].trim();
+    let Some((name, component)) = remainder.split_once('=') else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P993",
+                "parse",
+                "a UI slot binds a host component",
+                span(line),
+            )
+            .expected("slot kpi.card = DefaultKpiCard", &line.text),
+        );
+        return;
+    };
+    let name = name.trim();
+    let component = component.trim();
+    if name.is_empty()
+        || component.is_empty()
+        || !name
+            .split('.')
+            .all(|part| !part.is_empty() && valid_name(part, false))
+        || !valid_name(component, false)
+    {
+        diagnostics.push(
+            Diagnostic::error("AXL-P993", "parse", "invalid UI slot binding", span(line))
+                .expected("slot kpi.card = DefaultKpiCard", &line.text),
+        );
+        return;
+    }
+    slots.push(UiSlot {
+        name: name.into(),
+        component: component.into(),
         span: span(line),
     });
 }
@@ -3434,6 +3563,22 @@ fn parse_secret_ref(value: &str) -> Option<String> {
                 .and_then(|value| value.strip_suffix('\''))
         })?;
     (!name.is_empty()).then(|| name.to_string())
+}
+
+fn valid_name(value: &str, allow_dots: bool) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    value.split('.').all(|segment| {
+        (!segment.is_empty() || !allow_dots)
+            && segment
+                .chars()
+                .next()
+                .is_some_and(|character| character.is_ascii_alphabetic() || character == '_')
+            && segment.chars().all(|character| {
+                character.is_ascii_alphanumeric() || character == '_' || character == '-'
+            })
+    }) && (allow_dots || !value.contains('.'))
 }
 
 fn parse_request_source(value: &str) -> Option<(String, Option<String>)> {

@@ -1,0 +1,11 @@
+axl 4
+app InvalidKpi
+entity HomePage
+  titolo: text required
+flow Home unit -> Result<HomePage>
+  make home: HomePage
+    titolo = "x"
+  return home
+ui BadKpiUi
+  page / unit -> Result<HomePage> = Home
+    kpi missing_field "Broken"
