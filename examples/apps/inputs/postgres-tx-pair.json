@@ -1,0 +1,14 @@
+{
+  "first": {
+    "id": "pg-boundary-tx-c1",
+    "kind": "income",
+    "account": "a1",
+    "occurred_at": "2026-08-29T02:00:00Z"
+  },
+  "second": {
+    "id": "pg-boundary-tx-c2",
+    "kind": "income",
+    "account": "a1",
+    "occurred_at": "2026-08-29T02:01:00Z"
+  }
+}

@@ -94,10 +94,12 @@ Transaction adapters share that path model:
 ```text
 rust::axl::tx::memory
 rust::axl::tx::sqlite
+rust::axl::tx::postgres
 ```
 
 They implement `begin`, `commit` and `rollback`. SQLite store writes join an
-open transaction when the store skill uses the same `path` config. Memory
+open transaction when the store skill uses the same `path` config. PostgreSQL
+skills use the same `config url` as `rust::axl::store::postgres`. Memory
 transactions snapshot all in-process store maps and support nested savepoints.
 
 Migration adapters share that path model:
@@ -105,10 +107,12 @@ Migration adapters share that path model:
 ```text
 rust::axl::migrate::memory
 rust::axl::migrate::sqlite
+rust::axl::migrate::postgres
 ```
 
 They implement `up`, `down` and `status`. SQLite skills persist ordered rows in
 `axl_schema_history` and create/drop `axl_schema_<version>` marker tables.
+PostgreSQL skills share the same history table on the configured `url`.
 Memory skills keep ordered version lists in-process. Typed store `query`
 (filter/order/page) is executable on the same memory and SQLite store adapters.
 Additional database families and declared migration SQL scripts remain later

@@ -65,6 +65,7 @@ pub struct BuiltinRuntime {
     sqlite: Arc<Mutex<BTreeMap<String, Arc<Mutex<Connection>>>>>,
     sqlite_tx: Arc<Mutex<BTreeMap<String, Vec<String>>>>,
     postgres: Arc<Mutex<BTreeMap<String, Arc<Mutex<Client>>>>>,
+    postgres_tx: Arc<Mutex<BTreeMap<String, Vec<String>>>>,
     documents: Arc<Mutex<BTreeMap<String, Arc<Mutex<DocumentStoreMap>>>>>,
 }
 
@@ -99,6 +100,7 @@ impl BuiltinRuntime {
             sqlite: Arc::new(Mutex::new(BTreeMap::new())),
             sqlite_tx: Arc::new(Mutex::new(BTreeMap::new())),
             postgres: Arc::new(Mutex::new(BTreeMap::new())),
+            postgres_tx: Arc::new(Mutex::new(BTreeMap::new())),
             documents: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
@@ -166,13 +168,17 @@ impl BuiltinRuntime {
         Ok(connection)
     }
 
-    fn postgres_connection(&self, call: &ProviderCall<'_>) -> Result<Arc<Mutex<Client>>, String> {
-        let url = call
-            .config
+    fn postgres_connection_key(call: &ProviderCall<'_>) -> Result<String, String> {
+        call.config
             .get("url")
             .and_then(Value::as_str)
-            .ok_or_else(|| "postgres store requires config url".to_string())?;
-        let key = url.to_string();
+            .map(str::to_string)
+            .ok_or_else(|| "postgres provider requires config url".to_string())
+    }
+
+    fn postgres_connection(&self, call: &ProviderCall<'_>) -> Result<Arc<Mutex<Client>>, String> {
+        let key = Self::postgres_connection_key(call)?;
+        let url = key.as_str();
         let mut connections = self
             .postgres
             .lock()
@@ -249,6 +255,18 @@ impl ProviderRuntime for BuiltinRuntime {
                     .map_err(|_| "SQLite transaction state is unavailable".to_string())?;
                 sqlite_tx_call(&sqlite, &mut stack, &key, call)
             }
+            "rust::axl::tx::postgres" => {
+                let key = Self::postgres_connection_key(&call)?;
+                let connection = self.postgres_connection(&call)?;
+                let mut postgres = connection
+                    .lock()
+                    .map_err(|_| "PostgreSQL provider state is unavailable".to_string())?;
+                let mut stack = self
+                    .postgres_tx
+                    .lock()
+                    .map_err(|_| "PostgreSQL transaction state is unavailable".to_string())?;
+                postgres_tx_call(&mut postgres, &mut stack, &key, call)
+            }
             "rust::axl::migrate::memory" => {
                 let mut migrations = self
                     .migrations
@@ -262,6 +280,13 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "SQLite provider state is unavailable".to_string())?;
                 sqlite_migrate_call(&sqlite, call)
+            }
+            "rust::axl::migrate::postgres" => {
+                let connection = self.postgres_connection(&call)?;
+                let mut postgres = connection
+                    .lock()
+                    .map_err(|_| "PostgreSQL provider state is unavailable".to_string())?;
+                postgres_migrate_call(&mut postgres, call)
             }
             "rust::axl::auth::bearer" => bearer_auth_call(call),
             "rust::axl::auth::jwt" => jwt_auth_call(call),
@@ -1731,6 +1756,82 @@ fn sqlite_tx_call(
     }
 }
 
+fn postgres_tx_call(
+    client: &mut Client,
+    stacks: &mut BTreeMap<String, Vec<String>>,
+    key: &str,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let stack = stacks.entry(key.to_string()).or_default();
+    match call.operation {
+        "begin" => {
+            let tid = string_input(&call.input, "begin")?.to_string();
+            if stack.iter().any(|open| open == &tid) {
+                return Err("tx_already_open".into());
+            }
+            if stack.is_empty() {
+                client
+                    .batch_execute("BEGIN")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(&tid);
+                client
+                    .batch_execute(&format!("SAVEPOINT {savepoint}"))
+                    .map_err(|error| error.to_string())?;
+            }
+            stack.push(tid.clone());
+            Ok(Value::String(tid))
+        }
+        "commit" => {
+            let tid = string_input(&call.input, "commit")?;
+            let Some(open) = stack.last() else {
+                return Err("tx_not_open".into());
+            };
+            if open != tid {
+                return Err("tx_mismatch".into());
+            }
+            if stack.len() == 1 {
+                client
+                    .batch_execute("COMMIT")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(tid);
+                client
+                    .batch_execute(&format!("RELEASE SAVEPOINT {savepoint}"))
+                    .map_err(|error| error.to_string())?;
+            }
+            stack.pop();
+            Ok(Value::Null)
+        }
+        "rollback" => {
+            let tid = string_input(&call.input, "rollback")?;
+            let Some(open) = stack.last() else {
+                return Err("tx_not_open".into());
+            };
+            if open != tid {
+                return Err("tx_mismatch".into());
+            }
+            if stack.len() == 1 {
+                client
+                    .batch_execute("ROLLBACK")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(tid);
+                client
+                    .batch_execute(&format!(
+                        "ROLLBACK TO SAVEPOINT {savepoint}; RELEASE SAVEPOINT {savepoint}"
+                    ))
+                    .map_err(|error| error.to_string())?;
+            }
+            stack.pop();
+            Ok(Value::Null)
+        }
+        operation => Err(format!(
+            "PostgreSQL transaction does not implement operation '{operation}'"
+        )),
+    }
+}
+
 fn sqlite_savepoint_name(tid: &str) -> String {
     let safe: String = tid
         .chars()
@@ -1886,6 +1987,94 @@ fn sqlite_migrate_call(connection: &Connection, call: ProviderCall<'_>) -> Resul
         }
         operation => Err(format!(
             "SQLite migration does not implement operation '{operation}'"
+        )),
+    }
+}
+
+fn postgres_migrate_call(client: &mut Client, call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "up" => {
+            let version = string_input(&call.input, "up")?.to_string();
+            if version.is_empty() || version == "0" {
+                return Err("invalid_version".into());
+            }
+            let already = client
+                .query_opt(
+                    "SELECT 1 FROM axl_schema_history WHERE provider = $1 AND version = $2",
+                    &[&call.provider, &version],
+                )
+                .map_err(|error| error.to_string())?;
+            if already.is_some() {
+                return Err("already_applied".into());
+            }
+            let row = client
+                .query_one(
+                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM axl_schema_history WHERE provider = $1",
+                    &[&call.provider],
+                )
+                .map_err(|error| error.to_string())?;
+            let next_seq: i64 = row.get(0);
+            client
+                .execute(
+                    "INSERT INTO axl_schema_history (provider, version, seq) VALUES ($1, $2, $3)",
+                    &[&call.provider, &version, &next_seq],
+                )
+                .map_err(|error| error.to_string())?;
+            let marker = sqlite_migration_marker(&version);
+            client
+                .batch_execute(&format!(
+                    "CREATE TABLE IF NOT EXISTS {marker} (applied INTEGER NOT NULL DEFAULT 1)"
+                ))
+                .map_err(|error| error.to_string())?;
+            Ok(Value::String(version))
+        }
+        "down" => {
+            let version = string_input(&call.input, "down")?.to_string();
+            let row = client
+                .query_opt(
+                    "SELECT version FROM axl_schema_history WHERE provider = $1 \
+                     ORDER BY seq DESC LIMIT 1",
+                    &[&call.provider],
+                )
+                .map_err(|error| error.to_string())?;
+            let Some(row) = row else {
+                return Err("nothing_to_rollback".into());
+            };
+            let head: String = row.get(0);
+            if head != version {
+                return Err("not_head".into());
+            }
+            client
+                .execute(
+                    "DELETE FROM axl_schema_history WHERE provider = $1 AND version = $2",
+                    &[&call.provider, &version],
+                )
+                .map_err(|error| error.to_string())?;
+            let marker = sqlite_migration_marker(&version);
+            client
+                .batch_execute(&format!("DROP TABLE IF EXISTS {marker}"))
+                .map_err(|error| error.to_string())?;
+            Ok(Value::String(version))
+        }
+        "status" => {
+            if !call.input.is_null() {
+                return Err("migration status requires unit".into());
+            }
+            match client.query_opt(
+                "SELECT version FROM axl_schema_history WHERE provider = $1 \
+                 ORDER BY seq DESC LIMIT 1",
+                &[&call.provider],
+            ) {
+                Ok(Some(row)) => {
+                    let version: String = row.get(0);
+                    Ok(Value::String(version))
+                }
+                Ok(None) => Ok(Value::String("0".into())),
+                Err(error) => Err(error.to_string()),
+            }
+        }
+        operation => Err(format!(
+            "PostgreSQL migration does not implement operation '{operation}'"
         )),
     }
 }
@@ -3137,7 +3326,14 @@ fn initialize_postgres(client: &mut Client) -> Result<(), String> {
              provider TEXT NOT NULL, \
              record_id TEXT NOT NULL, \
              payload TEXT NOT NULL, \
-             PRIMARY KEY (provider, record_id));",
+             PRIMARY KEY (provider, record_id));\
+             CREATE TABLE IF NOT EXISTS axl_schema_history (\
+             provider TEXT NOT NULL, \
+             version TEXT NOT NULL, \
+             seq INTEGER NOT NULL, \
+             PRIMARY KEY (provider, version));\
+             CREATE UNIQUE INDEX IF NOT EXISTS axl_schema_history_seq \
+             ON axl_schema_history (provider, seq);",
         )
         .map_err(|error| format!("cannot initialize PostgreSQL schema: {error}"))
 }
@@ -4713,6 +4909,182 @@ flow Query RecordQuery -> Result<RecordPage>
             assert_eq!(page["ok"]["total"], 2);
             assert_eq!(page["ok"]["items"][0]["id"], records[2]["id"]);
         }
+    }
+
+    #[test]
+    fn postgres_transaction_commit_survives_restart_and_rollback_hides_writes() {
+        let url = match std::env::var("AXL_POSTGRES_URL") {
+            Ok(url) if !url.is_empty() => url,
+            _ => {
+                eprintln!("skipping postgres_transaction: AXL_POSTGRES_URL not set");
+                return;
+            }
+        };
+        let url_json = serde_json::to_string(&url).unwrap();
+        let suffix = format!(
+            "{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let source = format!(
+            r#"axl 4
+app PostgresTx
+entity Record
+  id: uuid required
+  value: text required
+entity RecordPair
+  first: Record required
+  second: Record required
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+capacity TransactionManager
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+skill PostgresRecords provides RecordStore
+  native rust axl::store::postgres
+  config url: text = {url_json}
+  effect db.read
+  effect db.write
+skill PostgresTx provides TransactionManager
+  native rust axl::tx::postgres
+  config url: text = {url_json}
+  effect db.write
+flow CommitTwo RecordPair -> Result<Record>
+  in tx: TransactionManager = PostgresTx
+  in store: RecordStore = PostgresRecords
+  call tid = tx.begin("commit-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.commit(tid)?
+  return second
+flow RollbackTwo RecordPair -> Result<unit>
+  in tx: TransactionManager = PostgresTx
+  in store: RecordStore = PostgresRecords
+  call tid = tx.begin("rollback-two")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.rollback(tid)?
+  return done
+flow Find uuid -> Result<Record>
+  in store: RecordStore = PostgresRecords
+  call found = store.find(input)?
+  return found
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let commit_pair = json!({
+            "first": {"id": format!("pg-tx-c1-{suffix}"), "value": "one"},
+            "second": {"id": format!("pg-tx-c2-{suffix}"), "value": "two"}
+        });
+        {
+            let mut first = BuiltinRuntime::new().unwrap();
+            let saved =
+                evaluate_flow_with_runtime(&graph, "CommitTwo", commit_pair, &mut first).unwrap();
+            assert_eq!(saved["ok"]["id"], format!("pg-tx-c2-{suffix}"));
+        }
+        {
+            let mut second = BuiltinRuntime::new().unwrap();
+            let found = evaluate_flow_with_runtime(
+                &graph,
+                "Find",
+                json!(format!("pg-tx-c1-{suffix}")),
+                &mut second,
+            )
+            .unwrap();
+            assert_eq!(found["ok"]["value"], "one");
+        }
+
+        let rollback_pair = json!({
+            "first": {"id": format!("pg-tx-r1-{suffix}"), "value": "gone"},
+            "second": {"id": format!("pg-tx-r2-{suffix}"), "value": "also-gone"}
+        });
+        {
+            let mut runtime = BuiltinRuntime::new().unwrap();
+            let rolled =
+                evaluate_flow_with_runtime(&graph, "RollbackTwo", rollback_pair, &mut runtime)
+                    .unwrap();
+            assert_eq!(rolled, json!({"ok": null}));
+        }
+        {
+            let mut runtime = BuiltinRuntime::new().unwrap();
+            let missing = evaluate_flow_with_runtime(
+                &graph,
+                "Find",
+                json!(format!("pg-tx-r1-{suffix}")),
+                &mut runtime,
+            )
+            .unwrap();
+            assert_eq!(missing["error"], "not_found");
+        }
+    }
+
+    #[test]
+    fn postgres_migration_up_survives_restart_and_down_rolls_back() {
+        let url = match std::env::var("AXL_POSTGRES_URL") {
+            Ok(url) if !url.is_empty() => url,
+            _ => {
+                eprintln!("skipping postgres_migration: AXL_POSTGRES_URL not set");
+                return;
+            }
+        };
+        let url_json = serde_json::to_string(&url).unwrap();
+        let suffix = format!(
+            "{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        let v1 = format!("pg-v1-{suffix}");
+        let v2 = format!("pg-v2-{suffix}");
+        let source = format!(
+            r#"axl 4
+app PostgresMigrate
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
+skill PostgresMigrations provides MigrationRunner
+  native rust axl::migrate::postgres
+  config url: text = {url_json}
+  effect db.write
+flow Apply text -> Result<text>
+  in migrations: MigrationRunner = PostgresMigrations
+  call version = migrations.up(input)?
+  return version
+flow Rollback text -> Result<text>
+  in migrations: MigrationRunner = PostgresMigrations
+  call version = migrations.down(input)?
+  return version
+flow Status unit -> Result<text>
+  in migrations: MigrationRunner = PostgresMigrations
+  call version = migrations.status(input)?
+  return version
+"#
+        );
+        let graph = compile_source(&source).unwrap().graph;
+        let mut runtime = BuiltinRuntime::new().unwrap();
+        let applied_v1 =
+            evaluate_flow_with_runtime(&graph, "Apply", json!(v1), &mut runtime).unwrap();
+        assert_eq!(applied_v1["ok"], v1);
+        let applied_v2 =
+            evaluate_flow_with_runtime(&graph, "Apply", json!(v2), &mut runtime).unwrap();
+        assert_eq!(applied_v2["ok"], v2);
+        let status =
+            evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut runtime).unwrap();
+        assert_eq!(status["ok"], v2);
+        let rolled =
+            evaluate_flow_with_runtime(&graph, "Rollback", json!(v2), &mut runtime).unwrap();
+        assert_eq!(rolled["ok"], v2);
+        let status =
+            evaluate_flow_with_runtime(&graph, "Status", Value::Null, &mut runtime).unwrap();
+        assert_eq!(status["ok"], v1);
     }
 
     #[test]

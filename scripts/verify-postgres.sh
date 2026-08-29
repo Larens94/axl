@@ -23,4 +23,14 @@ echo "== eval PostgresSaveDemo + PostgresFindDemo + PostgresQueryDemo =="
 "${BIN[@]}" eval examples/apps/postgres-boundary.axl PostgresQueryDemo examples/apps/inputs/postgres-query.json \
   | jq -e '.ok.total >= 1 and .ok.items[0].id == "pg-demo-1"'
 
+echo "== eval PostgresTxCommitDemo (transaction commit) =="
+"${BIN[@]}" eval examples/apps/postgres-boundary.axl PostgresTxCommitDemo examples/apps/inputs/postgres-tx-pair.json \
+  | jq -e '.ok.id == "pg-boundary-tx-c2"'
+
+echo "== eval PostgresMigrateUpDemo + PostgresMigrateStatusDemo =="
+"${BIN[@]}" eval examples/apps/postgres-boundary.axl PostgresMigrateUpDemo examples/apps/inputs/postgres-migrate-v1.json \
+  | jq -e '.ok == "pg-boundary-migrate-v1"'
+"${BIN[@]}" eval examples/apps/postgres-boundary.axl PostgresMigrateStatusDemo examples/apps/inputs/unit.json \
+  | jq -e '.ok == "pg-boundary-migrate-v1"'
+
 echo "OK postgres gates"

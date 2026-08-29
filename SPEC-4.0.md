@@ -831,8 +831,10 @@ on stored JSON fields (map values are text; numbers and booleans coerce),
 use an idempotent entity → `Result<PageEntity>` contract (`AXL-D903`). No new
 Graph IR opcodes. Document skills persist a JSON object file when `config path`
 is set (same path model as SQLite). SQL pushdown and MySQL remain
-later Gate 3 work. PostgreSQL store (`rust::axl::store::postgres`) is
-executable with the same save/find/query contract; see
+later Gate 3 work. PostgreSQL store (`rust::axl::store::postgres`),
+transactions (`rust::axl::tx::postgres`) and migrations
+(`rust::axl::migrate::postgres`) are executable with the same save/find/query and
+begin/commit/rollback and up/down/status contracts; see
 `examples/apps/postgres-boundary.axl`.
 
 Route inputs use the JSON body by default. A scalar or enum input can instead
@@ -1178,7 +1180,7 @@ shell, component registry and admin UI kit are not implemented yet.
 - `examples/apps/import-demo.axl` — multi-file import of a shared module.
 - `examples/apps/import-diamond-demo.axl` — diamond import merges shared email once.
 - `examples/apps/oauth-boundary.axl` — OAuth capacity + demo `rust::axl::auth::oauth` provider.
-- `examples/apps/postgres-boundary.axl` — PostgreSQL store + `rust::axl::store::postgres` provider.
+- `examples/apps/postgres-boundary.axl` — PostgreSQL store, tx and migrate providers.
 - `examples/modules/math-lib.axl` — imported balance helpers.
 - `hosts/portal-web` — Vite React host for `axl-ui/1` codegen (cookie proxy).
 - `examples/next/crm.axl` — composed CRM graph.

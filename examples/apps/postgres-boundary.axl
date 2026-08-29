@@ -1,5 +1,5 @@
-// PostgreSQL boundary sample — same store contract as memory/SQLite/document.
-// Runtime uses rust::axl::store::postgres with config url (secret ref in production).
+// PostgreSQL boundary sample — store, transactions and migrations.
+// Runtime: rust::axl::store::postgres, axl::tx::postgres, axl::migrate::postgres
 // Set AXL_POSTGRES_URL before eval (e.g. postgresql://user:pass@localhost/axl_test).
 axl 4
 app PostgresBoundary
@@ -23,15 +23,41 @@ entity RecordPage
   limit: int required
   offset: int required
 
+entity RecordPair
+  first: Record required
+  second: Record required
+
 capacity RecordStore
   op save Record -> Result<Record>
   op find uuid -> Result<Record> idempotent
   op query RecordQuery -> Result<RecordPage> idempotent
 
+capacity TransactionManager
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
+
 skill PostgresRecords provides RecordStore
   native rust axl::store::postgres
   config url: text = secret("AXL_POSTGRES_URL")
   effect db.read
+  effect db.write
+  capability storage.postgres
+
+skill PostgresTransactions provides TransactionManager
+  native rust axl::tx::postgres
+  config url: text = secret("AXL_POSTGRES_URL")
+  effect db.write
+  capability storage.postgres
+
+skill PostgresMigrations provides MigrationRunner
+  native rust axl::migrate::postgres
+  config url: text = secret("AXL_POSTGRES_URL")
   effect db.write
   capability storage.postgres
 
@@ -49,3 +75,36 @@ flow PostgresQueryDemo RecordQuery -> Result<RecordPage>
   in store: RecordStore = PostgresRecords
   call page = store.query(input)?
   return page
+
+flow PostgresTxCommitDemo RecordPair -> Result<Record>
+  in tx: TransactionManager = PostgresTransactions
+  in store: RecordStore = PostgresRecords
+  call tid = tx.begin("pg-commit")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.commit(tid)?
+  return second
+
+flow PostgresTxRollbackDemo RecordPair -> Result<unit>
+  in tx: TransactionManager = PostgresTransactions
+  in store: RecordStore = PostgresRecords
+  call tid = tx.begin("pg-rollback")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.rollback(tid)?
+  return done
+
+flow PostgresMigrateUpDemo text -> Result<text>
+  in migrations: MigrationRunner = PostgresMigrations
+  call version = migrations.up(input)?
+  return version
+
+flow PostgresMigrateDownDemo text -> Result<text>
+  in migrations: MigrationRunner = PostgresMigrations
+  call version = migrations.down(input)?
+  return version
+
+flow PostgresMigrateStatusDemo unit -> Result<text>
+  in migrations: MigrationRunner = PostgresMigrations
+  call version = migrations.status(input)?
+  return version
