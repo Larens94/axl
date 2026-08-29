@@ -206,8 +206,7 @@ pub fn render_page_with_runtime(
     let input = bind_page_input(graph, page, path, input, headers)?;
     let data = runtime::evaluate_flow_with_runtime(graph, &flow, input, provider_runtime)
         .map_err(|error| error.0)?;
-    let sidebar = render_sidebar(graph, path);
-    let html = render_page_html(graph, page, &graph.app, path, &output_type, &data, &sidebar);
+    let html = render_page_html(graph, page, &graph.app, path, &output_type, &data);
     Ok(UiRenderResult {
         path: path.into(),
         flow,
@@ -244,16 +243,7 @@ pub fn render_drawer_with_runtime(
         .get("on")
         .cloned()
         .unwrap_or_else(|| "/".into());
-    let sidebar = render_sidebar(graph, &close_href);
-    let html = render_drawer_html(
-        graph,
-        &graph.app,
-        path,
-        &output_type,
-        &data,
-        &sidebar,
-        &close_href,
-    );
+    let html = render_drawer_html(graph, &graph.app, path, &output_type, &data, &close_href);
     Ok(UiRenderResult {
         path: path.into(),
         flow,
@@ -289,16 +279,7 @@ pub fn render_modal_with_runtime(
         .get("on")
         .cloned()
         .unwrap_or_else(|| "/".into());
-    let sidebar = render_sidebar(graph, &close_href);
-    let html = render_modal_html(
-        graph,
-        &graph.app,
-        path,
-        &output_type,
-        &data,
-        &sidebar,
-        &close_href,
-    );
+    let html = render_modal_html(graph, &graph.app, path, &output_type, &data, &close_href);
     Ok(UiRenderResult {
         path: path.into(),
         flow,
@@ -340,8 +321,7 @@ pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, St
         .get("submit")
         .cloned()
         .ok_or_else(|| "ui_form_has_no_submit".to_string())?;
-    let sidebar = render_sidebar(graph, path);
-    let html = render_form_html(graph, &graph.app, path, &entity, &submit, &sidebar);
+    let html = render_form_html(graph, &graph.app, path, &entity, &submit);
     Ok(UiFormRenderResult {
         path: path.into(),
         entity,
@@ -729,7 +709,6 @@ fn render_page_html(
     path: &str,
     output_type: &str,
     data: &Value,
-    sidebar: &str,
 ) -> String {
     let title = format!("{app}{path}");
     let heading = page_heading(path);
@@ -754,17 +733,7 @@ fn render_page_html(
     } else {
         ""
     };
-    let bottom_nav = render_bottom_nav(graph, path);
-    wrap_html(
-        app,
-        path,
-        &title,
-        &heading,
-        sidebar,
-        &bottom_nav,
-        &content,
-        body_class,
-    )
+    wrap_html(graph, path, &title, &heading, path, &content, body_class)
 }
 
 fn render_drawer_html(
@@ -773,7 +742,6 @@ fn render_drawer_html(
     path: &str,
     output_type: &str,
     data: &Value,
-    sidebar: &str,
     close_href: &str,
 ) -> String {
     let title = format!("{app}{path}");
@@ -807,16 +775,8 @@ fn render_drawer_html(
     } else {
         " drawer-open"
     };
-    let bottom_nav = render_bottom_nav(graph, close_href);
     wrap_html(
-        app,
-        path,
-        &title,
-        &heading,
-        sidebar,
-        &bottom_nav,
-        &content,
-        body_class,
+        graph, path, &title, &heading, close_href, &content, body_class,
     )
 }
 
@@ -826,7 +786,6 @@ fn render_modal_html(
     path: &str,
     output_type: &str,
     data: &Value,
-    sidebar: &str,
     close_href: &str,
 ) -> String {
     let title = format!("{app}{path}");
@@ -860,16 +819,8 @@ fn render_modal_html(
     } else {
         " modal-open"
     };
-    let bottom_nav = render_bottom_nav(graph, close_href);
     wrap_html(
-        app,
-        path,
-        &title,
-        &heading,
-        sidebar,
-        &bottom_nav,
-        &content,
-        body_class,
+        graph, path, &title, &heading, close_href, &content, body_class,
     )
 }
 
@@ -1056,14 +1007,7 @@ fn find_route_by_template<'a>(
     })
 }
 
-fn render_form_html(
-    graph: &GraphIr,
-    app: &str,
-    path: &str,
-    entity: &str,
-    submit: &str,
-    sidebar: &str,
-) -> String {
+fn render_form_html(graph: &GraphIr, app: &str, path: &str, entity: &str, submit: &str) -> String {
     let title = format!("{app}{path}");
     let heading = page_heading(path);
     let fields = entity_fields(graph, entity);
@@ -1094,17 +1038,7 @@ fn render_form_html(
     } else {
         ""
     };
-    let bottom_nav = render_bottom_nav(graph, path);
-    wrap_html(
-        app,
-        path,
-        &title,
-        &heading,
-        sidebar,
-        &bottom_nav,
-        &body,
-        body_class,
-    )
+    wrap_html(graph, path, &title, &heading, path, &body, body_class)
 }
 
 fn render_form_field(graph: &GraphIr, field: &super::ir::GraphNode) -> String {
@@ -1756,16 +1690,17 @@ fn wrap_html_guest(
 }
 
 fn wrap_html(
-    app: &str,
+    graph: &GraphIr,
     page_path: &str,
     document_title: &str,
     heading: &str,
-    sidebar: &str,
-    bottom_nav: &str,
+    nav_focus: &str,
     body: &str,
     body_class: &str,
 ) -> String {
     let breadcrumb = page_breadcrumb(page_path);
+    let sidebar = render_sidebar(graph, nav_focus);
+    let bottom_nav = render_bottom_nav(graph, nav_focus);
     format!(
         r#"<!DOCTYPE html>
 <html lang="it">
@@ -1798,6 +1733,7 @@ fn wrap_html(
 "#,
         styles = dashboard_styles(),
         body_class = body_class.trim(),
+        app = graph.app,
     )
 }
 
