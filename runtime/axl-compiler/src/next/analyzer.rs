@@ -259,7 +259,11 @@ fn check_skill(
         && native.target == "rust"
         && matches!(
             native.symbol.as_str(),
-            "axl::tx::memory" | "axl::tx::sqlite" | "axl::tx::postgres"
+            "axl::tx::memory"
+                | "axl::tx::sqlite"
+                | "axl::tx::postgres"
+                | "axl::tx::mysql"
+                | "axl::tx::document"
         )
     {
         match declarations.get(skill.provides.as_str()) {
@@ -287,7 +291,11 @@ fn check_skill(
         && native.target == "rust"
         && matches!(
             native.symbol.as_str(),
-            "axl::migrate::memory" | "axl::migrate::sqlite" | "axl::migrate::postgres"
+            "axl::migrate::memory"
+                | "axl::migrate::sqlite"
+                | "axl::migrate::postgres"
+                | "axl::migrate::mysql"
+                | "axl::migrate::document"
         )
     {
         match declarations.get(skill.provides.as_str()) {
@@ -318,6 +326,7 @@ fn check_skill(
             "axl::store::memory"
                 | "axl::store::sqlite"
                 | "axl::store::postgres"
+                | "axl::store::mysql"
                 | "axl::store::document"
         )
     {

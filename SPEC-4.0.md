@@ -272,6 +272,7 @@ implementation, typed configuration, operation and JSON input. The built-in expe
 generic `save`, `find`, `delete` and `list` operations for
 `rust::axl::store::memory`, `rust::axl::store::sqlite`,
 `rust::axl::store::postgres` and
+`rust::axl::store::mysql` and
 `rust::axl::store::document`. They are not tied to
 `Movement` or to the cashflow application. SQLite uses an in-memory connection
 when no path is configured and opens a durable file when the skill declares a

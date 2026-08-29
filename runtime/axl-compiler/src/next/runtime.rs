@@ -6,6 +6,8 @@ use std::time::{Duration, Instant};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, Mac};
+use mysql::prelude::Queryable;
+use mysql::{Conn, Opts};
 use postgres::{Client, NoTls};
 use rusqlite::{Connection, params};
 use serde_json::{Map, Value, json};
@@ -15,7 +17,8 @@ type HmacSha256 = Hmac<Sha256>;
 type MemoryStoreMap = BTreeMap<String, BTreeMap<String, Value>>;
 type MemoryTxStack = Vec<(String, MemoryStoreMap)>;
 type MemoryMigrationMap = BTreeMap<String, Vec<String>>;
-type DocumentStoreMap = BTreeMap<String, BTreeMap<String, Value>>;
+type DocumentStoreMap = MemoryStoreMap;
+type DocumentTxStack = MemoryTxStack;
 
 use super::expression;
 use super::ir::{GraphIr, GraphNode};
@@ -66,7 +69,11 @@ pub struct BuiltinRuntime {
     sqlite_tx: Arc<Mutex<BTreeMap<String, Vec<String>>>>,
     postgres: Arc<Mutex<BTreeMap<String, Arc<Mutex<Client>>>>>,
     postgres_tx: Arc<Mutex<BTreeMap<String, Vec<String>>>>,
+    mysql: Arc<Mutex<BTreeMap<String, Arc<Mutex<Conn>>>>>,
+    mysql_tx: Arc<Mutex<BTreeMap<String, Vec<String>>>>,
     documents: Arc<Mutex<BTreeMap<String, Arc<Mutex<DocumentStoreMap>>>>>,
+    document_tx: Arc<Mutex<BTreeMap<String, DocumentTxStack>>>,
+    document_migrations: Arc<Mutex<BTreeMap<String, MemoryMigrationMap>>>,
 }
 
 #[derive(Clone, Default)]
@@ -101,7 +108,11 @@ impl BuiltinRuntime {
             sqlite_tx: Arc::new(Mutex::new(BTreeMap::new())),
             postgres: Arc::new(Mutex::new(BTreeMap::new())),
             postgres_tx: Arc::new(Mutex::new(BTreeMap::new())),
+            mysql: Arc::new(Mutex::new(BTreeMap::new())),
+            mysql_tx: Arc::new(Mutex::new(BTreeMap::new())),
             documents: Arc::new(Mutex::new(BTreeMap::new())),
+            document_tx: Arc::new(Mutex::new(BTreeMap::new())),
+            document_migrations: Arc::new(Mutex::new(BTreeMap::new())),
         })
     }
 
@@ -193,6 +204,32 @@ impl BuiltinRuntime {
         connections.insert(key, connection.clone());
         Ok(connection)
     }
+
+    fn mysql_connection_key(call: &ProviderCall<'_>) -> Result<String, String> {
+        call.config
+            .get("url")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| "mysql provider requires config url".to_string())
+    }
+
+    fn mysql_connection(&self, call: &ProviderCall<'_>) -> Result<Arc<Mutex<Conn>>, String> {
+        let key = Self::mysql_connection_key(call)?;
+        let mut connections = self
+            .mysql
+            .lock()
+            .map_err(|_| "MySQL connection registry is unavailable".to_string())?;
+        if let Some(connection) = connections.get(&key) {
+            return Ok(connection.clone());
+        }
+        let opts = Opts::from_url(&key).map_err(|error| format!("invalid MySQL url: {error}"))?;
+        let mut conn = Conn::new(opts)
+            .map_err(|error| format!("cannot initialize MySQL provider: {error}"))?;
+        initialize_mysql(&mut conn)?;
+        let connection = Arc::new(Mutex::new(conn));
+        connections.insert(key, connection.clone());
+        Ok(connection)
+    }
 }
 
 impl ProviderRuntime for BuiltinRuntime {
@@ -218,6 +255,13 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "PostgreSQL provider state is unavailable".to_string())?;
                 postgres_store_call(&mut postgres, call)
+            }
+            "rust::axl::store::mysql" => {
+                let connection = self.mysql_connection(&call)?;
+                let mut mysql = connection
+                    .lock()
+                    .map_err(|_| "MySQL provider state is unavailable".to_string())?;
+                mysql_store_call(&mut mysql, call)
             }
             "rust::axl::store::document" => {
                 let store = self.document_store(&call)?;
@@ -267,6 +311,41 @@ impl ProviderRuntime for BuiltinRuntime {
                     .map_err(|_| "PostgreSQL transaction state is unavailable".to_string())?;
                 postgres_tx_call(&mut postgres, &mut stack, &key, call)
             }
+            "rust::axl::tx::mysql" => {
+                let key = Self::mysql_connection_key(&call)?;
+                let connection = self.mysql_connection(&call)?;
+                let mut mysql = connection
+                    .lock()
+                    .map_err(|_| "MySQL provider state is unavailable".to_string())?;
+                let mut stack = self
+                    .mysql_tx
+                    .lock()
+                    .map_err(|_| "MySQL transaction state is unavailable".to_string())?;
+                mysql_tx_call(&mut mysql, &mut stack, &key, call)
+            }
+            "rust::axl::tx::document" => {
+                let store = self.document_store(&call)?;
+                let mut documents = store
+                    .lock()
+                    .map_err(|_| "document provider state is unavailable".to_string())?;
+                let key = Self::document_store_key(&call);
+                let flush_path = call
+                    .config
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .filter(|path| *path != ":memory:")
+                    .map(str::to_string);
+                let mut stacks = self
+                    .document_tx
+                    .lock()
+                    .map_err(|_| "document transaction state is unavailable".to_string())?;
+                document_tx_call(
+                    &mut documents,
+                    stacks.entry(key).or_default(),
+                    call,
+                    flush_path.as_deref(),
+                )
+            }
             "rust::axl::migrate::memory" => {
                 let mut migrations = self
                     .migrations
@@ -287,6 +366,43 @@ impl ProviderRuntime for BuiltinRuntime {
                     .lock()
                     .map_err(|_| "PostgreSQL provider state is unavailable".to_string())?;
                 postgres_migrate_call(&mut postgres, call)
+            }
+            "rust::axl::migrate::mysql" => {
+                let connection = self.mysql_connection(&call)?;
+                let mut mysql = connection
+                    .lock()
+                    .map_err(|_| "MySQL provider state is unavailable".to_string())?;
+                mysql_migrate_call(&mut mysql, call)
+            }
+            "rust::axl::migrate::document" => {
+                let key = Self::document_store_key(&call);
+                let operation = call.operation;
+                let flush_path = call
+                    .config
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .filter(|path| *path != ":memory:")
+                    .map(str::to_string);
+                let mut migrations = self
+                    .document_migrations
+                    .lock()
+                    .map_err(|_| "document migration state is unavailable".to_string())?;
+                if !migrations.contains_key(&key) {
+                    let loaded = match flush_path.as_deref() {
+                        Some(path) => load_document_migrations(path)?,
+                        None => MemoryMigrationMap::new(),
+                    };
+                    migrations.insert(key.clone(), loaded);
+                }
+                let history = migrations
+                    .get_mut(&key)
+                    .expect("document migration history was just inserted");
+                let persist = matches!(operation, "up" | "down");
+                let result = memory_migrate_call(history, call)?;
+                if persist && let Some(path) = flush_path.as_deref() {
+                    write_document_migrations(path, history)?;
+                }
+                Ok(result)
             }
             "rust::axl::auth::bearer" => bearer_auth_call(call),
             "rust::axl::auth::jwt" => jwt_auth_call(call),
@@ -1378,6 +1494,75 @@ fn postgres_store_call(client: &mut Client, call: ProviderCall<'_>) -> Result<Va
     }
 }
 
+fn mysql_load_record_payloads(conn: &mut Conn, provider: &str) -> Result<Vec<Value>, String> {
+    let payloads: Vec<String> = conn
+        .exec_map(
+            "SELECT payload FROM axl_records WHERE provider = ? ORDER BY record_id",
+            (provider,),
+            |payload: String| payload,
+        )
+        .map_err(|error| error.to_string())?;
+    payloads
+        .into_iter()
+        .map(|payload| serde_json::from_str(&payload).map_err(|error| error.to_string()))
+        .collect()
+}
+
+fn mysql_store_call(conn: &mut Conn, call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "save" => {
+            let id = record_id(&call.input)?;
+            let payload = serde_json::to_string(&call.input).map_err(|error| error.to_string())?;
+            conn.exec_drop(
+                "INSERT INTO axl_records (provider, record_id, payload) \
+                 VALUES (?, ?, ?) \
+                 ON DUPLICATE KEY UPDATE payload = VALUES(payload)",
+                (call.provider, id.as_str(), payload.as_str()),
+            )
+            .map_err(|error| error.to_string())?;
+            Ok(call.input)
+        }
+        "find" => {
+            let id = string_input(&call.input, "find")?;
+            let payload: Option<String> = conn
+                .exec_first(
+                    "SELECT payload FROM axl_records WHERE provider = ? AND record_id = ?",
+                    (call.provider, id),
+                )
+                .map_err(|error| error.to_string())?;
+            match payload {
+                Some(payload) => serde_json::from_str(&payload).map_err(|error| error.to_string()),
+                None => Err("not_found".into()),
+            }
+        }
+        "delete" => {
+            let id = string_input(&call.input, "delete")?;
+            conn.exec_drop(
+                "DELETE FROM axl_records WHERE provider = ? AND record_id = ?",
+                (call.provider, id),
+            )
+            .map_err(|error| error.to_string())?;
+            Ok(Value::Bool(conn.affected_rows() > 0))
+        }
+        "list" => Ok(Value::Array(mysql_load_record_payloads(
+            conn,
+            call.provider,
+        )?)),
+        "query" => {
+            let values = mysql_load_record_payloads(conn, call.provider)?;
+            store_query(values, &call.input)
+        }
+        "find_by" => {
+            let values = mysql_load_record_payloads(conn, call.provider)?;
+            store_find_by(values, &call.input)
+        }
+        operation => Err(format!(
+            "MySQL store does not implement operation '{operation}' for {}",
+            call.capacity
+        )),
+    }
+}
+
 fn load_document_file(path: &str) -> Result<DocumentStoreMap, String> {
     let file = std::path::Path::new(path);
     if !file.exists() {
@@ -1404,6 +1589,70 @@ fn load_document_file(path: &str) -> Result<DocumentStoreMap, String> {
         );
     }
     Ok(stores)
+}
+
+fn document_migration_sidecar(path: &str) -> String {
+    format!("{path}.migrations.json")
+}
+
+fn load_document_migrations(path: &str) -> Result<MemoryMigrationMap, String> {
+    let sidecar = document_migration_sidecar(path);
+    let file = std::path::Path::new(&sidecar);
+    if !file.exists() {
+        return Ok(MemoryMigrationMap::new());
+    }
+    let text = std::fs::read_to_string(file)
+        .map_err(|error| format!("cannot read document migrations '{sidecar}': {error}"))?;
+    if text.trim().is_empty() {
+        return Ok(MemoryMigrationMap::new());
+    }
+    let value: Value = serde_json::from_str(&text)
+        .map_err(|error| format!("document migrations '{sidecar}' is not valid JSON: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("document migrations '{sidecar}' must be a JSON object"))?;
+    let mut migrations = MemoryMigrationMap::new();
+    for (provider, versions) in object {
+        let values = versions
+            .as_array()
+            .ok_or_else(|| format!("document migrations provider '{provider}' must be an array"))?;
+        let parsed = values
+            .iter()
+            .map(|value| {
+                value.as_str().map(str::to_string).ok_or_else(|| {
+                    format!("document migrations provider '{provider}' must contain text versions")
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        migrations.insert(provider.clone(), parsed);
+    }
+    Ok(migrations)
+}
+
+fn write_document_migrations(path: &str, migrations: &MemoryMigrationMap) -> Result<(), String> {
+    let sidecar = document_migration_sidecar(path);
+    if let Some(parent) = std::path::Path::new(&sidecar).parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|error| format!("cannot create document migrations directory: {error}"))?;
+    }
+    let mut root = Map::new();
+    for (provider, versions) in migrations {
+        root.insert(
+            provider.clone(),
+            Value::Array(
+                versions
+                    .iter()
+                    .map(|version| Value::String(version.clone()))
+                    .collect(),
+            ),
+        );
+    }
+    let payload = serde_json::to_string_pretty(&Value::Object(root))
+        .map_err(|error| format!("cannot serialize document migrations: {error}"))?;
+    std::fs::write(&sidecar, payload)
+        .map_err(|error| format!("cannot write document migrations '{sidecar}': {error}"))
 }
 
 fn write_document_file(path: &str, stores: &DocumentStoreMap) -> Result<(), String> {
@@ -1483,6 +1732,20 @@ fn document_store_call(
     if matches!(call.operation, "save" | "delete")
         && let Some(path) = flush_path
     {
+        write_document_file(path, stores)?;
+    }
+    Ok(result)
+}
+
+fn document_tx_call(
+    stores: &mut DocumentStoreMap,
+    stack: &mut DocumentTxStack,
+    call: ProviderCall<'_>,
+    flush_path: Option<&str>,
+) -> Result<Value, String> {
+    let rollback = matches!(call.operation, "rollback");
+    let result = memory_tx_call(stores, stack, call)?;
+    if rollback && let Some(path) = flush_path {
         write_document_file(path, stores)?;
     }
     Ok(result)
@@ -1832,6 +2095,76 @@ fn postgres_tx_call(
     }
 }
 
+fn mysql_tx_call(
+    conn: &mut Conn,
+    stacks: &mut BTreeMap<String, Vec<String>>,
+    key: &str,
+    call: ProviderCall<'_>,
+) -> Result<Value, String> {
+    let stack = stacks.entry(key.to_string()).or_default();
+    match call.operation {
+        "begin" => {
+            let tid = string_input(&call.input, "begin")?.to_string();
+            if stack.iter().any(|open| open == &tid) {
+                return Err("tx_already_open".into());
+            }
+            if stack.is_empty() {
+                conn.query_drop("START TRANSACTION")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(&tid);
+                conn.query_drop(format!("SAVEPOINT {savepoint}"))
+                    .map_err(|error| error.to_string())?;
+            }
+            stack.push(tid.clone());
+            Ok(Value::String(tid))
+        }
+        "commit" => {
+            let tid = string_input(&call.input, "commit")?;
+            let Some(open) = stack.last() else {
+                return Err("tx_not_open".into());
+            };
+            if open != tid {
+                return Err("tx_mismatch".into());
+            }
+            if stack.len() == 1 {
+                conn.query_drop("COMMIT")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(tid);
+                conn.query_drop(format!("RELEASE SAVEPOINT {savepoint}"))
+                    .map_err(|error| error.to_string())?;
+            }
+            stack.pop();
+            Ok(Value::Null)
+        }
+        "rollback" => {
+            let tid = string_input(&call.input, "rollback")?;
+            let Some(open) = stack.last() else {
+                return Err("tx_not_open".into());
+            };
+            if open != tid {
+                return Err("tx_mismatch".into());
+            }
+            if stack.len() == 1 {
+                conn.query_drop("ROLLBACK")
+                    .map_err(|error| error.to_string())?;
+            } else {
+                let savepoint = sqlite_savepoint_name(tid);
+                conn.query_drop(format!(
+                    "ROLLBACK TO SAVEPOINT {savepoint}; RELEASE SAVEPOINT {savepoint}"
+                ))
+                .map_err(|error| error.to_string())?;
+            }
+            stack.pop();
+            Ok(Value::Null)
+        }
+        operation => Err(format!(
+            "MySQL transaction does not implement operation '{operation}'"
+        )),
+    }
+}
+
 fn sqlite_savepoint_name(tid: &str) -> String {
     let safe: String = tid
         .chars()
@@ -2075,6 +2408,85 @@ fn postgres_migrate_call(client: &mut Client, call: ProviderCall<'_>) -> Result<
         }
         operation => Err(format!(
             "PostgreSQL migration does not implement operation '{operation}'"
+        )),
+    }
+}
+
+fn mysql_migrate_call(conn: &mut Conn, call: ProviderCall<'_>) -> Result<Value, String> {
+    match call.operation {
+        "up" => {
+            let version = string_input(&call.input, "up")?.to_string();
+            if version.is_empty() || version == "0" {
+                return Err("invalid_version".into());
+            }
+            let already: Option<u8> = conn
+                .exec_first(
+                    "SELECT 1 FROM axl_schema_history WHERE provider = ? AND version = ?",
+                    (call.provider, version.as_str()),
+                )
+                .map_err(|error| error.to_string())?;
+            if already.is_some() {
+                return Err("already_applied".into());
+            }
+            let next_seq: i64 = conn
+                .exec_first(
+                    "SELECT COALESCE(MAX(seq), 0) + 1 FROM axl_schema_history WHERE provider = ?",
+                    (call.provider,),
+                )
+                .map_err(|error| error.to_string())?
+                .unwrap_or(1);
+            conn.exec_drop(
+                "INSERT INTO axl_schema_history (provider, version, seq) VALUES (?, ?, ?)",
+                (call.provider, version.as_str(), next_seq),
+            )
+            .map_err(|error| error.to_string())?;
+            let marker = sqlite_migration_marker(&version);
+            conn.query_drop(format!(
+                "CREATE TABLE IF NOT EXISTS {marker} (applied INT NOT NULL DEFAULT 1)"
+            ))
+            .map_err(|error| error.to_string())?;
+            Ok(Value::String(version))
+        }
+        "down" => {
+            let version = string_input(&call.input, "down")?.to_string();
+            let head: Option<String> = conn
+                .exec_first(
+                    "SELECT version FROM axl_schema_history WHERE provider = ? \
+                     ORDER BY seq DESC LIMIT 1",
+                    (call.provider,),
+                )
+                .map_err(|error| error.to_string())?;
+            let Some(head) = head else {
+                return Err("nothing_to_rollback".into());
+            };
+            if head != version {
+                return Err("not_head".into());
+            }
+            conn.exec_drop(
+                "DELETE FROM axl_schema_history WHERE provider = ? AND version = ?",
+                (call.provider, version.as_str()),
+            )
+            .map_err(|error| error.to_string())?;
+            let marker = sqlite_migration_marker(&version);
+            conn.query_drop(format!("DROP TABLE IF EXISTS {marker}"))
+                .map_err(|error| error.to_string())?;
+            Ok(Value::String(version))
+        }
+        "status" => {
+            if !call.input.is_null() {
+                return Err("migration status requires unit".into());
+            }
+            let version: Option<String> = conn
+                .exec_first(
+                    "SELECT version FROM axl_schema_history WHERE provider = ? \
+                     ORDER BY seq DESC LIMIT 1",
+                    (call.provider,),
+                )
+                .map_err(|error| error.to_string())?;
+            Ok(Value::String(version.unwrap_or_else(|| "0".into())))
+        }
+        operation => Err(format!(
+            "MySQL migration does not implement operation '{operation}'"
         )),
     }
 }
@@ -3336,6 +3748,26 @@ fn initialize_postgres(client: &mut Client) -> Result<(), String> {
              ON axl_schema_history (provider, seq);",
         )
         .map_err(|error| format!("cannot initialize PostgreSQL schema: {error}"))
+}
+
+fn initialize_mysql(conn: &mut Conn) -> Result<(), String> {
+    conn.query_drop(
+        "CREATE TABLE IF NOT EXISTS axl_records (\
+         provider VARCHAR(255) NOT NULL, \
+         record_id VARCHAR(255) NOT NULL, \
+         payload TEXT NOT NULL, \
+         PRIMARY KEY (provider, record_id))",
+    )
+    .map_err(|error| format!("cannot initialize MySQL schema: {error}"))?;
+    conn.query_drop(
+        "CREATE TABLE IF NOT EXISTS axl_schema_history (\
+         provider VARCHAR(255) NOT NULL, \
+         version VARCHAR(255) NOT NULL, \
+         seq BIGINT NOT NULL, \
+         PRIMARY KEY (provider, version), \
+         UNIQUE KEY axl_schema_history_seq (provider, seq))",
+    )
+    .map_err(|error| format!("cannot initialize MySQL schema: {error}"))
 }
 
 fn record_id(value: &Value) -> Result<String, String> {

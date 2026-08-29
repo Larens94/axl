@@ -1,0 +1,74 @@
+// Document store tx/migrate boundary — durable JSON file + sidecar migrations.
+axl 4
+app DocumentTxBoundary
+
+entity Record
+  id: uuid required
+  value: text required
+
+entity RecordPair
+  first: Record required
+  second: Record required
+
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+
+capacity TransactionManager
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
+
+skill DocumentRecords provides RecordStore
+  native rust axl::store::document
+  config path: text = "./build/document-tx-boundary.json"
+  effect db.read
+  effect db.write
+
+skill DocumentTransactions provides TransactionManager
+  native rust axl::tx::document
+  config path: text = "./build/document-tx-boundary.json"
+  effect db.write
+
+skill DocumentMigrations provides MigrationRunner
+  native rust axl::migrate::document
+  config path: text = "./build/document-tx-boundary.json"
+  effect db.write
+
+flow DocumentTxCommitDemo RecordPair -> Result<Record>
+  in tx: TransactionManager = DocumentTransactions
+  in store: RecordStore = DocumentRecords
+  call tid = tx.begin("doc-commit")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.commit(tid)?
+  return second
+
+flow DocumentTxRollbackDemo RecordPair -> Result<unit>
+  in tx: TransactionManager = DocumentTransactions
+  in store: RecordStore = DocumentRecords
+  call tid = tx.begin("doc-rollback")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.rollback(tid)?
+  return done
+
+flow DocumentFindDemo uuid -> Result<Record>
+  in store: RecordStore = DocumentRecords
+  call found = store.find(input)?
+  return found
+
+flow DocumentMigrateUpDemo text -> Result<text>
+  in migrations: MigrationRunner = DocumentMigrations
+  call version = migrations.up(input)?
+  return version
+
+flow DocumentMigrateStatusDemo unit -> Result<text>
+  in migrations: MigrationRunner = DocumentMigrations
+  call version = migrations.status(input)?
+  return version

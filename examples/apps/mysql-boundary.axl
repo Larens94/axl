@@ -1,0 +1,96 @@
+// MySQL boundary sample — store, transactions and migrations.
+// Runtime: rust::axl::store::mysql, axl::tx::mysql, axl::migrate::mysql
+// Set AXL_MYSQL_URL before eval (e.g. mysql://user:pass@localhost/axl_test).
+axl 4
+app MysqlBoundary
+
+entity Record
+  id: uuid required
+  kind: text required
+  account: text required
+  occurred_at: text required
+
+entity RecordQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity RecordPage
+  items: List<Record> required
+  total: int required
+  limit: int required
+  offset: int required
+
+entity RecordPair
+  first: Record required
+  second: Record required
+
+capacity RecordStore
+  op save Record -> Result<Record>
+  op find uuid -> Result<Record> idempotent
+  op query RecordQuery -> Result<RecordPage> idempotent
+
+capacity TransactionManager
+  op begin text -> Result<text>
+  op commit text -> Result<unit>
+  op rollback text -> Result<unit>
+
+capacity MigrationRunner
+  op up text -> Result<text>
+  op down text -> Result<text>
+  op status unit -> Result<text>
+
+skill MysqlRecords provides RecordStore
+  native rust axl::store::mysql
+  config url: text = secret("AXL_MYSQL_URL")
+  effect db.read
+  effect db.write
+  capability storage.mysql
+
+skill MysqlTransactions provides TransactionManager
+  native rust axl::tx::mysql
+  config url: text = secret("AXL_MYSQL_URL")
+  effect db.write
+  capability storage.mysql
+
+skill MysqlMigrations provides MigrationRunner
+  native rust axl::migrate::mysql
+  config url: text = secret("AXL_MYSQL_URL")
+  effect db.write
+  capability storage.mysql
+
+flow MysqlSaveDemo Record -> Result<Record>
+  in store: RecordStore = MysqlRecords
+  call saved = store.save(input)?
+  return saved
+
+flow MysqlFindDemo uuid -> Result<Record>
+  in store: RecordStore = MysqlRecords
+  call found = store.find(input)?
+  return found
+
+flow MysqlQueryDemo RecordQuery -> Result<RecordPage>
+  in store: RecordStore = MysqlRecords
+  call page = store.query(input)?
+  return page
+
+flow MysqlTxCommitDemo RecordPair -> Result<Record>
+  in tx: TransactionManager = MysqlTransactions
+  in store: RecordStore = MysqlRecords
+  call tid = tx.begin("mysql-commit")?
+  call first = store.save(input.first)?
+  call second = store.save(input.second)?
+  call done = tx.commit(tid)?
+  return second
+
+flow MysqlMigrateUpDemo text -> Result<text>
+  in migrations: MigrationRunner = MysqlMigrations
+  call version = migrations.up(input)?
+  return version
+
+flow MysqlMigrateStatusDemo unit -> Result<text>
+  in migrations: MigrationRunner = MysqlMigrations
+  call version = migrations.status(input)?
+  return version

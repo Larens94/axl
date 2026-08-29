@@ -54,6 +54,7 @@ Flow Runtime 2 recognizes these implementation identifiers:
 rust::axl::store::memory
 rust::axl::store::sqlite
 rust::axl::store::postgres
+rust::axl::store::mysql
 rust::axl::store::document
 ```
 
@@ -95,6 +96,8 @@ Transaction adapters share that path model:
 rust::axl::tx::memory
 rust::axl::tx::sqlite
 rust::axl::tx::postgres
+rust::axl::tx::mysql
+rust::axl::tx::document
 ```
 
 They implement `begin`, `commit` and `rollback`. SQLite store writes join an
@@ -108,6 +111,8 @@ Migration adapters share that path model:
 rust::axl::migrate::memory
 rust::axl::migrate::sqlite
 rust::axl::migrate::postgres
+rust::axl::migrate::mysql
+rust::axl::migrate::document
 ```
 
 They implement `up`, `down` and `status`. SQLite skills persist ordered rows in
