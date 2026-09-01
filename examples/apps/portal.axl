@@ -1,6 +1,7 @@
 // Portal shell — ledger-style entry: imports, cross-domain API glue, modular api/ui.
 axl 4
 app Portal
+bootstrap BootstrapPortalProd
 import "./auth-domain.axl"
 import "./sales-domain.axl"
 import "./domains/portal/core.axl"
@@ -166,9 +167,21 @@ ui AuthUi
   page /home uuid -> Result<HomePage> = PaginaHomeUtentePortal from cookie.sid
     kpi totale_utenti "Utenti registrati" "Totale nel sistema"
   form /login LoginInput -> Result<LoginResult> = LoginPortal submit /auth/login redirect /home
+    title "Accedi"
+    submit_label "Accedi"
+    nav hidden
   form /register RegistrazioneInput -> Result<Utente> = RegistraPortal submit /auth/register redirect /login
+    title "Registrati"
+    submit_label "Crea account"
+    nav hidden
   form /password-dimenticata RichiestaResetPasswordInput -> Result<ResetPasswordResult> = RichiediResetPassword submit /auth/password/reset-request redirect /reimposta-password
+    title "Password dimenticata"
+    submit_label "Invia link"
+    nav hidden
   form /reimposta-password ReimpostaPasswordInput -> Result<Utente> = ReimpostaPassword submit /auth/password/reset redirect /login
+    title "Reimposta password"
+    submit_label "Aggiorna password"
+    nav hidden
   page /admin/utenti uuid -> Result<UtentePage> = PaginaUtentiAdminSessionePortal from cookie.sid
   page /admin/ruoli uuid -> Result<RuoloPage> = PaginaRuoliAdminSessionePortal from cookie.sid
   page /admin/permessi uuid -> Result<PermessoPage> = PaginaPermessiAdminSessionePortal from cookie.sid
@@ -182,6 +195,10 @@ ui VenditeUi
     pagination limit = query.limit default 10
     pagination offset = query.offset default 0
   form /clienti/new Cliente -> Result<Cliente> = CreaClienteSqlite submit /clienti
+    title "Nuovo cliente"
+    submit_label "Crea cliente"
+    nav hidden
+    omit id
   drawer /clienti/{id} uuid -> Result<Cliente> = CercaClienteSqlite from path.id on /clienti
   page /prodotti uuid -> Result<ProdottoPage> = PaginaProdottiSessione from cookie.sid
   form /prodotti/new Prodotto -> Result<Prodotto> = CreaProdottoSqlite submit /prodotti
@@ -208,6 +225,7 @@ ui VenditeUi
 
 ui VenditeDemoUi
   page /clienti/demo unit -> Result<ClientePage> = PaginaClientiDemoUnit
+  drawer /clienti/demo/{id} uuid -> Result<Cliente> = CercaCliente from path.id on /clienti/demo
   page /prodotti/demo unit -> Result<ProdottoPage> = PaginaProdottiDemoUnit
   page /listini/demo unit -> Result<ListinoPage> = PaginaListiniDemoUnit
   page /preventivi/demo unit -> Result<PreventivoPage> = PaginaPreventiviDemoUnit

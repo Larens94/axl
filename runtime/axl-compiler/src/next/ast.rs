@@ -33,6 +33,7 @@ pub enum Declaration {
     Api(Api),
     Ui(Ui),
     Agent(Agent),
+    Bootstrap(Bootstrap),
 }
 
 impl Declaration {
@@ -51,6 +52,7 @@ impl Declaration {
             Self::Api(value) => &value.name,
             Self::Ui(value) => &value.name,
             Self::Agent(value) => &value.name,
+            Self::Bootstrap(_) => "__bootstrap__",
         }
     }
 
@@ -69,8 +71,15 @@ impl Declaration {
             Self::Api(value) => &value.span,
             Self::Ui(value) => &value.span,
             Self::Agent(value) => &value.span,
+            Self::Bootstrap(value) => &value.span,
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Bootstrap {
+    pub flow: String,
+    pub span: SourceSpan,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -600,6 +609,10 @@ pub struct UiForm {
     pub flow: String,
     pub submit: Option<String>,
     pub redirect: Option<String>,
+    pub title: Option<String>,
+    pub submit_label: Option<String>,
+    pub nav_hidden: bool,
+    pub omit_fields: Vec<String>,
     pub span: SourceSpan,
 }
 

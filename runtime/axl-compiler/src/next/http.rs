@@ -88,11 +88,13 @@ pub fn dispatch_with_headers(
         match_http_route(graph, &method, request_path)
     };
     let exact_ui = ui::matches_exact_ui_path(graph, request_path);
-    if method == "get"
-        && (exact_ui || accepts_html(headers))
-        && let Some(result) = dispatch_ui_get(graph, runtime, request_path, headers)
-    {
-        return result;
+    if method == "get" && (exact_ui || accepts_html(headers)) {
+        if ui::should_redirect_to_login(graph, request_path, headers) {
+            return login_redirect_result(request_path);
+        }
+        if let Some(result) = dispatch_ui_get(graph, runtime, request_path, headers) {
+            return result;
+        }
     }
     if method == "options" {
         return dispatch_cors_preflight(graph, runtime, request_path, headers)
@@ -216,6 +218,24 @@ fn match_http_route<'a>(
         })
 }
 
+fn login_redirect_result(request_path: &str) -> HttpResult {
+    let next = percent_encode_path(request_path);
+    let mut result = HttpResult::new(302, Value::Null);
+    result
+        .headers
+        .insert("location".into(), format!("/login?next={next}"));
+    result
+}
+
+fn percent_encode_path(path: &str) -> String {
+    path.chars()
+        .map(|character| match character {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '/' => character.to_string(),
+            _ => format!("%{code:02X}", code = character as u8),
+        })
+        .collect()
+}
+
 fn dispatch_ui_get(
     graph: &GraphIr,
     runtime: &mut dyn ProviderRuntime,
@@ -232,6 +252,11 @@ fn dispatch_ui_get(
     if let Ok(rendered) =
         ui::render_page_with_runtime(graph, runtime, request_path, Value::Null, headers)
     {
+        if ui::page_requires_session(graph, request_path)
+            && ui::is_session_auth_error(&rendered.data)
+        {
+            return Some(login_redirect_result(request_path));
+        }
         let mut result = HttpResult::new(200, Value::String(rendered.html));
         result
             .headers
@@ -1336,9 +1361,18 @@ pub async fn serve(graph: GraphIr, address: &str) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(address).await?;
     let local = listener.local_addr()?;
     println!("AXL HTTP listening on http://{local}");
+    let mut runtime = BuiltinRuntime::new()?;
+    if let Some(flow) = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "app")
+        .and_then(|node| node.metadata.get("bootstrap"))
+    {
+        let _ = runtime::evaluate_flow_with_runtime(&graph, flow, Value::Null, &mut runtime);
+    }
     let app = Router::new().fallback(handle).with_state(HttpState {
         graph: Arc::new(graph),
-        runtime: Arc::new(Mutex::new(BuiltinRuntime::new()?)),
+        runtime: Arc::new(Mutex::new(runtime)),
     });
     axum::serve(listener, app).await?;
     Ok(())
@@ -2024,6 +2058,46 @@ ui PreventivoScreen
                 .body
                 .as_str()
                 .is_some_and(|html| html.contains("preventivo-001"))
+        );
+    }
+
+    #[test]
+    fn session_gated_ui_page_redirects_to_login_without_cookie() {
+        let graph = compile_source(
+            r#"axl 4
+app SessionUi
+entity HomePage
+  titolo: text required
+  messaggio: text required
+  totale_utenti: int required
+flow Home uuid -> Result<HomePage>
+  make home: HomePage
+    titolo = "Home"
+    messaggio = "ok"
+    totale_utenti = 1
+  return home
+ui Screen
+  page /home uuid -> Result<HomePage> = Home from cookie.sid
+"#,
+        )
+        .unwrap()
+        .graph;
+        let mut headers = BTreeMap::new();
+        headers.insert("accept".into(), "text/html".into());
+        let result = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "get",
+            "/home",
+            Value::Null,
+            &headers,
+        );
+        assert_eq!(result.status, 302);
+        assert!(
+            result
+                .headers
+                .get("location")
+                .is_some_and(|value| value.starts_with("/login?next="))
         );
     }
 

@@ -39,6 +39,45 @@ pub fn matches_exact_ui_path(graph: &GraphIr, path: &str) -> bool {
     })
 }
 
+pub fn page_requires_session(graph: &GraphIr, path: &str) -> bool {
+    find_page(graph, path)
+        .map(|(page, _)| {
+            page.metadata
+                .get("requires_session")
+                .is_some_and(|value| value == "true")
+        })
+        .unwrap_or(false)
+}
+
+pub fn should_redirect_to_login(
+    graph: &GraphIr,
+    path: &str,
+    headers: &BTreeMap<String, String>,
+) -> bool {
+    let normalized = normalize_path(path);
+    if is_guest_path(path) || normalized.contains("/demo") {
+        return false;
+    }
+    if !page_requires_session(graph, path) {
+        return false;
+    }
+    super::http::cookie_value(headers, "sid").is_none()
+}
+
+pub fn is_session_auth_error(value: &Value) -> bool {
+    value
+        .get("error")
+        .and_then(Value::as_str)
+        .is_some_and(|error| {
+            matches!(
+                error,
+                "sessione_scaduta" | "session_not_found" | "authorization_denied"
+            ) || error.contains("sessione")
+                || error.contains("permesso")
+                || error.contains("autentic")
+        })
+}
+
 pub fn ui_manifest(graph: &GraphIr) -> Value {
     let uis = graph
         .nodes
@@ -379,7 +418,9 @@ pub fn render_form_with_state(
         .get("submit")
         .cloned()
         .ok_or_else(|| "ui_form_has_no_submit".to_string())?;
-    let html = render_form_html(graph, &graph.app, path, &entity, &submit, values, error);
+    let html = render_form_html(
+        graph, form, &graph.app, path, &entity, &submit, values, error,
+    );
     Ok(UiFormRenderResult {
         path: path.into(),
         entity,
@@ -476,6 +517,13 @@ fn collect_nav_links(graph: &GraphIr) -> Vec<(&'static str, String, String, Stri
         if path.contains('{') || path.contains("/demo") {
             continue;
         }
+        if node
+            .metadata
+            .get("nav")
+            .is_some_and(|value| value == "hidden")
+        {
+            continue;
+        }
         let normalized = normalize_path(path);
         let group = nav_group(path);
         let label = nav_label(path);
@@ -499,7 +547,14 @@ fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
     let mut sections = Vec::new();
     let mut current_group = "";
     let mut items = String::new();
+    let show_access = is_guest_path(current_path);
     for (group, normalized, path, label, is_form) in links {
+        if group == "Accesso" && !show_access {
+            continue;
+        }
+        if is_form && group != "Accesso" {
+            continue;
+        }
         if group != current_group {
             if !items.is_empty() {
                 sections.push(format!(
@@ -1243,8 +1298,10 @@ fn find_route_by_template<'a>(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 fn render_form_html(
     graph: &GraphIr,
+    form: &super::ir::GraphNode,
     app: &str,
     path: &str,
     entity: &str,
@@ -1252,12 +1309,34 @@ fn render_form_html(
     values: &Value,
     error: Option<&str>,
 ) -> String {
-    let title = format!("{app}{path}");
+    let card_title = form
+        .metadata
+        .get("title")
+        .cloned()
+        .unwrap_or_else(|| "Nuovo record".into());
+    let submit_label = form
+        .metadata
+        .get("submit_label")
+        .cloned()
+        .unwrap_or_else(|| "Salva".into());
+    let omit_fields = form
+        .metadata
+        .get("omit_fields")
+        .map(|fields| {
+            fields
+                .split(',')
+                .map(str::trim)
+                .filter(|field| !field.is_empty())
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let document_title = format!("{app}{path}");
     let heading = page_heading(path);
-    let fields = entity_fields(graph, entity);
     let values_object = values.as_object();
-    let inputs = fields
+    let inputs = entity_fields(graph, entity)
         .iter()
+        .filter(|field| !omit_fields.iter().any(|omit| omit == &field.name))
         .map(|field| {
             let field_error =
                 error.and_then(|message| field_validation_message(&field.name, message));
@@ -1275,29 +1354,44 @@ fn render_form_html(
             )
         })
         .unwrap_or_default();
+    let subtitle = if form.metadata.contains_key("title") {
+        String::new()
+    } else {
+        format!(
+            r#"      <p class="card-subtitle">Invia i dati a <code>{submit}</code></p>
+"#
+        )
+    };
     let body = format!(
         r#"  <section class="card form-card">
     <div class="card-header">
-      <h2 class="card-title">Nuovo record</h2>
-      <p class="card-subtitle">Invia i dati a <code>{submit}</code></p>
-    </div>
+      <h2 class="card-title">{card_title}</h2>
+{subtitle}    </div>
 {alert}    <form method="post" action="{submit}" class="stack-form" novalidate>
 {inputs}
       <div class="form-actions">
-        <button type="submit" class="btn btn-primary">Salva</button>
+        <button type="submit" class="btn btn-primary">{submit_label}</button>
       </div>
     </form>
   </section>"#
     );
     if is_guest_path(path) {
-        return wrap_html_guest(app, path, &title, &heading, &body);
+        return wrap_html_guest(app, path, &document_title, &heading, &body);
     }
     let body_class = if is_admin_path(path) {
         " admin-layout"
     } else {
         ""
     };
-    wrap_html(graph, path, &title, &heading, path, &body, body_class)
+    wrap_html(
+        graph,
+        path,
+        &document_title,
+        &heading,
+        path,
+        &body,
+        body_class,
+    )
 }
 
 fn field_validation_message(field: &str, error: &str) -> Option<String> {
@@ -1327,7 +1421,10 @@ fn render_form_field(
     let optional = field_optional(field);
     let required = if optional { "" } else { " required" };
     let invalid = if error.is_some() { " invalid" } else { "" };
-    let label = format!(r#"    <label for="{name}">{name}</label>"#);
+    let label = format!(
+        r#"    <label for="{name}">{label_text}</label>"#,
+        label_text = human_field_label(name)
+    );
     let message = error
         .map(|text| {
             format!(
@@ -1368,6 +1465,7 @@ fn render_form_field(
         "int" | "float" | "money" => "number",
         "bool" => "checkbox",
         "email" => "email",
+        _ if name.eq_ignore_ascii_case("password") => "password",
         _ => "text",
     };
     if input_type == "checkbox" {
@@ -2210,21 +2308,13 @@ fn render_items_table(
             let cells = columns
                 .iter()
                 .map(|column| {
-                    let value = row.get(column).map(display_value).unwrap_or_default();
-                    let cell = if column == "id"
-                        && detail_template.is_some()
-                        && field_type(graph, &item_type, column).as_deref() == Some("uuid")
-                    {
-                        let template = detail_template.as_deref().unwrap_or("");
-                        let href = substitute_path_template(
-                            template,
-                            &BTreeMap::from([("id".into(), value.clone())]),
-                        )
-                        .unwrap_or_else(|| template.replace("{id}", &value));
-                        format!(r#"<a href="{href}">{value}</a>"#)
-                    } else {
-                        value
-                    };
+                    let cell = render_table_cell(
+                        graph,
+                        &item_type,
+                        column,
+                        row,
+                        detail_template.as_deref(),
+                    );
                     format!("        <td>{cell}</td>")
                 })
                 .collect::<Vec<_>>()
@@ -2577,6 +2667,57 @@ fn is_scalar_type(type_name: &str) -> bool {
     )
 }
 
+fn render_table_cell(
+    graph: &GraphIr,
+    item_type: &str,
+    column: &str,
+    row: &serde_json::Map<String, Value>,
+    detail_template: Option<&str>,
+) -> String {
+    let Some(value) = row.get(column) else {
+        return String::new();
+    };
+    if let Value::Array(items) = value
+        && let Some(list_type) = field_type(graph, item_type, column)
+            .as_deref()
+            .and_then(strip_list_type)
+        && let Some(table) = render_entity_array_table(graph, list_type, items)
+    {
+        return table;
+    }
+    let text = display_value(value);
+    if column == "id"
+        && detail_template.is_some()
+        && field_type(graph, item_type, column).as_deref() == Some("uuid")
+    {
+        let template = detail_template.unwrap_or("");
+        let href =
+            substitute_path_template(template, &BTreeMap::from([("id".into(), text.clone())]))
+                .unwrap_or_else(|| template.replace("{id}", &text));
+        return format!(r#"<a href="{href}">{text}</a>"#);
+    }
+    html_escape(&text)
+}
+
+fn human_field_label(name: &str) -> String {
+    match name {
+        "email" => "Email".into(),
+        "password" => "Password".into(),
+        "nome" => "Nome".into(),
+        "budget" => "Budget".into(),
+        "priorita" => "Priorità".into(),
+        "stato" => "Stato".into(),
+        "id" => "ID".into(),
+        other => {
+            let mut chars = other.chars();
+            match chars.next() {
+                None => String::new(),
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+            }
+        }
+    }
+}
+
 fn display_value(value: &Value) -> String {
     match value {
         Value::String(text) => text.clone(),
@@ -2873,12 +3014,11 @@ ui Screen
         let rendered = render_form(&graph, "/clienti/new").unwrap();
         assert_eq!(rendered.submit, "/clienti");
         assert!(
-            rendered
+            rendered.html.contains(
+                r#"<form method="post" action="/clienti" class="stack-form" novalidate>"#
+            ) || rendered
                 .html
-                .contains(r#"<form method="post" action="/clienti" class="stack-form" novalidate>"#)
-                || rendered
-                    .html
-                    .contains(r#"<form method="post" action="/clienti" class="stack-form">"#)
+                .contains(r#"<form method="post" action="/clienti" class="stack-form">"#)
         );
         assert!(rendered.html.contains(r#"name="nome""#));
         assert!(
@@ -2894,6 +3034,101 @@ ui Screen
         assert!(rendered.html.contains("Clienti"));
         assert!(rendered.html.contains(r#"href="/clienti""#));
         assert!(rendered.html.contains("form-card"));
+    }
+
+    #[test]
+    fn render_form_supports_title_submit_label_password_and_omit() {
+        const SOURCE: &str = r#"axl 4
+app FormLabels
+entity LoginInput
+  email: email required
+  password: text required
+entity LoginResult
+  session_id: uuid required
+flow Login LoginInput -> Result<LoginResult>
+  make result: LoginResult
+    session_id = "s1"
+  return result
+flow CreaCliente Cliente -> Result<Cliente>
+  return input
+entity Cliente
+  id: uuid key
+  nome: text required
+api Api
+  post /auth/login LoginInput -> Result<LoginResult> = Login
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+ui Screen
+  form /login LoginInput -> Result<LoginResult> = Login submit /auth/login
+    title "Accedi"
+    submit_label "Entedi"
+    nav hidden
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+    omit id
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let login = render_form(&graph, "/login").unwrap();
+        assert!(login.html.contains("card-title\">Accedi</h2>"));
+        assert!(login.html.contains("btn btn-primary\">Entedi</button>"));
+        assert!(login.html.contains("type=\"password\""));
+        assert!(!login.html.contains("Invia i dati a"));
+        let create = render_form(&graph, "/clienti/new").unwrap();
+        assert!(!create.html.contains(r#"name="id""#));
+    }
+
+    #[test]
+    fn render_items_table_renders_nested_list_columns() {
+        const SOURCE: &str = r#"axl 4
+app NestedListUi
+entity RigaPreventivo
+  prodotto_id: uuid required
+  quantita: int required
+entity Preventivo
+  id: uuid key
+  stato: text required
+  righe: List<RigaPreventivo> required
+entity PreventivoPage
+  items: List<Preventivo> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Lista unit -> Result<PreventivoPage>
+  make riga: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+  make preventivo: Preventivo
+    id = "preventivo-001"
+    stato = "bozza"
+    righe = [riga]
+  make pagina: PreventivoPage
+    items = [preventivo]
+    total = 1
+    limit = 10
+    offset = 0
+  return pagina
+ui Screen
+  page /preventivi/demo unit -> Result<PreventivoPage> = Lista
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let rendered = render_page(&graph, "/preventivi/demo", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"nested-table\""));
+        assert!(rendered.html.contains("prodotto-001"));
+        assert!(!rendered.html.contains("prezzo_unitario"));
+    }
+
+    #[test]
+    fn bootstrap_lowers_to_app_metadata() {
+        const SOURCE: &str = r#"axl 4
+app BootApp
+bootstrap Seed
+flow Seed unit -> Result<text>
+  return "ok"
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let app = graph.nodes.iter().find(|node| node.kind == "app").unwrap();
+        assert_eq!(
+            app.metadata.get("bootstrap").map(String::as_str),
+            Some("Seed")
+        );
     }
 
     const ACTION_UI: &str = r#"axl 4

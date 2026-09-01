@@ -527,7 +527,15 @@ flow InviaPreventivoDoppioDemoUnit unit -> Result<Preventivo>
 
 flow CreaClienteSqlite Cliente -> Result<Cliente>
   in store: ArchivioClienti = SqliteClienti
-  run valida = ValidaCliente(input)?
+  let nuovo_id = uuid.v4
+  make cliente: Cliente
+    id = nuovo_id
+    nome = input.nome
+    email = input.email
+    budget = input.budget
+    priorita = input.priorita
+    stato = input.stato
+  run valida = ValidaCliente(cliente)?
   call salvato = store.save(valida)?
   return salvato
 

@@ -13,6 +13,9 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
         if matches!(declaration, Declaration::Subscription(_)) {
             continue;
         }
+        if matches!(declaration, Declaration::Bootstrap(_)) {
+            continue;
+        }
         if !valid_name(declaration.name(), false) {
             diagnostics.push(Diagnostic::error(
                 "AXL-N001",
@@ -58,11 +61,15 @@ pub fn analyze(program: &Program) -> Result<GraphIr, Vec<Diagnostic>> {
             Declaration::Api(api) => check_api(api, &declarations, &mut diagnostics),
             Declaration::Ui(ui) => check_ui(ui, &declarations, &mut diagnostics),
             Declaration::Agent(agent) => check_agent(agent, &mut diagnostics),
+            Declaration::Bootstrap(bootstrap) => {
+                check_bootstrap(bootstrap, &declarations, &mut diagnostics)
+            }
         }
     }
     check_subscriptions(program, &declarations, &mut diagnostics);
     check_global_api_routes(program, &mut diagnostics);
     check_global_ui_paths(program, &mut diagnostics);
+    check_bootstrap_count(program, &mut diagnostics);
 
     if !diagnostics.is_empty() {
         return Err(diagnostics);
@@ -4580,6 +4587,52 @@ pub(crate) fn parse_schedule_millis(schedule: &str) -> Option<u64> {
     }
 }
 
+fn check_bootstrap(
+    bootstrap: &Bootstrap,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    match declarations.get(bootstrap.flow.as_str()) {
+        Some(Declaration::Flow(flow)) if flow.input == "unit" => {}
+        Some(Declaration::Flow(flow)) => diagnostics.push(
+            Diagnostic::error(
+                "AXL-N901",
+                "bootstrap",
+                format!("bootstrap flow '{}' must accept unit input", bootstrap.flow),
+                bootstrap.span.clone(),
+            )
+            .expected("unit", &flow.input),
+        ),
+        _ => diagnostics.push(
+            Diagnostic::error(
+                "AXL-N900",
+                "bootstrap",
+                format!("unknown bootstrap flow '{}'", bootstrap.flow),
+                bootstrap.span.clone(),
+            )
+            .expected("an existing flow name", &bootstrap.flow),
+        ),
+    }
+}
+
+fn check_bootstrap_count(program: &Program, diagnostics: &mut Vec<Diagnostic>) {
+    let bootstraps = program
+        .declarations
+        .iter()
+        .filter(|declaration| matches!(declaration, Declaration::Bootstrap(_)))
+        .collect::<Vec<_>>();
+    if bootstraps.len() > 1 {
+        for bootstrap in bootstraps.iter().skip(1) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-N902",
+                "bootstrap",
+                "only one bootstrap declaration is allowed per app",
+                bootstrap.span().clone(),
+            ));
+        }
+    }
+}
+
 fn check_agent(agent: &Agent, diagnostics: &mut Vec<Diagnostic>) {
     if agent.goals.is_empty() {
         diagnostics.push(Diagnostic::error(
@@ -4768,6 +4821,7 @@ fn declaration_kind(declaration: &Declaration) -> &'static str {
         Declaration::Api(_) => "api",
         Declaration::Ui(_) => "ui",
         Declaration::Agent(_) => "agent",
+        Declaration::Bootstrap(_) => "bootstrap",
     }
 }
 
@@ -4804,6 +4858,12 @@ fn lower(program: &Program) -> GraphIr {
             Declaration::Api(api) => lower_api(api, &mut graph),
             Declaration::Ui(ui) => lower_ui(ui, &mut graph),
             Declaration::Agent(agent) => lower_agent(agent, &mut graph),
+            Declaration::Bootstrap(bootstrap) => {
+                if let Some(app) = graph.nodes.iter_mut().find(|node| node.kind == "app") {
+                    app.metadata
+                        .insert("bootstrap".into(), bootstrap.flow.clone());
+                }
+            }
         }
     }
     let mut subscription_order = 0usize;
@@ -5439,6 +5499,16 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         if let Some(name) = &page.input_name {
             value.metadata.insert("input_name".into(), name.clone());
         }
+        if page.input_source == "cookie"
+            || page
+                .bindings
+                .iter()
+                .any(|binding| binding.source == "cookie")
+        {
+            value
+                .metadata
+                .insert("requires_session".into(), "true".into());
+        }
         value.metadata.insert("order".into(), index.to_string());
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));
@@ -5535,6 +5605,22 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         value.metadata.insert("submit".into(), submit.into());
         if let Some(redirect) = &form.redirect {
             value.metadata.insert("redirect".into(), redirect.clone());
+        }
+        if let Some(title) = &form.title {
+            value.metadata.insert("title".into(), title.clone());
+        }
+        if let Some(submit_label) = &form.submit_label {
+            value
+                .metadata
+                .insert("submit_label".into(), submit_label.clone());
+        }
+        if form.nav_hidden {
+            value.metadata.insert("nav".into(), "hidden".into());
+        }
+        if !form.omit_fields.is_empty() {
+            value
+                .metadata
+                .insert("omit_fields".into(), form.omit_fields.join(","));
         }
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));

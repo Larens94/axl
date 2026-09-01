@@ -96,6 +96,7 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 - Gate 4 **KPI** + **kit slots**: `kpi field "Label" ["Hint"]` and `slot kpi.card = DefaultKpiCard` (`kpi-registry-boundary.axl`).
 - Gate 4 **chart**: `chart field "Title"` over `List<label,value>` points (`chart-boundary.axl`).
 - Gate 4 **form validation UX**: failed `require` on form POST returns HTML 422 with alert + field errors and repopulated values (`form-validation-boundary.axl`).
+- Gate 4 **portal usability**: `bootstrap Flow` on serve; form `title` / `submit_label` / `nav hidden` / `omit field`; session pages redirect to `/login`; nested `List<>` columns render as tables; portal auto-seeds via `bootstrap BootstrapPortalProd`.
 - Portal CRM: `drawer /clienti/{id}` on list `/clienti` for gestionale detail overlay.
 - Package registry/lockfile remain open Gate 8 items.
 

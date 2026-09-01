@@ -69,6 +69,7 @@ Gate 4 foundation is executable: `ui` / `page` / `form` / **`drawer`** / **`moda
 `render` / `serve` produce HTML with sidebar + mobile bottom nav, KPI dashboards,
 bar charts, overlays and error/empty states (`balance-ui.axl`, `form-demo.axl`,
 `drawer-boundary.axl`, `modal-boundary.axl`, `bottom-nav-boundary.axl`,
-`kpi-registry-boundary.axl`, `chart-boundary.axl`). Form POST failures re-render HTML with
+`kpi-registry-boundary.axl`, `chart-boundary.axl`, `portal-usable-boundary.axl`). Form POST failures re-render HTML with
 field errors (`form-validation-boundary.axl`); portal clienti use a detail **drawer**.
+`bootstrap` runs once on `serve`; session-gated pages redirect to `/login`; forms support `title`, `submit_label`, `nav hidden`, `omit field`.
 Remaining Gate 4 polish: timeline/activity widgets.

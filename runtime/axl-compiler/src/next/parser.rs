@@ -93,6 +93,8 @@ pub fn parse(source: &str) -> Result<Program, Vec<Diagnostic>> {
             parse_api(line, body, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("ui ") {
             parse_ui(line, body, &mut declarations, &mut diagnostics);
+        } else if line.text.starts_with("bootstrap ") {
+            parse_bootstrap(line, &mut declarations, &mut diagnostics);
         } else if line.text.starts_with("agent ") {
             parse_agent(line, body, &mut declarations, &mut diagnostics);
         } else {
@@ -2554,8 +2556,7 @@ fn parse_ui(
             continue;
         }
         if line.text.starts_with("form ") {
-            parse_ui_form(line, &mut forms, diagnostics);
-            cursor += 1;
+            cursor = parse_ui_form_block(body, cursor, &mut forms, diagnostics);
             continue;
         }
         if line.text.starts_with("action ") {
@@ -3270,7 +3271,123 @@ fn parse_ui_slot(line: &SourceLine, slots: &mut Vec<UiSlot>, diagnostics: &mut V
     });
 }
 
-fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut Vec<Diagnostic>) {
+fn parse_bootstrap(
+    line: &SourceLine,
+    declarations: &mut Vec<Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    let flow = line.text["bootstrap ".len()..].trim();
+    if flow.is_empty() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P970",
+                "parse",
+                "bootstrap requires a flow name",
+                span(line),
+            )
+            .expected("bootstrap FlowName", &line.text),
+        );
+        return;
+    }
+    declarations.push(Declaration::Bootstrap(Bootstrap {
+        flow: flow.into(),
+        span: span(line),
+    }));
+}
+
+fn parse_ui_form_block(
+    body: &[SourceLine],
+    start: usize,
+    forms: &mut Vec<UiForm>,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> usize {
+    let line = &body[start];
+    let mut title = None;
+    let mut submit_label = None;
+    let mut nav_hidden = false;
+    let mut omit_fields = Vec::new();
+    let mut cursor = start + 1;
+    while cursor < body.len() && body[cursor].indent > line.indent {
+        let binding_line = &body[cursor];
+        if let Some(value) = binding_line.text.strip_prefix("title ") {
+            title = Some(parse_quoted_ui_label(
+                value,
+                binding_line,
+                diagnostics,
+                "AXL-P965",
+            ));
+        } else if let Some(value) = binding_line.text.strip_prefix("submit_label ") {
+            submit_label = Some(parse_quoted_ui_label(
+                value,
+                binding_line,
+                diagnostics,
+                "AXL-P966",
+            ));
+        } else if binding_line.text.trim() == "nav hidden" {
+            nav_hidden = true;
+        } else if let Some(field) = binding_line.text.strip_prefix("omit ") {
+            let field = field.trim();
+            if field.is_empty() {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-P967",
+                        "parse",
+                        "omit requires a field name",
+                        span(binding_line),
+                    )
+                    .expected("omit field_name", &binding_line.text),
+                );
+            } else {
+                omit_fields.push(field.into());
+            }
+        } else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P968",
+                    "parse",
+                    "unknown UI form binding",
+                    span(binding_line),
+                )
+                .expected(
+                    "title \"Label\"\n  submit_label \"Salva\"\n  nav hidden\n  omit field",
+                    &binding_line.text,
+                ),
+            );
+        }
+        cursor += 1;
+    }
+    if let Some(form) = parse_ui_form_line(line, diagnostics) {
+        let mut form = form;
+        form.title = title;
+        form.submit_label = submit_label;
+        form.nav_hidden = nav_hidden;
+        form.omit_fields = omit_fields;
+        forms.push(form);
+    }
+    cursor
+}
+
+fn parse_quoted_ui_label(
+    source: &str,
+    line: &SourceLine,
+    diagnostics: &mut Vec<Diagnostic>,
+    code: &str,
+) -> String {
+    let source = source.trim();
+    if source.len() >= 2
+        && ((source.starts_with('"') && source.ends_with('"'))
+            || (source.starts_with('\'') && source.ends_with('\'')))
+    {
+        return source[1..source.len() - 1].to_string();
+    }
+    diagnostics.push(
+        Diagnostic::error(code, "parse", "expected a quoted label", span(line))
+            .expected("\"Label\"", source),
+    );
+    source.trim_matches('"').trim_matches('\'').to_string()
+}
+
+fn parse_ui_form_line(line: &SourceLine, diagnostics: &mut Vec<Diagnostic>) -> Option<UiForm> {
     let remainder = line.text["form ".len()..].trim();
     let Some((signature, binding)) = remainder.rsplit_once('=') else {
         diagnostics.push(
@@ -3279,7 +3396,7 @@ fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut V
                 &line.text,
             ),
         );
-        return;
+        return None;
     };
     let binding = binding.trim();
     let (binding, redirect) = if let Some((rest, redirect_path)) = binding.rsplit_once(" redirect ")
@@ -3295,7 +3412,7 @@ fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut V
                 )
                 .expected("redirect /absolute/path", redirect_path),
             );
-            return;
+            return None;
         }
         (rest.trim(), Some(redirect_path.into()))
     } else {
@@ -3313,7 +3430,7 @@ fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut V
                 )
                 .expected("submit /absolute/path", submit_path),
             );
-            return;
+            return None;
         }
         (flow.trim(), Some(submit_path.into()))
     } else {
@@ -3326,7 +3443,7 @@ fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut V
                 &line.text,
             ),
         );
-        return;
+        return None;
     }
     let Some((request, output)) = signature.split_once("->") else {
         diagnostics.push(
@@ -3341,7 +3458,7 @@ fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut V
                 &line.text,
             ),
         );
-        return;
+        return None;
     };
     let mut request = request.split_whitespace();
     let (Some(path), Some(entity), None) = (request.next(), request.next(), request.next()) else {
@@ -3357,17 +3474,21 @@ fn parse_ui_form(line: &SourceLine, forms: &mut Vec<UiForm>, diagnostics: &mut V
                 &line.text,
             ),
         );
-        return;
+        return None;
     };
-    forms.push(UiForm {
+    Some(UiForm {
         path: path.into(),
         entity: entity.into(),
         output: output.trim().into(),
         flow: flow.into(),
         submit,
         redirect,
+        title: None,
+        submit_label: None,
+        nav_hidden: false,
+        omit_fields: Vec::new(),
         span: span(line),
-    });
+    })
 }
 
 fn parse_ui_action(

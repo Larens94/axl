@@ -1,0 +1,89 @@
+// Gate 4 portal usability: bootstrap, form labels, session redirect, nested list cells.
+axl 4
+app PortalUsableBoundary
+bootstrap SeedLoginBoundary
+
+entity LoginInput
+  email: email required
+  password: text required
+
+entity LoginResult
+  session_id: uuid required
+  token: text required
+  utente_id: uuid required
+
+entity HomePage
+  titolo: text required
+  messaggio: text required
+  totale_utenti: int required
+
+entity RigaPreventivo
+  prodotto_id: uuid required
+  quantita: int required
+  prezzo_unitario: money required
+  importo: money required
+
+entity Preventivo
+  id: uuid key
+  cliente_id: uuid required
+  stato: text required
+  totale: money required
+  righe: List<RigaPreventivo> required
+
+entity PreventivoPage
+  items: List<Preventivo> required
+  total: int required
+  limit: int required
+  offset: int required
+
+flow SeedLoginBoundary unit -> Result<HomePage>
+  make home: HomePage
+    titolo = "Boundary"
+    messaggio = "ok"
+    totale_utenti = 1
+  return home
+
+flow LoginBoundary LoginInput -> Result<LoginResult>
+  make result: LoginResult
+    session_id = "session-001"
+    token = "token"
+    utente_id = "utente-001"
+  return result
+
+flow PaginaPreventiviBoundary unit -> Result<PreventivoPage>
+  make riga: RigaPreventivo
+    prodotto_id = "prodotto-001"
+    quantita = 2
+    prezzo_unitario = 129900
+    importo = 259800
+  make preventivo: Preventivo
+    id = "preventivo-001"
+    cliente_id = "cliente-001"
+    stato = "bozza"
+    totale = 268770
+    righe = [riga]
+  make pagina: PreventivoPage
+    items = [preventivo]
+    total = 1
+    limit = 10
+    offset = 0
+  return pagina
+
+flow PaginaHomeSessione uuid -> Result<HomePage>
+  require input == "session-001" else "sessione_scaduta"
+  make home: HomePage
+    titolo = "Home"
+    messaggio = "sessione ok"
+    totale_utenti = 1
+  return home
+
+api AuthBoundaryApi
+  post /auth/login LoginInput -> Result<LoginResult> = LoginBoundary
+
+ui PortalUsableUi
+  form /login LoginInput -> Result<LoginResult> = LoginBoundary submit /auth/login redirect /home
+    title "Accedi"
+    submit_label "Accedi"
+    nav hidden
+  page /home uuid -> Result<HomePage> = PaginaHomeSessione from cookie.sid
+  page /preventivi/demo unit -> Result<PreventivoPage> = PaginaPreventiviBoundary

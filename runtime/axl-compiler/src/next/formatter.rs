@@ -496,6 +496,21 @@ pub fn format(program: &Program) -> String {
                         "  form {} {} -> {} = {}{}{}",
                         form.path, form.entity, form.output, form.flow, submit, redirect
                     ));
+                    if let Some(title) = &form.title {
+                        output.push(format!("    title \"{}\"", title.replace('"', "\\\"")));
+                    }
+                    if let Some(submit_label) = &form.submit_label {
+                        output.push(format!(
+                            "    submit_label \"{}\"",
+                            submit_label.replace('"', "\\\"")
+                        ));
+                    }
+                    if form.nav_hidden {
+                        output.push("    nav hidden".into());
+                    }
+                    for field in &form.omit_fields {
+                        output.push(format!("    omit {field}"));
+                    }
                 }
                 for action in &ui.actions {
                     let on = action
@@ -558,6 +573,9 @@ pub fn format(program: &Program) -> String {
                 append_values(&mut output, "plan", &agent.plans);
                 append_values(&mut output, "effect", &agent.effects);
                 append_values(&mut output, "capability", &agent.capabilities);
+            }
+            Declaration::Bootstrap(bootstrap) => {
+                output.push(format!("bootstrap {}", bootstrap.flow));
             }
         }
     }
