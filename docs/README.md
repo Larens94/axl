@@ -5,7 +5,7 @@ This documentation deliberately separates verified behavior from the roadmap.
 
 **Repository:** [github.com/Larens94/axl](https://github.com/Larens94/axl)
 
-**Sito documentazione (GitBook-style):** [larens94.github.io/axl/docs/](https://larens94.github.io/axl/docs/)
+**Sito documentazione:** [larens94.github.io/axl/](https://larens94.github.io/axl/) (home) · [book.html](book.html) (indice GitBook)
 
 ## Start here
 
@@ -20,8 +20,8 @@ This documentation deliberately separates verified behavior from the roadmap.
 - [Autoloop roadmap](roadmap.md) — executable gates and current position.
 - [Agent testing guide](agent-testing.md) — repeatable verification commands.
 - [Language specification](../SPEC-4.0.md) — the complete implemented boundary.
-- [Browser documentation](index.html) — sidebar GitBook-style, capitoli Markdown renderizzati.
-- [Presentation](../presentation.html) — a keyboard-navigable explanation.
+- [Browser documentation](book.html) — sidebar GitBook-style, capitoli Markdown renderizzati.
+- [Presentation](presentation.html) — slide interattive (generata da `scripts/prepare-docs-site.sh` per Pages).
 
 ## Portal gestionale (quick links)
 

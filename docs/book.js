@@ -1,4 +1,5 @@
 (() => {
+  const BOOK_PAGE = "book.html";
   const params = new URLSearchParams(window.location.search);
   const contentEl = document.getElementById("content");
   const sidebarEl = document.getElementById("sidebar");
@@ -16,7 +17,7 @@
     if (path.endsWith(".html")) {
       return path;
     }
-    return `index.html?p=${encodeURIComponent(path)}`;
+    return `${BOOK_PAGE}?p=${encodeURIComponent(path)}`;
   }
 
   function setStatus(message, isError = false) {
@@ -39,9 +40,9 @@
               ? item.path
               : pageUrl(item.path);
             const active =
-              !item.external && item.path === activePath ? " active" : "";
+              !item.external && !item.navigate && item.path === activePath ? " active" : "";
             const target = item.external ? ' target="_blank" rel="noopener"' : "";
-            return `<a class="book-nav-link${active}" href="${href}" data-path="${item.path ?? ""}"${target}>${item.title}</a>`;
+            return `<a class="book-nav-link${active}" href="${href}" data-path="${item.path ?? ""}" data-navigate="${item.navigate ? "1" : "0"}"${target}>${item.title}</a>`;
           })
           .join("");
         return `<div class="book-section"><p class="book-section-title">${section.title}</p>${links}</div>`;
@@ -51,9 +52,6 @@
 
   function resolvePath(basePath, href) {
     if (!href || href.startsWith("http://") || href.startsWith("https://") || href.startsWith("#")) {
-      return href;
-    }
-    if (href.startsWith("../")) {
       return href;
     }
     const dir = basePath.includes("/") ? basePath.slice(0, basePath.lastIndexOf("/") + 1) : "";
@@ -91,19 +89,6 @@
     setStatus(path);
   }
 
-  async function loadHtml(path) {
-    const response = await fetch(path);
-    if (!response.ok) {
-      throw new Error(`Impossibile caricare ${path} (${response.status})`);
-    }
-    const text = await response.text();
-    const doc = new DOMParser().parseFromString(text, "text/html");
-    const main = doc.querySelector("main") || doc.body;
-    contentEl.innerHTML = `<article class="book-article book-embedded-html">${main.innerHTML}</article>`;
-    document.title = `${path} · AXL 4 Docs`;
-    setStatus(path);
-  }
-
   async function showPage(path) {
     if (!path) path = nav?.default || "README.md";
     currentPath = path;
@@ -111,21 +96,14 @@
     contentEl.innerHTML = `<article class="book-article"><p>Caricamento…</p></article>`;
     const item = flattenItems(nav.sections).find((entry) => entry.path === path);
     try {
-      if (item?.external) {
-        window.location.href = path;
+      if (item?.external || item?.navigate) {
+        window.location.href = pageUrl(path);
         return;
       }
-      if (item?.type === "html" || path.endsWith(".html")) {
-        await loadHtml(path);
-      } else {
-        await loadMarkdown(path);
-      }
-      const url = pageUrl(path);
-      if (!item?.external) {
-        history.replaceState({ path }, "", url);
-      }
+      await loadMarkdown(path);
+      history.replaceState({ path }, "", pageUrl(path));
     } catch (error) {
-      contentEl.innerHTML = `<article class="book-article"><h1>Errore</h1><p>${error.message}</p><p>Serve un server HTTP locale o GitHub Pages. Dalla root del repo: <code>npx serve .</code> poi apri <code>/docs/index.html</code>.</p></article>`;
+      contentEl.innerHTML = `<article class="book-article"><h1>Errore</h1><p>${error.message}</p><p>Esegui <code>sh scripts/prepare-docs-site.sh</code> poi <code>sh scripts/serve-docs.sh</code>, oppure attendi il deploy GitHub Pages.</p></article>`;
       setStatus("Errore caricamento", true);
     }
   }
@@ -156,6 +134,7 @@
     sidebarEl.addEventListener("click", (event) => {
       const link = event.target.closest("a.book-nav-link");
       if (!link || link.target === "_blank") return;
+      if (link.dataset.navigate === "1") return;
       const path = link.getAttribute("data-path");
       if (!path || !path.endsWith(".md")) return;
       event.preventDefault();

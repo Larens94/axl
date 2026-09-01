@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
-# Serve the repo root so docs/index.html can fetch ../SPEC-4.0.md, presentation.html, etc.
 set -e
 cd "$(dirname "$0")/.."
-echo "Docs: http://127.0.0.1:4000/docs/index.html"
-exec npx --yes serve . -l 4000
+sh scripts/prepare-docs-site.sh
+echo "Home:  http://127.0.0.1:4000/"
+echo "Book:  http://127.0.0.1:4000/book.html"
+exec npx --yes serve docs -l 4000

@@ -20,7 +20,7 @@ target implementations rather than the source language.
 
 | Doc | Link |
 |---|---|
-| **Docs site (GitBook)** | [larens94.github.io/axl/docs/](https://larens94.github.io/axl/docs/) |
+| **Docs site (GitBook)** | [larens94.github.io/axl/](https://larens94.github.io/axl/) |
 | **Docs index (Markdown)** | [github.com/Larens94/axl/blob/main/docs/README.md](https://github.com/Larens94/axl/blob/main/docs/README.md) |
 | **Portal / gestionale** | [docs/agent-portal-framework.md](https://github.com/Larens94/axl/blob/main/docs/agent-portal-framework.md) |
 | **Implementation status** | [docs/status.md](https://github.com/Larens94/axl/blob/main/docs/status.md) |
@@ -125,7 +125,8 @@ Dettaglio app, curl e flussi vendite: [`examples/apps/README.md`](examples/apps/
 ## Project map
 
 - [`docs/README.md`](docs/README.md) — documentation index ([GitHub](https://github.com/Larens94/axl/blob/main/docs/README.md)).
-- [`docs/index.html`](docs/index.html) — GitBook-style site ([Pages](https://larens94.github.io/axl/docs/)); apri con `npx serve .` dalla root.
+- [`docs/index.html`](docs/index.html) — home del sito ([Pages](https://larens94.github.io/axl/)).
+- [`docs/book.html`](docs/book.html) — documentazione GitBook-style; locale: `sh scripts/serve-docs.sh`.
 - [`docs/agent-portal-framework.md`](docs/agent-portal-framework.md) — portal CRM, layers, hosts, verify.
 - [`hosts/portal-web/README.md`](hosts/portal-web/README.md) — optional React host (`axl-ui/1` codegen + proxy).
 - `SPEC-4.0.md` — implemented language boundary.

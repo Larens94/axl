@@ -9,8 +9,10 @@ on:
       - "mondo.html"
       - "film.html"
       - "SPEC-4.0.md"
-      - "index.html"
-      - ".nojekyll"
+      - "hosts/portal-web/README.md"
+      - "examples/apps/README.md"
+      - "scripts/prepare-docs-site.sh"
+      - "scripts/serve-docs.sh"
       - ".github/workflows/docs-pages.yml"
   workflow_dispatch:
 
@@ -31,10 +33,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare self-contained docs site
+        run: sh scripts/prepare-docs-site.sh
       - uses: actions/configure-pages@v5
-      # Deploy the whole repo so docs can fetch ../presentation.html, SPEC-4.0.md, etc.
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: docs
       - id: deployment
         uses: actions/deploy-pages@v4

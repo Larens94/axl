@@ -10,3 +10,11 @@ generated
 .mimocode/node_modules/
 db__*
 film/rendered/
+
+# Bundled into docs/ by scripts/prepare-docs-site.sh (GitHub Pages)
+docs/presentation.html
+docs/mondo.html
+docs/film.html
+docs/SPEC-4.0.md
+docs/hosts/
+docs/examples/

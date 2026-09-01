@@ -5,11 +5,11 @@
     {
       "title": "Inizio",
       "items": [
+        { "title": "Home", "path": "index.html", "type": "html", "navigate": true },
         { "title": "Panoramica", "path": "README.md" },
-        { "title": "Benvenuto", "path": "welcome.html", "type": "html" },
         { "title": "Stato implementazione", "path": "status.md" },
         { "title": "Roadmap (gates)", "path": "roadmap.md" },
-        { "title": "Specifica linguaggio", "path": "../SPEC-4.0.md" }
+        { "title": "Specifica linguaggio", "path": "SPEC-4.0.md" }
       ]
     },
     {
@@ -26,8 +26,8 @@
       "title": "Portal gestionale",
       "items": [
         { "title": "Portal framework", "path": "agent-portal-framework.md" },
-        { "title": "Host React", "path": "../hosts/portal-web/README.md" },
-        { "title": "Esempi app", "path": "../examples/apps/README.md" }
+        { "title": "Host React", "path": "hosts/portal-web/README.md" },
+        { "title": "Esempi app", "path": "examples/apps/README.md" }
       ]
     },
     {
@@ -44,9 +44,9 @@
     {
       "title": "Extra",
       "items": [
-        { "title": "Presentazione", "path": "../presentation.html", "type": "html" },
-        { "title": "Mondo 3D", "path": "../mondo.html", "type": "html" },
-        { "title": "Film", "path": "../film.html", "type": "html" },
+        { "title": "Presentazione", "path": "presentation.html", "type": "html", "navigate": true },
+        { "title": "Mondo 3D", "path": "mondo.html", "type": "html", "navigate": true },
+        { "title": "Film", "path": "film.html", "type": "html", "navigate": true },
         { "title": "Repository GitHub", "path": "https://github.com/Larens94/axl", "external": true }
       ]
     }

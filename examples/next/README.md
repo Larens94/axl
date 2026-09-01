@@ -20,5 +20,6 @@ Rust, React, SQL and agent target contracts.
 See `SPEC-4.0.md` for the implemented boundary.
 
 For smaller, independently verified construction examples, see
-`examples/blocks`. The visual overview is available in `docs/index.html`, and
+`examples/blocks`. The visual overview is available in `docs/index.html` (home) and
+`docs/book.html` (GitBook index), and
 the simplified presentation is `presentation.html`.
