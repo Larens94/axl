@@ -47,6 +47,45 @@ Serve routes declared in AXL through the generic Axum runtime:
   serve examples/apps/cashflow-core.axl 127.0.0.1:8080
 ```
 
+## Portal gestionale (sviluppo locale)
+
+Prerequisiti: [Rust](https://rustup.rs) (toolchain recente, workspace edition 2024).
+Opzionale: Node.js 20+ per l’host React.
+
+Aggiorna il clone e avvia il CRM portal (auth + vendite in AXL):
+
+```sh
+git checkout main
+git pull origin main
+
+cargo build -p axl-compiler
+
+# Terminale 1 — HTML + API AXL su http://127.0.0.1:8080
+./scripts/demo-portal.sh
+```
+
+| URL | Uso |
+|---|---|
+| http://127.0.0.1:8080/login | Login sessione (`admin@example.com` / `admin123`) |
+| http://127.0.0.1:8080/home | Dashboard dopo login |
+| http://127.0.0.1:8080/clienti | Clienti (drawer dettaglio) |
+| http://127.0.0.1:8080/clienti/demo | Demo senza login (gate automatici) |
+
+Persistenza SQLite locale: `./build/portal-auth.db`, `./build/vendite.db` (create al primo avvio).
+
+Host React opzionale (proxy same-origin per cookie `sid`):
+
+```sh
+# Terminale 2 — Vite su http://127.0.0.1:5173
+cd hosts/portal-web
+npm install
+AXL_PROXY_TARGET=http://127.0.0.1:8080 npm run dev
+```
+
+Verifica end-to-end: `./scripts/verify-portal.sh`
+
+Dettaglio app, curl e flussi vendite: [`examples/apps/README.md`](examples/apps/README.md).
+
 ## Project map
 
 - `SPEC-4.0.md` — implemented language boundary.
