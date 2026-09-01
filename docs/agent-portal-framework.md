@@ -24,6 +24,31 @@ HTML shell primitives, manifest → codegen (`axl_routes.tsx`, layouts, registry
 Never implement login, RBAC, CRUD or page rules directly in Rust or React — add an
 AXL primitive and bind it from flows.
 
+## Targets: backend (Rust) and frontend (React host)
+
+| Target | Path | Role |
+|---|---|---|
+| **HTTP + HTML** | `runtime/axl-compiler` (`serve`, `ui.rs`, `http.rs`) | Generic Axum dispatch, flow execution, HTML rendering from `axl-ui/1` IR |
+| **React host** | `hosts/portal-web` | Vite shell: generated routes/layouts, proxy to `serve`, same-origin `sid` cookies |
+
+```text
+portal.axl  →  Graph IR  →  serve (:8080)     HTML + JSON API
+                 └────────→  experiment        axl_routes.tsx, layouts
+                                    └────────→  portal-web (:5173)  fetch HTML from AXL
+```
+
+### `hosts/` and `hosts/portal-web`
+
+- **`hosts/`** — folder for **runtime hosts** (apps that run generated output, not product source).
+- **`portal-web`** — optional React host for the portal:
+  - `npm run sync` runs `axl-compiler experiment` on `portal.axl` and copies `targets/react/*` into `src/generated/`.
+  - `AxlSurface` loads **AXL-rendered HTML** through the Vite proxy (no vendite logic in TS).
+  - `LayoutShell` binds layout slots from codegen; navigation lists routes from `axl-ui/1`.
+
+For day-to-day dev, **`:8080` alone is enough** (pure AXL HTML). Use `portal-web` when you need the React router shell or same-origin cookies on `:5173`.
+
+See [hosts/portal-web/README.md](../hosts/portal-web/README.md).
+
 ## API surfaces (portal.axl)
 
 | Block | Prefix | Purpose |
@@ -100,13 +125,32 @@ Guard flows are declared in AXL (`RequireSession`, `RequireSessionPermesso`).
 - Portal CRM: `drawer /clienti/{id}` on list `/clienti` for gestionale detail overlay.
 - Package registry/lockfile remain open Gate 8 items.
 
+## Local run
+
+```sh
+git checkout main && git pull origin main
+cargo build -p axl-compiler
+./scripts/demo-portal.sh          # http://127.0.0.1:8080
+```
+
+Windows (PowerShell):
+
+```powershell
+cargo run -p axl-compiler -- serve examples/apps/portal.axl 127.0.0.1:8080
+```
+
+Optional React host (terminal 2):
+
+```sh
+cd hosts/portal-web && npm install
+AXL_PROXY_TARGET=http://127.0.0.1:8080 npm run dev   # http://127.0.0.1:5173
+```
+
 ## Verify
 
 ```sh
 ./scripts/verify-portal.sh
 ./scripts/demo-portal.sh
-# optional React host (same-origin cookies):
-#   cd hosts/portal-web && npm install && npm run dev
 ```
 
 Demo login: `admin@example.com` / `admin123` → `/home` → `/clienti` (requires session).

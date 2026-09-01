@@ -16,6 +16,19 @@ AXL describes software through entities, capacities, skills and blueprints with
 typed open surfaces. The compiler rejects closed blueprints. Rust and React are
 target implementations rather than the source language.
 
+## Documentation (GitHub)
+
+| Doc | Link |
+|---|---|
+| **Docs index** | [github.com/Larens94/axl/blob/main/docs/README.md](https://github.com/Larens94/axl/blob/main/docs/README.md) |
+| **Portal / gestionale** | [docs/agent-portal-framework.md](https://github.com/Larens94/axl/blob/main/docs/agent-portal-framework.md) |
+| **Implementation status** | [docs/status.md](https://github.com/Larens94/axl/blob/main/docs/status.md) |
+| **Roadmap (gates)** | [docs/roadmap.md](https://github.com/Larens94/axl/blob/main/docs/roadmap.md) |
+| **Language spec** | [SPEC-4.0.md](https://github.com/Larens94/axl/blob/main/SPEC-4.0.md) |
+| **Agent testing** | [docs/agent-testing.md](https://github.com/Larens94/axl/blob/main/docs/agent-testing.md) |
+
+Repository: [github.com/Larens94/axl](https://github.com/Larens94/axl)
+
 ## Try the experiment
 
 ```sh
@@ -52,7 +65,13 @@ Serve routes declared in AXL through the generic Axum runtime:
 Prerequisiti: [Rust](https://rustup.rs) (toolchain recente, workspace edition 2024).
 Opzionale: Node.js 20+ per l’host React.
 
-Aggiorna il clone e avvia il CRM portal (auth + vendite in AXL):
+**Tutta la logica di prodotto** (auth, RBAC, vendite, UI, API) è in AXL
+(`examples/apps/portal.axl` e `domains/*`). Rust (`axl-compiler serve`) e
+`hosts/portal-web` sono solo **target**: HTTP generico, rendering HTML, proxy e
+codegen route React. Vedi
+[Portal framework](https://github.com/Larens94/axl/blob/main/docs/agent-portal-framework.md).
+
+Aggiorna il clone e avvia il CRM portal:
 
 ```sh
 git checkout main
@@ -64,16 +83,30 @@ cargo build -p axl-compiler
 ./scripts/demo-portal.sh
 ```
 
+Su Windows (PowerShell), se lo script bash non è disponibile:
+
+```powershell
+cargo run -p axl-compiler -- serve examples/apps/portal.axl 127.0.0.1:8080
+```
+
+All’avvio, `bootstrap BootstrapPortalProd` in `portal.axl` esegue il seed SQLite
+(admin + dati vendite demo). Login: `admin@example.com` / `admin123`.
+
 | URL | Uso |
 |---|---|
-| http://127.0.0.1:8080/login | Login sessione (`admin@example.com` / `admin123`) |
+| http://127.0.0.1:8080/login | Login sessione |
 | http://127.0.0.1:8080/home | Dashboard dopo login |
 | http://127.0.0.1:8080/clienti | Clienti (drawer dettaglio) |
 | http://127.0.0.1:8080/clienti/demo | Demo senza login (gate automatici) |
 
-Persistenza SQLite locale: `./build/portal-auth.db`, `./build/vendite.db` (create al primo avvio).
+Persistenza SQLite locale: `./build/portal-auth.db`, `./build/vendite.db`.
 
-Host React opzionale (proxy same-origin per cookie `sid`):
+### Host React opzionale (`hosts/portal-web`)
+
+Cartella **`hosts/`** = runtime host (contenitori che consumano l’output AXL).
+**`portal-web`** = shell Vite + React: route/layout da manifest `axl-ui/1`
+(codegen da `portal.axl`), contenuto HTML ancora renderizzato da AXL via proxy
+(same-origin cookie `sid`). Nessuna regola CRM in TypeScript.
 
 ```sh
 # Terminale 2 — Vite su http://127.0.0.1:5173
@@ -82,12 +115,17 @@ npm install
 AXL_PROXY_TARGET=http://127.0.0.1:8080 npm run dev
 ```
 
+Dettaglio host: [hosts/portal-web/README.md](hosts/portal-web/README.md).
+
 Verifica end-to-end: `./scripts/verify-portal.sh`
 
 Dettaglio app, curl e flussi vendite: [`examples/apps/README.md`](examples/apps/README.md).
 
 ## Project map
 
+- [`docs/README.md`](docs/README.md) — documentation index ([GitHub](https://github.com/Larens94/axl/blob/main/docs/README.md)).
+- [`docs/agent-portal-framework.md`](docs/agent-portal-framework.md) — portal CRM, layers, hosts, verify.
+- [`hosts/portal-web/README.md`](hosts/portal-web/README.md) — optional React host (`axl-ui/1` codegen + proxy).
 - `SPEC-4.0.md` — implemented language boundary.
 - `docs/index.html` — concise browser documentation.
 - `docs/blocks.md` — verified guide to open block construction.
@@ -148,8 +186,8 @@ commands, API, UI, events, jobs, observability, agent tools and scenarios.
 ```
 
 Status: experiment. Typed flows, replaceable configured providers, durable
-SQLite paths, composite body/path/query/header/cookie routes, capacity-backed
-bearer auth (static token + HS256 JWT), capacity-backed transactions
-(begin/commit/rollback), migrations and typed store queries (filter/order/page)
-execute. True secret references (Gate 8), OAuth, multi-database adapters, richer
-backend services and React runtime generation are not implemented yet.
+SQLite/PostgreSQL/MySQL/document stores, HTTP + auth + UI (`axl-ui/1`) with
+HTML serve and optional React host (`hosts/portal-web`). Portal gestionale
+(auth, vendite, drawer, bootstrap) runs from `examples/apps/portal.axl` only.
+Gate 8 package registry, full React component runtime per field and timeline
+widgets remain open.

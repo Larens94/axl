@@ -5,6 +5,20 @@ Consumes `axl-ui/1` codegen (`axl_routes.tsx`, layouts, registry) from
 layout slots and a same-origin proxy so `sid` cookies work with
 `axl-compiler serve`.
 
+Full portal docs: [docs/agent-portal-framework.md](../../docs/agent-portal-framework.md)
+([GitHub](https://github.com/Larens94/axl/blob/main/docs/agent-portal-framework.md)).
+
+## What is composed from AXL?
+
+| Layer | Source |
+|---|---|
+| API routes, auth, RBAC, vendite flows | `examples/apps/portal.axl` + `domains/*` |
+| UI pages, forms, drawer, KPI, chart | `ui` blocks in `portal.axl` → HTML via `serve` |
+| React route table + layouts | `axl-compiler experiment` → `src/generated/*` |
+| Visible page content in this host | **HTML fetched from AXL** (`AxlSurface.tsx`) |
+
+Rust (`serve`) and this React app are **targets**, not the product language.
+
 ## Run
 
 ```sh
