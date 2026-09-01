@@ -5,6 +5,8 @@ This documentation deliberately separates verified behavior from the roadmap.
 
 **Repository:** [github.com/Larens94/axl](https://github.com/Larens94/axl)
 
+**Sito documentazione (GitBook-style):** [larens94.github.io/axl/docs/](https://larens94.github.io/axl/docs/)
+
 ## Start here
 
 - [Building blocks](blocks.md) — how capacities, skills, ports, slots and hooks
@@ -18,7 +20,7 @@ This documentation deliberately separates verified behavior from the roadmap.
 - [Autoloop roadmap](roadmap.md) — executable gates and current position.
 - [Agent testing guide](agent-testing.md) — repeatable verification commands.
 - [Language specification](../SPEC-4.0.md) — the complete implemented boundary.
-- [Browser documentation](index.html) — the concise visual guide.
+- [Browser documentation](index.html) — sidebar GitBook-style, capitoli Markdown renderizzati.
 - [Presentation](../presentation.html) — a keyboard-navigable explanation.
 
 ## Portal gestionale (quick links)
