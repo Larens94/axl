@@ -98,10 +98,18 @@ pub fn evaluate(expression: &Expr, values: &BTreeMap<String, Value>) -> Result<V
                 .get(&path[0])
                 .ok_or_else(|| format!("unknown runtime value '{}'", path[0]))?;
             for segment in &path[1..] {
-                value = value
-                    .as_object()
-                    .and_then(|object| object.get(segment))
-                    .ok_or_else(|| format!("value path '{}' is missing", path.join(".")))?;
+                match value {
+                    // A declared-but-absent optional field reads as `null`. Field
+                    // access is validated by the analyzer, so a missing member can
+                    // only be an optional that was not provided.
+                    Value::Object(object) => match object.get(segment) {
+                        Some(next) => value = next,
+                        None => return Ok(Value::Null),
+                    },
+                    // Reading through an absent optional stays absent.
+                    Value::Null => return Ok(Value::Null),
+                    _ => return Err(format!("value path '{}' is missing", path.join("."))),
+                }
             }
             Ok(value.clone())
         }
@@ -150,6 +158,22 @@ pub fn evaluate(expression: &Expr, values: &BTreeMap<String, Value>) -> Result<V
                 evaluate(when_false, values)
             }
         }
+    }
+}
+
+/// Evaluate an expression that feeds an optional target.
+///
+/// Returns `Ok(None)` when the expression evaluates to an absent value (`null`),
+/// which lets `make` leave an optional field absent instead of storing a `null`
+/// that would fail entity validation. Genuine evaluation errors (type
+/// mismatches, arithmetic on non-numbers, unknown builtins, …) still propagate.
+pub fn evaluate_optional(
+    expression: &Expr,
+    values: &BTreeMap<String, Value>,
+) -> Result<Option<Value>, String> {
+    match evaluate(expression, values)? {
+        Value::Null => Ok(None),
+        other => Ok(Some(other)),
     }
 }
 
@@ -546,6 +570,63 @@ mod tests {
         let second = evaluate(&expression, &BTreeMap::new()).unwrap();
         assert_ne!(first, second);
         assert!(first.as_str().unwrap().contains('-'));
+    }
+
+    #[test]
+    fn evaluate_optional_absent_path_is_none() {
+        let values = BTreeMap::from([("input".into(), serde_json::json!({"nome": "x"}))]);
+        assert_eq!(
+            evaluate_optional(&parse("input.priorita").unwrap(), &values).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn evaluate_reads_absent_object_member_as_null() {
+        let values = BTreeMap::from([("input".into(), serde_json::json!({"nome": "x"}))]);
+        assert_eq!(
+            evaluate(&parse("input.priorita").unwrap(), &values).unwrap(),
+            Value::Null
+        );
+    }
+
+    #[test]
+    fn evaluate_absent_optional_compares_as_not_equal() {
+        let values = BTreeMap::from([("input".into(), serde_json::json!({"nome": "x"}))]);
+        assert_eq!(
+            evaluate(&parse("input.stato != \"attivo\"").unwrap(), &values).unwrap(),
+            Value::Bool(true)
+        );
+    }
+
+    #[test]
+    fn evaluate_unknown_root_still_errors() {
+        let values = BTreeMap::new();
+        assert!(evaluate(&parse("input.priorita").unwrap(), &values).is_err());
+    }
+
+    #[test]
+    fn evaluate_optional_present_path_is_some() {
+        let values = BTreeMap::from([("input".into(), serde_json::json!({"priorita": 5}))]);
+        assert_eq!(
+            evaluate_optional(&parse("input.priorita").unwrap(), &values).unwrap(),
+            Some(serde_json::json!(5))
+        );
+    }
+
+    #[test]
+    fn evaluate_optional_null_path_is_none() {
+        let values = BTreeMap::from([("input".into(), serde_json::json!({"priorita": null}))]);
+        assert_eq!(
+            evaluate_optional(&parse("input.priorita").unwrap(), &values).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn evaluate_optional_propagates_real_errors() {
+        let values = BTreeMap::from([("input".into(), serde_json::json!({"a": "x"}))]);
+        assert!(evaluate_optional(&parse("input.a + 1").unwrap(), &values).is_err());
     }
 
     #[test]
