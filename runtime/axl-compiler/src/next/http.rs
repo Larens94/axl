@@ -89,11 +89,25 @@ pub fn dispatch_with_headers(
     };
     let exact_ui = ui::matches_exact_ui_path(graph, request_path);
     if method == "get" && (exact_ui || accepts_html(headers)) {
-        if ui::should_redirect_to_login(graph, request_path, headers) {
-            return login_redirect_result(request_path);
-        }
-        if let Some(result) = dispatch_ui_get(graph, runtime, request_path, headers) {
-            return result;
+        let wants_html = accepts_html(headers);
+        let ui_result = if ui::should_redirect_to_login(graph, request_path, headers) {
+            Some(login_redirect_result(request_path))
+        } else {
+            dispatch_ui_get(graph, runtime, request_path, headers)
+        };
+        if let Some(result) = ui_result {
+            // A client that did not ask for HTML but matches a JSON API route on
+            // the same path (e.g. `GET /clienti`) should receive JSON rather than
+            // a login redirect. Browser navigations (which accept HTML) still get
+            // redirected to the login page.
+            let is_login_redirect = result.status == 302
+                && result
+                    .headers
+                    .get("location")
+                    .is_some_and(|location| location.starts_with("/login"));
+            if wants_html || !is_login_redirect || api_match.is_none() {
+                return result;
+            }
         }
     }
     if method == "options" {
@@ -2099,6 +2113,112 @@ ui Screen
                 .get("location")
                 .is_some_and(|value| value.starts_with("/login?next="))
         );
+    }
+
+    const NEGOTIATION_UI: &str = r#"axl 4
+app NegUi
+entity Cliente
+  id: uuid key
+  nome: text required
+  priorita: int optional
+entity ClientePage
+  items: List<Cliente> required
+  total: int required
+  limit: int required
+  offset: int required
+entity ClienteSessioneQuery
+  session_id: uuid required
+  stato: text optional
+  limit: int required
+  offset: int required
+flow ElencaClienti unit -> Result<List<Cliente>>
+  make c: Cliente
+    id = "cliente-001"
+    nome = "Alice"
+  return [c]
+flow CercaCliente uuid -> Result<Cliente>
+  make c: Cliente
+    id = input
+    nome = "Alice"
+  return c
+flow CreaCliente Cliente -> Result<Cliente>
+  return input
+flow PaginaClienti ClienteSessioneQuery -> Result<ClientePage>
+  make c: Cliente
+    id = "cliente-001"
+    nome = "Alice"
+  make page: ClientePage
+    items = [c]
+    total = 1
+    limit = input.limit
+    offset = input.offset
+  return page
+api Api
+  get /clienti unit -> Result<List<Cliente>> = ElencaClienti
+  get /clienti/{id} uuid -> Result<Cliente> = CercaCliente from path.id
+  post /clienti Cliente -> Result<Cliente> = CreaCliente
+ui Screen
+  page /clienti ClienteSessioneQuery -> Result<ClientePage> = PaginaClienti
+    bind session_id = cookie.sid
+    filter stato = query.stato
+    pagination limit = query.limit default 10
+    pagination offset = query.offset default 0
+  form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti
+    nav hidden
+    omit id
+"#;
+
+    #[test]
+    fn json_client_gets_api_data_instead_of_login_redirect() {
+        let graph = compile_source(NEGOTIATION_UI).unwrap().graph;
+        let result = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "get",
+            "/clienti",
+            Value::Null,
+            &BTreeMap::new(),
+        );
+        assert_eq!(result.status, 200);
+        assert!(result.body.get("ok").and_then(|ok| ok.as_array()).is_some());
+    }
+
+    #[test]
+    fn html_client_without_session_is_redirected_to_login() {
+        let graph = compile_source(NEGOTIATION_UI).unwrap().graph;
+        let mut headers = BTreeMap::new();
+        headers.insert("accept".into(), "text/html".into());
+        let result = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "get",
+            "/clienti",
+            Value::Null,
+            &headers,
+        );
+        assert_eq!(result.status, 302);
+        assert!(
+            result
+                .headers
+                .get("location")
+                .is_some_and(|value| value.starts_with("/login?next="))
+        );
+    }
+
+    #[test]
+    fn literal_form_route_wins_over_templated_api_route() {
+        let graph = compile_source(NEGOTIATION_UI).unwrap().graph;
+        let result = dispatch_with_headers(
+            &graph,
+            &mut BuiltinRuntime::new().unwrap(),
+            "get",
+            "/clienti/new",
+            Value::Null,
+            &BTreeMap::new(),
+        );
+        assert_eq!(result.status, 200);
+        let html = result.body.as_str().unwrap_or_default();
+        assert!(html.contains(r#"action="/clienti""#));
     }
 
     #[test]
