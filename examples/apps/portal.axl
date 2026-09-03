@@ -119,8 +119,6 @@ api VenditeApi
 
 api VenditeDurableApi
   post /clienti/durable Cliente -> Result<Cliente> = CreaClienteSqlite
-    guard session RequireSession from cookie.sid
-    guard can RequireSessionPermesso "vendite.clienti.read" from cookie.sid
   get /clienti/durable/{id} uuid -> Result<Cliente> = CercaClienteSqlite from path.id
   post /clienti/durable/query ClienteQuery -> Result<ClientePage> = InterrogaClientiSqlite
   post /prodotti/durable Prodotto -> Result<Prodotto> = CreaProdottoSqlite

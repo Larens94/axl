@@ -527,9 +527,8 @@ flow InviaPreventivoDoppioDemoUnit unit -> Result<Preventivo>
 
 flow CreaClienteSqlite Cliente -> Result<Cliente>
   in store: ArchivioClienti = SqliteClienti
-  let nuovo_id = uuid.v4
   make cliente: Cliente
-    id = nuovo_id
+    id = input.id
     nome = input.nome
     email = input.email
     budget = input.budget

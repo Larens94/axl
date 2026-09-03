@@ -58,10 +58,27 @@ pub fn should_redirect_to_login(
     if is_guest_path(path) || normalized.contains("/demo") {
         return false;
     }
+    // GET dispatch precedence is form -> page -> drawer -> modal, so a literal
+    // form route (e.g. `/listini/new`) is served before a dynamic session-gated
+    // page (`/listini/{id}`) that also matches. Never redirect such a form path.
+    if has_form_at_path(graph, path) {
+        return false;
+    }
     if !page_requires_session(graph, path) {
         return false;
     }
     super::http::cookie_value(headers, "sid").is_none()
+}
+
+fn has_form_at_path(graph: &GraphIr, path: &str) -> bool {
+    let normalized = normalize_path(path);
+    graph.nodes.iter().any(|node| {
+        node.kind == "form"
+            && node
+                .metadata
+                .get("path")
+                .is_some_and(|value| normalize_path(value) == normalized)
+    })
 }
 
 pub fn is_session_auth_error(value: &Value) -> bool {
@@ -552,9 +569,6 @@ fn render_sidebar(graph: &GraphIr, current_path: &str) -> String {
         if group == "Accesso" && !show_access {
             continue;
         }
-        if is_form && group != "Accesso" {
-            continue;
-        }
         if group != current_group {
             if !items.is_empty() {
                 sections.push(format!(
@@ -861,6 +875,24 @@ fn render_detail_card(fields: &[(String, String)]) -> String {
     </dl>
   </section>"#
     )
+}
+
+fn augment_query_with_pagination_defaults(
+    graph: &GraphIr,
+    page: &super::ir::GraphNode,
+    query: &str,
+) -> String {
+    let mut result = query.to_string();
+    for pagination in children(graph, &page.id, "ui_pagination") {
+        let field = pagination.name.as_str();
+        if super::http::query_value(query, field).is_some() {
+            continue;
+        }
+        if let Some(default) = pagination.metadata.get("default") {
+            result = merge_query_param(&result, field, default);
+        }
+    }
+    result
 }
 
 fn apply_ui_pagination_defaults(
@@ -2476,7 +2508,12 @@ fn bind_page_input(
         .map(String::as_str)
         .unwrap_or("body");
     if source == "composite" {
-        let (path_only, query) = request_path.split_once('?').unwrap_or((request_path, ""));
+        let (path_only, raw_query) = request_path.split_once('?').unwrap_or((request_path, ""));
+        // Pagination bindings (e.g. `limit = query.limit default 10`) map to
+        // required fields, so seed their declared defaults before composite
+        // binding when the request omits them; otherwise binding fails on an
+        // absent query value before defaults can be applied.
+        let query = augment_query_with_pagination_defaults(graph, page, raw_query);
         let path_params = page
             .metadata
             .get("path")
@@ -2487,7 +2524,7 @@ fn bind_page_input(
             page,
             explicit_input,
             &path_params,
-            query,
+            &query,
             headers,
         )?;
         return apply_ui_pagination_defaults(graph, page, bound);

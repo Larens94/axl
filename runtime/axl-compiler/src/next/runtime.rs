@@ -768,9 +768,20 @@ fn evaluate_flow_inner(
                 let mut object = Map::new();
                 for assignment in children(graph, &statement.id, "assign") {
                     let expression = statement_expression(assignment)?;
-                    let value = expression::evaluate(&expression, &values)
-                        .map_err(|message| RuntimeError(format!("{}: {message}", assignment.id)))?;
-                    object.insert(assignment.name.clone(), value);
+                    if optional_entity_field(graph, type_name, &assignment.name) {
+                        if let Some(value) = expression::evaluate_optional(&expression, &values)
+                            .map_err(|message| {
+                                RuntimeError(format!("{}: {message}", assignment.id))
+                            })?
+                        {
+                            object.insert(assignment.name.clone(), value);
+                        }
+                    } else {
+                        let value = expression::evaluate(&expression, &values).map_err(
+                            |message| RuntimeError(format!("{}: {message}", assignment.id)),
+                        )?;
+                        object.insert(assignment.name.clone(), value);
+                    }
                 }
                 let value = Value::Object(object);
                 validate_value(graph, type_name, &value, "constructed record")?;
@@ -4174,6 +4185,28 @@ fn ordered_children<'a>(graph: &'a GraphIr, owner: &str) -> Vec<&'a GraphNode> {
     values
 }
 
+fn optional_entity_field(graph: &GraphIr, type_name: &str, field_name: &str) -> bool {
+    let Some(entity) = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "entity" && node.name == type_name)
+    else {
+        return false;
+    };
+    children(graph, &entity.id, "field")
+        .into_iter()
+        .find(|field| field.name == field_name)
+        .is_some_and(|field| {
+            let field_type = field.type_name.as_deref().unwrap_or("unit");
+            let optional_qualifier = field
+                .metadata
+                .get("qualifiers")
+                .map(|value| value.split(',').any(|qualifier| qualifier == "optional"))
+                .unwrap_or(false);
+            optional_qualifier || generic(field_type, "Option").is_some()
+        })
+}
+
 fn children<'a>(graph: &'a GraphIr, owner: &str, kind: &str) -> Vec<&'a GraphNode> {
     graph
         .edges
@@ -4365,6 +4398,46 @@ flow EchoMovement Movement -> Result<Movement>
         )
         .unwrap();
         assert_eq!(result, 75);
+    }
+
+    #[test]
+    fn make_omits_absent_optional_field_and_keeps_provided_one() {
+        const OPTIONAL_SOURCE: &str = r#"axl 4
+app OptionalDemo
+enum Stato
+  attivo
+  inattivo
+entity Cliente
+  id: uuid key
+  nome: text required
+  priorita: int optional
+  stato: Stato required
+flow CreaCliente Cliente -> Result<Cliente>
+  make cliente: Cliente
+    id = input.id
+    nome = input.nome
+    priorita = input.priorita
+    stato = input.stato
+  return cliente
+"#;
+        let graph = compile_source(OPTIONAL_SOURCE).unwrap().graph;
+
+        let without = evaluate_flow(
+            &graph,
+            "CreaCliente",
+            json!({"id": "c1", "nome": "Senza", "stato": "attivo"}),
+        )
+        .unwrap();
+        assert_eq!(without["ok"]["nome"], "Senza");
+        assert!(without["ok"].get("priorita").is_none());
+
+        let with = evaluate_flow(
+            &graph,
+            "CreaCliente",
+            json!({"id": "c2", "nome": "Con", "priorita": 7, "stato": "attivo"}),
+        )
+        .unwrap();
+        assert_eq!(with["ok"]["priorita"], 7);
     }
 
     #[test]
