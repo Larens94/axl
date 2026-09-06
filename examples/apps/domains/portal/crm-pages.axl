@@ -1,0 +1,20 @@
+// Portal CRM pages — session-gated pipeline/list flows (ledger-style handlers).
+axl 4
+app PortalCrmPages
+
+entity OpportunitaSessioneQuery
+  session_id: uuid required
+  stadio: text optional
+  limit: int required
+  offset: int required
+
+flow PaginaPipelineSessione OpportunitaSessioneQuery -> Result<OpportunitaPage>
+  run _ = RequireSession(input.session_id)?
+  in store: ArchivioOpportunita = SqliteOpportunita
+  make query: OpportunitaQuery
+    order_by = "titolo"
+    direction = "asc"
+    limit = input.limit
+    offset = input.offset
+  call pagina = store.query(query)?
+  return pagina

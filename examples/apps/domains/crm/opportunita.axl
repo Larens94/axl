@@ -1,0 +1,179 @@
+// CRM aggregate: Opportunita (sales pipeline with kanban stages)
+axl 4
+app CrmOpportunita
+
+enum OpportunitaStadio
+  nuovo
+  qualificato
+  proposta
+  negoziazione
+  vinto
+  perso
+
+entity Opportunita
+  id: uuid key
+  titolo: text required
+  cliente: text required
+  valore: money required
+  stadio: OpportunitaStadio required
+
+entity OpportunitaQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity OpportunitaPage
+  items: List<Opportunita> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioOpportunita
+  op save Opportunita -> Result<Opportunita>
+  op find uuid -> Result<Opportunita> idempotent
+  op list unit -> Result<List<Opportunita>> idempotent
+  op query OpportunitaQuery -> Result<OpportunitaPage> idempotent
+
+skill MemoriaOpportunita provides ArchivioOpportunita
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteOpportunita provides ArchivioOpportunita
+  native rust axl::store::sqlite
+  config path: text = "./build/crm.db"
+  effect db.read
+  effect db.write
+
+flow ValidaOpportunita Opportunita -> Result<Opportunita>
+  let titolo_presente = input.titolo != ""
+  require titolo_presente else "titolo_obbligatorio"
+  let valore_positivo = input.valore > 0
+  require valore_positivo else "valore_deve_essere_positivo"
+  return input
+
+flow CreaOpportunita Opportunita -> Result<Opportunita>
+  in store: ArchivioOpportunita = MemoriaOpportunita
+  run valida = ValidaOpportunita(input)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaOpportunita uuid -> Result<Opportunita>
+  in store: ArchivioOpportunita = MemoriaOpportunita
+  call trovato = store.find(input)?
+  return trovato
+
+flow ElencaOpportunita unit -> Result<List<Opportunita>>
+  in store: ArchivioOpportunita = MemoriaOpportunita
+  call items = store.list(input)?
+  return items
+
+flow InterrogaOpportunita OpportunitaQuery -> Result<OpportunitaPage>
+  in store: ArchivioOpportunita = MemoriaOpportunita
+  call pagina = store.query(input)?
+  return pagina
+
+flow CreaOpportunitaSqlite Opportunita -> Result<Opportunita>
+  in store: ArchivioOpportunita = SqliteOpportunita
+  make opportunita: Opportunita
+    id = input.id
+    titolo = input.titolo
+    cliente = input.cliente
+    valore = input.valore
+    stadio = input.stadio
+  run valida = ValidaOpportunita(opportunita)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaOpportunitaSqlite uuid -> Result<Opportunita>
+  in store: ArchivioOpportunita = SqliteOpportunita
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaOpportunitaSqlite OpportunitaQuery -> Result<OpportunitaPage>
+  in store: ArchivioOpportunita = SqliteOpportunita
+  call pagina = store.query(input)?
+  return pagina
+
+flow AvanzaStadioSqlite uuid -> Result<Opportunita>
+  in store: ArchivioOpportunita = SqliteOpportunita
+  call trovato = store.find(input)?
+  match prossimo: OpportunitaStadio = trovato.stadio
+    nuovo => OpportunitaStadio.qualificato
+    qualificato => OpportunitaStadio.proposta
+    proposta => OpportunitaStadio.negoziazione
+    negoziazione => OpportunitaStadio.vinto
+    vinto => OpportunitaStadio.vinto
+    perso => OpportunitaStadio.perso
+  make aggiornata: Opportunita
+    id = trovato.id
+    titolo = trovato.titolo
+    cliente = trovato.cliente
+    valore = trovato.valore
+    stadio = prossimo
+  call salvato = store.save(aggiornata)?
+  return salvato
+
+flow SeedOpportunitaDemo unit -> Result<OpportunitaPage>
+  in store: ArchivioOpportunita = MemoriaOpportunita
+  make o1: Opportunita
+    id = "opp-001"
+    titolo = "Fornitura server Acme"
+    cliente = "Acme Corp"
+    valore = 4200000
+    stadio = OpportunitaStadio.nuovo
+  make o2: Opportunita
+    id = "opp-002"
+    titolo = "Licenze cloud Beta"
+    cliente = "Beta SpA"
+    valore = 1800000
+    stadio = OpportunitaStadio.qualificato
+  make o3: Opportunita
+    id = "opp-003"
+    titolo = "Consulenza Gamma"
+    cliente = "Gamma Srl"
+    valore = 950000
+    stadio = OpportunitaStadio.proposta
+  make o4: Opportunita
+    id = "opp-004"
+    titolo = "Rinnovo Delta"
+    cliente = "Delta Ltd"
+    valore = 3100000
+    stadio = OpportunitaStadio.negoziazione
+  make o5: Opportunita
+    id = "opp-005"
+    titolo = "Espansione Epsilon"
+    cliente = "Epsilon Inc"
+    valore = 5400000
+    stadio = OpportunitaStadio.vinto
+  make o6: Opportunita
+    id = "opp-006"
+    titolo = "Trattativa Zeta"
+    cliente = "Zeta Group"
+    valore = 700000
+    stadio = OpportunitaStadio.perso
+  run v1 = ValidaOpportunita(o1)?
+  call _c1 = store.save(v1)?
+  run v2 = ValidaOpportunita(o2)?
+  call _c2 = store.save(v2)?
+  run v3 = ValidaOpportunita(o3)?
+  call _c3 = store.save(v3)?
+  run v4 = ValidaOpportunita(o4)?
+  call _c4 = store.save(v4)?
+  run v5 = ValidaOpportunita(o5)?
+  call _c5 = store.save(v5)?
+  run v6 = ValidaOpportunita(o6)?
+  call _c6 = store.save(v6)?
+  make query: OpportunitaQuery
+    order_by = "titolo"
+    direction = "asc"
+    limit = 50
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaOpportunitaDemoUnit unit -> Result<OpportunitaPage>
+  run pagina = SeedOpportunitaDemo(input)?
+  return pagina

@@ -4,8 +4,10 @@ app Portal
 bootstrap BootstrapPortalProd
 import "./auth-domain.axl"
 import "./sales-domain.axl"
+import "./crm-domain.axl"
 import "./domains/portal/core.axl"
 import "./domains/portal/vendite-pages.axl"
+import "./domains/portal/crm-pages.axl"
 import "./domains/portal/prod.axl"
 import "./oauth-boundary.axl"
 
@@ -228,3 +230,34 @@ ui VenditeDemoUi
   page /listini/demo unit -> Result<ListinoPage> = PaginaListiniDemoUnit
   page /preventivi/demo unit -> Result<PreventivoPage> = PaginaPreventiviDemoUnit
   page /ordini/demo unit -> Result<OrdinePage> = PaginaOrdiniDemoUnit
+
+api CrmApi
+  post /opportunita Opportunita -> Result<Opportunita> = CreaOpportunitaSqlite
+    guard session RequireSession from cookie.sid
+  get /opportunita/{id} uuid -> Result<Opportunita> = CercaOpportunitaSqlite from path.id
+  get /opportunita unit -> Result<List<Opportunita>> = ElencaOpportunita
+  post /opportunita/query OpportunitaQuery -> Result<OpportunitaPage> = InterrogaOpportunitaSqlite
+  post /opportunita/{id}/avanza uuid -> Result<Opportunita> = AvanzaStadioSqlite from path.id
+    guard session RequireSession from cookie.sid
+
+ui CrmUi
+  page /crm/pipeline OpportunitaSessioneQuery -> Result<OpportunitaPage> = PaginaPipelineSessione
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 200
+    pagination offset = query.offset default 0
+    kanban stadio "Pipeline commerciale"
+  page /opportunita OpportunitaSessioneQuery -> Result<OpportunitaPage> = PaginaPipelineSessione
+    bind session_id = cookie.sid
+    filter stadio = query.stadio
+    pagination limit = query.limit default 20
+    pagination offset = query.offset default 0
+  form /opportunita/new Opportunita -> Result<Opportunita> = CreaOpportunitaSqlite submit /opportunita
+    title "Nuova opportunità"
+    submit_label "Crea opportunità"
+    nav hidden
+    omit id
+  drawer /opportunita/{id} uuid -> Result<Opportunita> = CercaOpportunitaSqlite from path.id on /opportunita
+
+ui CrmDemoUi
+  page /crm/pipeline/demo unit -> Result<OpportunitaPage> = PaginaOpportunitaDemoUnit
+    kanban stadio "Pipeline commerciale (demo)"
