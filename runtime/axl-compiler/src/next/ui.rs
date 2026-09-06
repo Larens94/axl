@@ -1112,8 +1112,8 @@ fn render_page_html(
         render_detail_card(&fields)
     };
     let actions = render_page_actions(graph, path, data);
-    let create_bar = render_create_bar(graph, path);
-    let content = format!("{create_bar}{body}{actions}");
+    let control_panel = render_control_panel(graph, page, path);
+    let content = format!("{control_panel}{body}{actions}");
     if is_guest_path(path) {
         return wrap_html_guest(app, path, &title, &heading, &content);
     }
@@ -1213,26 +1213,72 @@ fn render_modal_html(
     )
 }
 
-fn render_create_bar(graph: &GraphIr, page_path: &str) -> String {
+fn render_control_panel(graph: &GraphIr, page: &super::ir::GraphNode, page_path: &str) -> String {
     if is_guest_path(page_path) {
         return String::new();
     }
-    let normalized = normalize_path(page_path);
-    // A list/kanban page gets a primary "Nuovo" action when a create form submits
-    // back to it (e.g. /clienti has form /clienti/new submit /clienti).
-    let Some(form_path) = find_form_path_for_submit(graph, &normalized) else {
-        return String::new();
-    };
-    if normalize_path(&form_path) == normalized {
+    let tabs = render_view_switcher(graph, page, page_path);
+    let create = create_button(graph, page_path).unwrap_or_default();
+    if tabs.is_empty() && create.is_empty() {
         return String::new();
     }
     format!(
-        r#"  <div class="page-actionbar">
-    <a class="btn-create" href="{href}">Nuovo</a>
+        r#"  <div class="control-panel">
+    <div class="control-views">{tabs}</div>
+    <div class="control-actions">{create}</div>
   </div>
-"#,
-        href = html_escape(&form_path)
+"#
     )
+}
+
+/// A page declares alternate views (`view "Lista" /x`, `view "Bacheca" /x/board`)
+/// which render as a switcher; the tab whose target matches the current path is
+/// marked active.
+fn render_view_switcher(graph: &GraphIr, page: &super::ir::GraphNode, page_path: &str) -> String {
+    let mut views = children(graph, &page.id, "ui_view");
+    if views.is_empty() {
+        return String::new();
+    }
+    views.sort_by_key(|view| {
+        view.metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    let current = normalize_path(page_path);
+    let tabs = views
+        .iter()
+        .map(|view| {
+            let target = view.metadata.get("target").cloned().unwrap_or_default();
+            let label = view.metadata.get("label").cloned().unwrap_or_default();
+            let active = if normalize_path(&target) == current {
+                " active"
+            } else {
+                ""
+            };
+            format!(
+                r#"<a class="view-tab{active}" href="{href}">{label}</a>"#,
+                href = html_escape(&target),
+                label = html_escape(&label),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    format!(r#"<div class="view-switcher">{tabs}</div>"#)
+}
+
+/// A list/kanban page gets a primary "Nuovo" action when a create form submits
+/// back to it (e.g. /clienti has form /clienti/new submit /clienti).
+fn create_button(graph: &GraphIr, page_path: &str) -> Option<String> {
+    let normalized = normalize_path(page_path);
+    let form_path = find_form_path_for_submit(graph, &normalized)?;
+    if normalize_path(&form_path) == normalized {
+        return None;
+    }
+    Some(format!(
+        r#"<a class="btn-create" href="{href}">Nuovo</a>"#,
+        href = html_escape(&form_path)
+    ))
 }
 
 fn render_page_actions(graph: &GraphIr, page_path: &str, page_data: &Value) -> String {
@@ -2077,10 +2123,37 @@ fn dashboard_styles() -> &'static str {
       color: var(--accent);
       border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
     }
-    .page-actionbar {
+    .control-panel {
       display: flex;
-      justify-content: flex-end;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
       margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .control-views { display: flex; }
+    .control-actions { display: flex; gap: 0.6rem; margin-left: auto; }
+    .view-switcher {
+      display: inline-flex;
+      gap: 0.2rem;
+      padding: 0.2rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    .view-tab {
+      padding: 0.35rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-decoration: none;
+    }
+    .view-tab:hover { color: var(--text); }
+    .view-tab.active {
+      background: var(--surface-solid);
+      color: var(--accent);
+      box-shadow: var(--shadow);
     }
     .btn-create {
       display: inline-flex;
@@ -3739,6 +3812,58 @@ ui Screen
         assert!(rendered.html.contains(r#"href="/crm/pipeline""#));
         assert!(rendered.html.contains("CRM"));
         assert!(rendered.html.contains("gallery-badge on"));
+    }
+
+    #[test]
+    fn render_page_emits_view_switcher_and_create_button() {
+        const SOURCE: &str = r#"axl 4
+app ViewUi
+entity Task
+  id: uuid key
+  titolo: text required
+entity TaskPage
+  items: List<Task> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Elenco unit -> Result<TaskPage>
+  make t: Task
+    id = "task-1"
+    titolo = "Alpha"
+  make page: TaskPage
+    items = [t]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+flow Crea Task -> Result<Task>
+  return input
+api Api
+  post /task Task -> Result<Task> = Crea
+ui Screen
+  page /task unit -> Result<TaskPage> = Elenco
+    view "Elenco" /task
+    view "Bacheca" /task/bacheca
+  page /task/bacheca unit -> Result<TaskPage> = Elenco
+    view "Elenco" /task
+    view "Bacheca" /task/bacheca
+  form /task/new Task -> Result<Task> = Crea submit /task
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let rendered = render_page(&graph, "/task", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"view-switcher\""));
+        assert!(
+            rendered
+                .html
+                .contains(r#"class="view-tab active" href="/task""#)
+        );
+        assert!(rendered.html.contains(r#"href="/task/bacheca""#));
+        // The list page also gets a primary create button to its /task/new form.
+        assert!(
+            rendered
+                .html
+                .contains(r#"class="btn-create" href="/task/new""#)
+        );
     }
 
     #[test]

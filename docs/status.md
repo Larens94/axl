@@ -85,4 +85,8 @@ The portal ships an installable **module suite** authored in AXL — CRM
 kanban with an `avanza` stage action) and Contabilita (`/contabilita` +
 `/contabilita/bacheca` kanban) — each list/kanban/form/drawer registered in
 `examples/apps/portal.axl` and seeded by `BootstrapPortalProd`.
+The **`view`** page primitive (`view "Label" /path`) renders a control-panel
+view switcher (segmented tabs), and list/kanban pages get a primary "Nuovo"
+create button when a matching create form exists — used by Inventario, Progetti
+and Contabilita (Lista/Bacheca toggles).
 Remaining Gate 4 polish: timeline/activity widgets.

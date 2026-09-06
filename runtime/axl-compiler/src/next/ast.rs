@@ -569,6 +569,13 @@ pub struct UiGallery {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiView {
+    pub label: String,
+    pub path: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiSlot {
     pub name: String,
     pub component: String,
@@ -590,6 +597,7 @@ pub struct UiPage {
     pub charts: Vec<UiChart>,
     pub kanbans: Vec<UiKanban>,
     pub galleries: Vec<UiGallery>,
+    pub views: Vec<UiView>,
     pub span: SourceSpan,
 }
 

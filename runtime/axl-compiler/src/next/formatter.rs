@@ -495,6 +495,13 @@ pub fn format(program: &Program) -> String {
                             gallery.label.replace('"', "\\\"")
                         ));
                     }
+                    for view in &page.views {
+                        output.push(format!(
+                            "    view \"{}\" {}",
+                            view.label.replace('"', "\\\""),
+                            view.path
+                        ));
+                    }
                 }
                 for slot in &ui.slots {
                     output.push(format!("  slot {} = {}", slot.name, slot.component));

@@ -999,6 +999,25 @@ entity. This drives the modular platform base (`examples/apps/domains/base/modul
 app launcher (`/apps`), an app catalog (`/apps/store`) and install/uninstall
 actions.
 
+A page may declare alternate **views** with `view "Label" /path`. They render as
+a switcher (segmented tabs) in the page control panel; the tab whose target
+matches the current path is active. This lets one action expose list and kanban
+views of the same data:
+
+```axl
+ui InventarioUi
+  page /inventario ListaSessioneInput -> Result<ArticoloPage> = PaginaInventarioSessione
+    view "Lista" /inventario
+    view "Bacheca" /inventario/bacheca
+  page /inventario/bacheca ListaSessioneInput -> Result<ArticoloPage> = PaginaInventarioSessione
+    view "Lista" /inventario
+    view "Bacheca" /inventario/bacheca
+    kanban stato "Stato magazzino"
+```
+
+The control panel also renders a primary "Nuovo" button when a create form
+submits back to the page path (e.g. `/clienti` with form `/clienti/new`).
+
 A form binds an absolute path to an entity type and flow. The optional `submit` clause
 names the POST api route that receives the entity JSON; when omitted, the analyzer
 infers a POST route at the same path as the form. The optional `redirect` clause
@@ -1098,6 +1117,7 @@ Implemented UI diagnostics:
 | `AXL-P993` | invalid UI slot binding |
 | `AXL-P994` | chart missing field / quoted title |
 | `AXL-P996` | kanban missing field / quoted title |
+| `AXL-P997` | view missing quoted label / target path |
 | `AXL-P998` | gallery missing quoted title / invalid link field |
 
 Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`, `ui_action` = `57`,

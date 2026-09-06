@@ -5837,6 +5837,17 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &gallery_id, "owns", None));
         }
+        for (view_index, view) in page.views.iter().enumerate() {
+            let view_id = format!("{id}.ui_view.{view_index}");
+            let mut value = node(&view_id, "ui_view", &view.label);
+            value.metadata.insert("label".into(), view.label.clone());
+            value.metadata.insert("target".into(), view.path.clone());
+            value
+                .metadata
+                .insert("order".into(), view_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &view_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", page.flow),
