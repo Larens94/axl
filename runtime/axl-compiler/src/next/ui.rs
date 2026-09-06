@@ -505,6 +505,14 @@ fn nav_group(path: &str) -> &'static str {
         "Accesso"
     } else if normalized.starts_with("/crm") || normalized.starts_with("/opportunita") {
         "CRM"
+    } else if normalized.starts_with("/contatti") {
+        "Contatti"
+    } else if normalized.starts_with("/inventario") {
+        "Inventario"
+    } else if normalized.starts_with("/progetti") {
+        "Progetti"
+    } else if normalized.starts_with("/contabilita") {
+        "Contabilita"
     } else {
         "Vendite"
     }
@@ -535,6 +543,17 @@ fn nav_label(path: &str) -> String {
         "/listini/demo" => "Listini demo".into(),
         "/apps" => "Le mie app".into(),
         "/apps/store" => "Store app".into(),
+        "/contatti" => "Contatti".into(),
+        "/contatti/new" => "Nuovo contatto".into(),
+        "/inventario" => "Inventario".into(),
+        "/inventario/bacheca" => "Bacheca magazzino".into(),
+        "/inventario/new" => "Nuovo articolo".into(),
+        "/progetti" => "Bacheca progetti".into(),
+        "/progetti/lista" => "Elenco attivita".into(),
+        "/progetti/new" => "Nuova attivita".into(),
+        "/contabilita" => "Contabilita".into(),
+        "/contabilita/bacheca" => "Bacheca fatture".into(),
+        "/contabilita/new" => "Nuova fattura".into(),
         "/crm/pipeline" => "Pipeline".into(),
         "/crm/pipeline/demo" => "Pipeline demo".into(),
         "/opportunita" => "Opportunità".into(),
@@ -553,8 +572,12 @@ fn nav_group_order(group: &str) -> u8 {
         "Accesso" => 2,
         "CRM" => 3,
         "Vendite" => 4,
-        "Amministrazione" => 5,
-        _ => 6,
+        "Contatti" => 5,
+        "Inventario" => 6,
+        "Progetti" => 7,
+        "Contabilita" => 8,
+        "Amministrazione" => 9,
+        _ => 10,
     }
 }
 
