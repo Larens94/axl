@@ -1112,7 +1112,8 @@ fn render_page_html(
         render_detail_card(&fields)
     };
     let actions = render_page_actions(graph, path, data);
-    let content = format!("{body}{actions}");
+    let create_bar = render_create_bar(graph, path);
+    let content = format!("{create_bar}{body}{actions}");
     if is_guest_path(path) {
         return wrap_html_guest(app, path, &title, &heading, &content);
     }
@@ -1209,6 +1210,28 @@ fn render_modal_html(
     };
     wrap_html(
         graph, path, &title, &heading, close_href, &content, body_class,
+    )
+}
+
+fn render_create_bar(graph: &GraphIr, page_path: &str) -> String {
+    if is_guest_path(page_path) {
+        return String::new();
+    }
+    let normalized = normalize_path(page_path);
+    // A list/kanban page gets a primary "Nuovo" action when a create form submits
+    // back to it (e.g. /clienti has form /clienti/new submit /clienti).
+    let Some(form_path) = find_form_path_for_submit(graph, &normalized) else {
+        return String::new();
+    };
+    if normalize_path(&form_path) == normalized {
+        return String::new();
+    }
+    format!(
+        r#"  <div class="page-actionbar">
+    <a class="btn-create" href="{href}">Nuovo</a>
+  </div>
+"#,
+        href = html_escape(&form_path)
     )
 }
 
@@ -2054,6 +2077,27 @@ fn dashboard_styles() -> &'static str {
       color: var(--accent);
       border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
     }
+    .page-actionbar {
+      display: flex;
+      justify-content: flex-end;
+      margin-bottom: 1rem;
+    }
+    .btn-create {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.55rem 1.1rem;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 620;
+      font-size: 0.9rem;
+      text-decoration: none;
+      box-shadow: var(--shadow);
+      transition: background 0.12s ease, transform 0.12s ease;
+    }
+    .btn-create::before { content: "+"; font-size: 1.05rem; line-height: 1; }
+    .btn-create:hover { background: var(--accent-hover); transform: translateY(-1px); }
     .gallery-card { padding: 1rem 1.35rem 1.5rem; }
     .gallery-grid {
       display: grid;
