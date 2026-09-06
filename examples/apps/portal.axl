@@ -321,10 +321,14 @@ ui InventarioUi
     bind session_id = cookie.sid
     pagination limit = query.limit default 50
     pagination offset = query.offset default 0
+    view "Lista" /inventario
+    view "Bacheca" /inventario/bacheca
   page /inventario/bacheca ListaSessioneInput -> Result<ArticoloPage> = PaginaInventarioSessione
     bind session_id = cookie.sid
     pagination limit = query.limit default 200
     pagination offset = query.offset default 0
+    view "Lista" /inventario
+    view "Bacheca" /inventario/bacheca
     kanban stato "Stato magazzino"
   form /inventario/new Articolo -> Result<Articolo> = CreaArticoloSqlite submit /inventario
     title "Nuovo articolo"
@@ -346,11 +350,15 @@ ui ProgettiUi
     bind session_id = cookie.sid
     pagination limit = query.limit default 200
     pagination offset = query.offset default 0
+    view "Bacheca" /progetti
+    view "Elenco" /progetti/lista
     kanban stato "Bacheca attivita"
   page /progetti/lista ListaSessioneInput -> Result<TaskPage> = PaginaProgettiSessione
     bind session_id = cookie.sid
     pagination limit = query.limit default 50
     pagination offset = query.offset default 0
+    view "Bacheca" /progetti
+    view "Elenco" /progetti/lista
   form /progetti/new Task -> Result<Task> = CreaTaskSqlite submit /progetti
     title "Nuova attivita"
     submit_label "Crea attivita"
@@ -370,10 +378,14 @@ ui ContabilitaUi
     bind session_id = cookie.sid
     pagination limit = query.limit default 50
     pagination offset = query.offset default 0
+    view "Lista" /contabilita
+    view "Bacheca" /contabilita/bacheca
   page /contabilita/bacheca ListaSessioneInput -> Result<FatturaPage> = PaginaContabilitaSessione
     bind session_id = cookie.sid
     pagination limit = query.limit default 200
     pagination offset = query.offset default 0
+    view "Lista" /contabilita
+    view "Bacheca" /contabilita/bacheca
     kanban stato "Stato fatture"
   form /contabilita/new Fattura -> Result<Fattura> = CreaFatturaSqlite submit /contabilita
     title "Nuova fattura"
