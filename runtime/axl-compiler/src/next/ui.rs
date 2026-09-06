@@ -177,6 +177,14 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                             .and_then(|value| value.parse::<usize>().ok())
                             .unwrap_or(usize::MAX)
                     });
+                    let mut galleries = children(graph, &page.id, "ui_gallery");
+                    galleries.sort_by_key(|gallery| {
+                        gallery
+                            .metadata
+                            .get("order")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .unwrap_or(usize::MAX)
+                    });
                     json!({
                         "path": path,
                         "template": template,
@@ -204,6 +212,10 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "kanbans": kanbans.into_iter().map(|kanban| json!({
                             "field": kanban.name,
                             "label": kanban.metadata.get("label"),
+                        })).collect::<Vec<_>>(),
+                        "galleries": galleries.into_iter().map(|gallery| json!({
+                            "label": gallery.metadata.get("label"),
+                            "link": gallery.metadata.get("link"),
                         })).collect::<Vec<_>>(),
                     })
                 }).collect::<Vec<_>>(),
@@ -481,6 +493,8 @@ fn nav_group(path: &str) -> &'static str {
     let normalized = normalize_path(path);
     if normalized == "/" || normalized == "/home" {
         "Home"
+    } else if normalized.starts_with("/apps") {
+        "App"
     } else if normalized.starts_with("/admin") {
         "Amministrazione"
     } else if normalized.starts_with("/login")
@@ -519,6 +533,8 @@ fn nav_label(path: &str) -> String {
         "/listini" => "Listini".into(),
         "/listini/new" => "Nuovo listino".into(),
         "/listini/demo" => "Listini demo".into(),
+        "/apps" => "Le mie app".into(),
+        "/apps/store" => "Store app".into(),
         "/crm/pipeline" => "Pipeline".into(),
         "/crm/pipeline/demo" => "Pipeline demo".into(),
         "/opportunita" => "Opportunità".into(),
@@ -533,11 +549,12 @@ fn nav_label(path: &str) -> String {
 fn nav_group_order(group: &str) -> u8 {
     match group {
         "Home" => 0,
-        "Accesso" => 1,
-        "CRM" => 2,
-        "Vendite" => 3,
-        "Amministrazione" => 4,
-        _ => 5,
+        "App" => 1,
+        "Accesso" => 2,
+        "CRM" => 3,
+        "Vendite" => 4,
+        "Amministrazione" => 5,
+        _ => 6,
     }
 }
 
@@ -1060,6 +1077,9 @@ fn render_page_html(
     } else if let Some(board) = render_kanban_board(graph, page, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
         format!("{filters}{board}")
+    } else if let Some(grid) = render_gallery(graph, page, path, output_type, data) {
+        let filters = render_page_filters(graph, page, path).unwrap_or_default();
+        format!("{filters}{grid}")
     } else if let Some(table) = render_items_table(graph, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
         let pagination = render_page_pagination(path, path, data).unwrap_or_default();
@@ -2011,6 +2031,59 @@ fn dashboard_styles() -> &'static str {
       color: var(--accent);
       border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
     }
+    .gallery-card { padding: 1rem 1.35rem 1.5rem; }
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+      gap: 1rem;
+    }
+    .gallery-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 1.15rem 1.15rem 1.25rem;
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      box-shadow: var(--shadow);
+      text-decoration: none;
+      color: var(--text);
+      transition: transform 0.12s ease, border-color 0.12s ease;
+    }
+    a.gallery-item:hover {
+      transform: translateY(-2px);
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    }
+    .gallery-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3rem;
+      height: 3rem;
+      border-radius: 0.85rem;
+      font-size: 1.6rem;
+      background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+      border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+    }
+    .gallery-title { font-weight: 650; font-size: 1rem; }
+    .gallery-desc { margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
+    .gallery-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: auto; }
+    .gallery-badge {
+      display: inline-block;
+      padding: 0.1rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .gallery-badge.on {
+      background: color-mix(in srgb, #16a34a 14%, var(--surface-solid));
+      color: #15803d;
+      border-color: color-mix(in srgb, #16a34a 30%, var(--border));
+    }
+    .gallery-badge.off { color: var(--muted); }
     .error-card {
       border-color: color-mix(in srgb, #dc2626 35%, var(--border));
     }
@@ -2663,6 +2736,192 @@ fn render_kanban_card(
         title_html = title_html,
         meta = meta,
     )
+}
+
+fn render_gallery(
+    graph: &GraphIr,
+    page: &super::ir::GraphNode,
+    page_path: &str,
+    output_type: &str,
+    data: &Value,
+) -> Option<String> {
+    let gallery = children(graph, &page.id, "ui_gallery").into_iter().next()?;
+    let board_label = gallery
+        .metadata
+        .get("label")
+        .cloned()
+        .unwrap_or_else(|| "Catalogo".into());
+    let link_field = gallery.metadata.get("link").cloned();
+
+    let payload = data.get("ok").unwrap_or(data);
+    let Value::Object(map) = payload else {
+        return None;
+    };
+    let Value::Array(items) = map.get("items")? else {
+        return None;
+    };
+
+    let item_type = page_item_type(graph, output_type)?;
+    let detail_template = detail_path_template_for_list(graph, page_path, &item_type);
+    let field_names = entity_field_names(graph, &item_type);
+    let has = |name: &str| field_names.iter().any(|field| field == name);
+
+    let cards = items
+        .iter()
+        .filter_map(Value::as_object)
+        .map(|row| {
+            render_gallery_card(
+                graph,
+                &item_type,
+                row,
+                &field_names,
+                link_field.as_deref(),
+                detail_template.as_deref(),
+                has("icona"),
+                has("nome"),
+                has("descrizione"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let cards_html = if cards.is_empty() {
+        r#"    <p class="empty-state" data-slot="state.empty">Nessuna app da mostrare.</p>"#
+            .to_string()
+    } else {
+        cards.join("\n")
+    };
+
+    Some(format!(
+        r#"  <section class="card gallery-card">
+    <div class="card-header"><h2 class="card-title">{label}</h2></div>
+    <div class="gallery-grid" data-slot="data.gallery">
+{cards_html}
+    </div>
+  </section>"#,
+        label = html_escape(&board_label),
+        cards_html = cards_html,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_gallery_card(
+    graph: &GraphIr,
+    item_type: &str,
+    row: &serde_json::Map<String, Value>,
+    field_names: &[String],
+    link_field: Option<&str>,
+    detail_template: Option<&str>,
+    has_icon: bool,
+    has_nome: bool,
+    has_descrizione: bool,
+) -> String {
+    let title = if has_nome {
+        row.get("nome").map(display_value).unwrap_or_default()
+    } else {
+        field_names
+            .iter()
+            .find_map(|name| {
+                row.get(name)
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| row.get("id").map(display_value).unwrap_or_default())
+    };
+    let icon = if has_icon {
+        row.get("icona")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                format!(
+                    r#"      <span class="gallery-icon" aria-hidden="true">{}</span>
+"#,
+                    html_escape(value)
+                )
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let description = if has_descrizione {
+        row.get("descrizione")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                format!(
+                    r#"      <p class="gallery-desc">{}</p>
+"#,
+                    html_escape(value)
+                )
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let mut badges = String::new();
+    if let Some(categoria) = row.get("categoria").and_then(Value::as_str) {
+        badges.push_str(&format!(
+            r#"<span class="gallery-badge">{}</span>"#,
+            html_escape(categoria)
+        ));
+    }
+    if let Some(installato) = row.get("installato").and_then(Value::as_bool) {
+        let (label, class) = if installato {
+            ("Installato", "gallery-badge on")
+        } else {
+            ("Non installato", "gallery-badge off")
+        };
+        badges.push_str(&format!(r#"<span class="{class}">{label}</span>"#));
+    }
+    let badges_html = if badges.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"      <div class="gallery-badges">{badges}</div>
+"#
+        )
+    };
+
+    let href = match link_field {
+        Some(field) => row.get(field).and_then(Value::as_str).map(str::to_string),
+        None => {
+            if field_type(graph, item_type, "id").as_deref() == Some("uuid")
+                && let (Some(id), Some(template)) = (row.get("id"), detail_template)
+            {
+                let id_text = display_value(id);
+                Some(
+                    substitute_path_template(
+                        template,
+                        &BTreeMap::from([("id".into(), id_text.clone())]),
+                    )
+                    .unwrap_or_else(|| template.replace("{id}", &id_text)),
+                )
+            } else {
+                None
+            }
+        }
+    };
+
+    let inner = format!(
+        r#"{icon}      <span class="gallery-title">{title}</span>
+{description}{badges_html}"#,
+        icon = icon,
+        title = html_escape(&title),
+        description = description,
+        badges_html = badges_html,
+    );
+    match href {
+        Some(href) => format!(
+            r#"    <a class="gallery-item" href="{href}">
+{inner}    </a>"#,
+            href = html_escape(&href),
+            inner = inner,
+        ),
+        None => format!(
+            r#"    <article class="gallery-item">
+{inner}    </article>"#,
+            inner = inner,
+        ),
+    }
 }
 
 fn page_item_type(graph: &GraphIr, output_type: &str) -> Option<String> {
@@ -3368,6 +3627,51 @@ ui Screen
         let vinto = rendered.html.find("data-stage=\"vinto\"").unwrap();
         let perso = rendered.html.find("data-stage=\"perso\"").unwrap();
         assert!(nuovo < vinto && vinto < perso);
+    }
+
+    #[test]
+    fn render_page_emits_gallery_grid_with_link_field() {
+        const SOURCE: &str = r#"axl 4
+app GalleryUi
+entity Modulo
+  id: uuid key
+  nome: text required
+  descrizione: text required
+  rotta: text required
+  installato: bool required
+entity ModuloPage
+  items: List<Modulo> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Apps unit -> Result<ModuloPage>
+  make a: Modulo
+    id = "mod-crm"
+    nome = "CRM"
+    descrizione = "Pipeline"
+    rotta = "/crm/pipeline"
+    installato = true
+  make page: ModuloPage
+    items = [a]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+ui Screen
+  page /apps unit -> Result<ModuloPage> = Apps
+    gallery "Le tue app" link rotta
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(
+            manifest["uis"][0]["pages"][0]["galleries"][0]["link"],
+            "rotta"
+        );
+        let rendered = render_page(&graph, "/apps", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"gallery-grid\""));
+        assert!(rendered.html.contains(r#"href="/crm/pipeline""#));
+        assert!(rendered.html.contains("CRM"));
+        assert!(rendered.html.contains("gallery-badge on"));
     }
 
     #[test]

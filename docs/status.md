@@ -75,4 +75,8 @@ field errors (`form-validation-boundary.axl`); portal clienti use a detail **dra
 The **`kanban`** page primitive (`kanban <enum-field> "Title"`) groups an `items`
 list into columns by enum stage; see the CRM pipeline module
 (`examples/apps/domains/crm/opportunita.axl`, `CrmUi` in `examples/apps/portal.axl`).
+The **`gallery`** page primitive (`gallery "Title" [link <field>]`) renders items
+as a card grid (app launcher). It backs the **modular platform base**
+(`examples/apps/domains/base/modulo.axl`): an installable module registry with an
+app launcher (`/apps`), app catalog (`/apps/store`) and install/uninstall actions.
 Remaining Gate 4 polish: timeline/activity widgets.

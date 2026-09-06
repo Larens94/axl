@@ -3298,6 +3298,7 @@ fn check_ui(
         check_page_kpis(page, declarations, diagnostics);
         check_page_charts(page, declarations, diagnostics);
         check_page_kanbans(page, declarations, diagnostics);
+        check_page_galleries(page, declarations, diagnostics);
         match declarations.get(page.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
                 if flow.input != page.input || flow.output != page.output {
@@ -3974,6 +3975,110 @@ fn check_page_kanbans(
                 )
                 .expected("enum-typed field", &field.type_name),
             );
+        }
+    }
+}
+
+fn check_page_galleries(
+    page: &UiPage,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if page.galleries.is_empty() {
+        return;
+    }
+    let output = page
+        .output
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(page.output.as_str());
+    let Some(Declaration::Entity(entity)) = declarations.get(output) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U929",
+                "ui",
+                format!("gallery pages require an entity output, found '{output}'"),
+                page.span.clone(),
+            )
+            .expected("Result<EntityPage> or EntityPage", &page.output),
+        );
+        return;
+    };
+    let item_type = entity
+        .fields
+        .iter()
+        .find(|field| field.name == "items")
+        .and_then(|field| {
+            field
+                .type_name
+                .strip_prefix("List<")
+                .and_then(|value| value.strip_suffix('>'))
+        });
+    let Some(item_type) = item_type else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U929",
+                "ui",
+                format!(
+                    "gallery page output '{}' must expose an 'items: List<Entity>' field",
+                    entity.name
+                ),
+                page.span.clone(),
+            )
+            .expected("entity with items: List<Entity>", &entity.name),
+        );
+        return;
+    };
+    let Some(Declaration::Entity(item)) = declarations.get(item_type) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U929",
+                "ui",
+                format!("gallery list item '{item_type}' is not an entity"),
+                page.span.clone(),
+            )
+            .expected("declared entity", item_type),
+        );
+        return;
+    };
+    for gallery in &page.galleries {
+        if let Some(link_field) = &gallery.link_field {
+            let Some(field) = item.fields.iter().find(|field| &field.name == link_field) else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U929",
+                        "ui",
+                        format!(
+                            "gallery link field '{}' is not on item entity '{}'",
+                            link_field, item.name
+                        ),
+                        gallery.span.clone(),
+                    )
+                    .expected(
+                        item.fields
+                            .iter()
+                            .map(|field| field.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join("|"),
+                        link_field,
+                    ),
+                );
+                continue;
+            };
+            if !matches!(field.type_name.as_str(), "text" | "string") {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U929",
+                        "ui",
+                        format!(
+                            "gallery link field '{}' must be text (a route), found '{}'",
+                            link_field, field.type_name
+                        ),
+                        gallery.span.clone(),
+                    )
+                    .expected("text-typed field", &field.type_name),
+                );
+            }
         }
     }
 }
@@ -5718,6 +5823,19 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
                 .insert("order".into(), kanban_index.to_string());
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &kanban_id, "owns", None));
+        }
+        for (gallery_index, gallery) in page.galleries.iter().enumerate() {
+            let gallery_id = format!("{id}.ui_gallery.{gallery_index}");
+            let mut value = node(&gallery_id, "ui_gallery", &gallery.label);
+            value.metadata.insert("label".into(), gallery.label.clone());
+            if let Some(link_field) = &gallery.link_field {
+                value.metadata.insert("link".into(), link_field.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), gallery_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &gallery_id, "owns", None));
         }
         graph.edges.push(edge(
             &id,

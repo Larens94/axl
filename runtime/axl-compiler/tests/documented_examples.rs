@@ -601,6 +601,10 @@ fn documented_invalid_examples_report_stable_codes() {
             "AXL-U927",
             include_str!("../../../examples/invalid/ui-kanban.axl"),
         ),
+        (
+            "AXL-U929",
+            include_str!("../../../examples/invalid/ui-gallery.axl"),
+        ),
     ];
 
     for (code, source) in cases {

@@ -2679,6 +2679,7 @@ fn parse_ui_page_block(
     let mut kpis = Vec::new();
     let mut charts = Vec::new();
     let mut kanbans = Vec::new();
+    let mut galleries = Vec::new();
     let mut cursor = start + 1;
     let mut found_nested = false;
     while cursor < body.len() && body[cursor].indent > line.indent {
@@ -2704,6 +2705,13 @@ fn parse_ui_page_block(
             cursor += 1;
             continue;
         }
+        if let Some(value) = binding_line.text.strip_prefix("gallery ") {
+            if let Some(gallery) = parse_ui_gallery(value.trim(), span(binding_line), diagnostics) {
+                galleries.push(gallery);
+            }
+            cursor += 1;
+            continue;
+        }
         let (kind, prefix) = if let Some(value) = binding_line.text.strip_prefix("pagination ") {
             ("pagination", value)
         } else if let Some(value) = binding_line.text.strip_prefix("filter ") {
@@ -2719,7 +2727,7 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"\n  kanban field \"Title\"",
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"\n  kanban field \"Title\"\n  gallery \"Title\" [link field]",
                     &binding_line.text,
                 ),
             );
@@ -2888,6 +2896,7 @@ fn parse_ui_page_block(
         kpis,
         charts,
         kanbans,
+        galleries,
         span: span(line),
     });
     cursor
@@ -3271,6 +3280,60 @@ fn parse_ui_kanban(
     Some(UiKanban {
         field: field.into(),
         label,
+        span,
+    })
+}
+
+fn parse_ui_gallery(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiGallery> {
+    let Some((label, rest_after)) = take_quoted_string(source.trim()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P998",
+                "parse",
+                "a UI gallery requires a quoted title",
+                span,
+            )
+            .expected("gallery \"Title\" [link field]", source),
+        );
+        return None;
+    };
+    let rest = rest_after.trim();
+    let link_field = if rest.is_empty() {
+        None
+    } else if let Some(field) = rest.strip_prefix("link ") {
+        let field = field.trim();
+        if !valid_name(field, false) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P998",
+                    "parse",
+                    format!("invalid UI gallery link field '{field}'"),
+                    span,
+                )
+                .expected("identifier field name", field),
+            );
+            return None;
+        }
+        Some(field.to_string())
+    } else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P998",
+                "parse",
+                "a UI gallery takes a quoted title and an optional 'link field'",
+                span,
+            )
+            .expected("gallery \"Title\" [link field]", source),
+        );
+        return None;
+    };
+    Some(UiGallery {
+        label,
+        link_field,
         span,
     })
 }

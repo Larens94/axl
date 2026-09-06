@@ -484,6 +484,17 @@ pub fn format(program: &Program) -> String {
                             kanban.label.replace('"', "\\\"")
                         ));
                     }
+                    for gallery in &page.galleries {
+                        let link = gallery
+                            .link_field
+                            .as_ref()
+                            .map(|field| format!(" link {field}"))
+                            .unwrap_or_default();
+                        output.push(format!(
+                            "    gallery \"{}\"{link}",
+                            gallery.label.replace('"', "\\\"")
+                        ));
+                    }
                 }
                 for slot in &ui.slots {
                     output.push(format!("  slot {} = {}", slot.name, slot.component));
