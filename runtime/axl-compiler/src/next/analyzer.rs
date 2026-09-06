@@ -3297,6 +3297,7 @@ fn check_ui(
         check_page_bindings(page, declarations, diagnostics);
         check_page_kpis(page, declarations, diagnostics);
         check_page_charts(page, declarations, diagnostics);
+        check_page_kanbans(page, declarations, diagnostics);
         match declarations.get(page.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
                 if flow.input != page.input || flow.output != page.output {
@@ -3854,6 +3855,124 @@ fn check_page_charts(
                     chart.span.clone(),
                 )
                 .expected("text + int|float|money fields", item_type),
+            );
+        }
+    }
+}
+
+fn check_page_kanbans(
+    page: &UiPage,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if page.kanbans.is_empty() {
+        return;
+    }
+    let output = page
+        .output
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(page.output.as_str());
+    let Some(Declaration::Entity(entity)) = declarations.get(output) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U927",
+                "ui",
+                format!("kanban pages require an entity output, found '{output}'"),
+                page.span.clone(),
+            )
+            .expected("Result<EntityPage> or EntityPage", &page.output),
+        );
+        return;
+    };
+    let item_type = entity
+        .fields
+        .iter()
+        .find(|field| field.name == "items")
+        .and_then(|field| {
+            field
+                .type_name
+                .strip_prefix("List<")
+                .and_then(|value| value.strip_suffix('>'))
+        });
+    let Some(item_type) = item_type else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U927",
+                "ui",
+                format!(
+                    "kanban page output '{}' must expose an 'items: List<Entity>' field",
+                    entity.name
+                ),
+                page.span.clone(),
+            )
+            .expected("entity with items: List<Entity>", &entity.name),
+        );
+        return;
+    };
+    let Some(Declaration::Entity(item)) = declarations.get(item_type) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U927",
+                "ui",
+                format!("kanban list item '{item_type}' is not an entity"),
+                page.span.clone(),
+            )
+            .expected("declared entity", item_type),
+        );
+        return;
+    };
+    let mut fields = BTreeSet::new();
+    for kanban in &page.kanbans {
+        if !fields.insert(kanban.field.as_str()) {
+            diagnostics.push(Diagnostic::error(
+                "AXL-U927",
+                "ui",
+                format!(
+                    "page '{}' declares kanban '{}' more than once",
+                    page.path, kanban.field
+                ),
+                kanban.span.clone(),
+            ));
+            continue;
+        }
+        let Some(field) = item.fields.iter().find(|field| field.name == kanban.field) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U927",
+                    "ui",
+                    format!(
+                        "kanban field '{}' is not on item entity '{}'",
+                        kanban.field, item.name
+                    ),
+                    kanban.span.clone(),
+                )
+                .expected(
+                    item.fields
+                        .iter()
+                        .map(|field| field.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("|"),
+                    &kanban.field,
+                ),
+            );
+            continue;
+        };
+        if !matches!(
+            declarations.get(field.type_name.as_str()),
+            Some(Declaration::Enum(_))
+        ) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U927",
+                    "ui",
+                    format!(
+                        "kanban field '{}' must be an enum to form columns, found '{}'",
+                        kanban.field, field.type_name
+                    ),
+                    kanban.span.clone(),
+                )
+                .expected("enum-typed field", &field.type_name),
             );
         }
     }
@@ -4936,9 +5055,13 @@ fn lower_subscription(subscription: &Subscription, order: usize, graph: &mut Gra
 fn lower_enum(value: &Enum, graph: &mut GraphIr) {
     let enum_id = format!("enum.{}", value.name);
     graph.nodes.push(node(&enum_id, "enum", &value.name));
-    for variant in &value.variants {
+    for (index, variant) in value.variants.iter().enumerate() {
         let id = format!("{enum_id}.variant.{}", variant.name);
-        graph.nodes.push(node(&id, "variant", &variant.name));
+        let mut variant_node = node(&id, "variant", &variant.name);
+        variant_node
+            .metadata
+            .insert("order".into(), index.to_string());
+        graph.nodes.push(variant_node);
         graph.edges.push(edge(&enum_id, &id, "owns", None));
     }
 }
@@ -5585,6 +5708,16 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
                 .insert("order".into(), chart_index.to_string());
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &chart_id, "owns", None));
+        }
+        for (kanban_index, kanban) in page.kanbans.iter().enumerate() {
+            let kanban_id = format!("{id}.ui_kanban.{kanban_index}");
+            let mut value = node(&kanban_id, "ui_kanban", &kanban.field);
+            value.metadata.insert("label".into(), kanban.label.clone());
+            value
+                .metadata
+                .insert("order".into(), kanban_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &kanban_id, "owns", None));
         }
         graph.edges.push(edge(
             &id,

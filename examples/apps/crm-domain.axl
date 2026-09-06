@@ -1,0 +1,4 @@
+// CRM domain shell — aggregate imports only (ledger-style).
+axl 4
+app CrmDomain
+import "./domains/crm/opportunita.axl"

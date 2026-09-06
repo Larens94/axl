@@ -2678,6 +2678,7 @@ fn parse_ui_page_block(
     let mut pagination = Vec::new();
     let mut kpis = Vec::new();
     let mut charts = Vec::new();
+    let mut kanbans = Vec::new();
     let mut cursor = start + 1;
     let mut found_nested = false;
     while cursor < body.len() && body[cursor].indent > line.indent {
@@ -2692,6 +2693,13 @@ fn parse_ui_page_block(
         if let Some(value) = binding_line.text.strip_prefix("chart ") {
             if let Some(chart) = parse_ui_chart(value.trim(), span(binding_line), diagnostics) {
                 charts.push(chart);
+            }
+            cursor += 1;
+            continue;
+        }
+        if let Some(value) = binding_line.text.strip_prefix("kanban ") {
+            if let Some(kanban) = parse_ui_kanban(value.trim(), span(binding_line), diagnostics) {
+                kanbans.push(kanban);
             }
             cursor += 1;
             continue;
@@ -2711,7 +2719,7 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"",
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"\n  kanban field \"Title\"",
                     &binding_line.text,
                 ),
             );
@@ -2879,6 +2887,7 @@ fn parse_ui_page_block(
         pagination,
         kpis,
         charts,
+        kanbans,
         span: span(line),
     });
     cursor
@@ -3198,6 +3207,68 @@ fn parse_ui_chart(
         return None;
     }
     Some(UiChart {
+        field: field.into(),
+        label,
+        span,
+    })
+}
+
+fn parse_ui_kanban(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiKanban> {
+    let mut parts = source.split_whitespace();
+    let Some(field) = parts.next() else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P996",
+                "parse",
+                "a UI kanban requires a field name",
+                span,
+            )
+            .expected("kanban field \"Title\"", source),
+        );
+        return None;
+    };
+    if !valid_name(field, false) {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P996",
+                "parse",
+                format!("invalid UI kanban field '{field}'"),
+                span,
+            )
+            .expected("identifier field name", field),
+        );
+        return None;
+    }
+    let rest = source[field.len()..].trim();
+    let Some((label, rest_after)) = take_quoted_string(rest) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P996",
+                "parse",
+                "a UI kanban requires a quoted title",
+                span,
+            )
+            .expected("kanban field \"Title\"", source),
+        );
+        return None;
+    };
+    if !rest_after.trim().is_empty() {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P996",
+                "parse",
+                "a UI kanban takes one quoted title",
+                span,
+            )
+            .expected("kanban field \"Title\"", source),
+        );
+        return None;
+    }
+    Some(UiKanban {
         field: field.into(),
         label,
         span,
