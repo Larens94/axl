@@ -1,0 +1,4 @@
+// Base domain shell — modular platform core (aggregate imports only).
+axl 4
+app BaseDomain
+import "./domains/base/modulo.axl"

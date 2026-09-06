@@ -1,0 +1,37 @@
+// Portal base pages — modular launcher + app catalog (session-gated handlers).
+axl 4
+app PortalBasePages
+
+entity ModuloSessioneQuery
+  session_id: uuid required
+  limit: int required
+  offset: int required
+
+flow PaginaAppInstallate ModuloSessioneQuery -> Result<ModuloPage>
+  run _ = RequireSession(input.session_id)?
+  in store: ArchivioModuli = SqliteModuli
+  make query: ModuloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = input.limit
+    offset = input.offset
+  call pagina = store.query(query)?
+  filter installate: List<Modulo> = pagina.items as modulo
+    where = modulo.installato == true
+  make risultato: ModuloPage
+    items = installate
+    total = pagina.total
+    limit = pagina.limit
+    offset = pagina.offset
+  return risultato
+
+flow PaginaAppCatalogo ModuloSessioneQuery -> Result<ModuloPage>
+  run _ = RequireSession(input.session_id)?
+  in store: ArchivioModuli = SqliteModuli
+  make query: ModuloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = input.limit
+    offset = input.offset
+  call pagina = store.query(query)?
+  return pagina

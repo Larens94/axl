@@ -3,11 +3,13 @@ axl 4
 app Portal
 bootstrap BootstrapPortalProd
 import "./auth-domain.axl"
+import "./base-domain.axl"
 import "./sales-domain.axl"
 import "./crm-domain.axl"
 import "./domains/portal/core.axl"
 import "./domains/portal/vendite-pages.axl"
 import "./domains/portal/crm-pages.axl"
+import "./domains/portal/base-pages.axl"
 import "./domains/portal/prod.axl"
 import "./oauth-boundary.axl"
 
@@ -261,3 +263,26 @@ ui CrmUi
 ui CrmDemoUi
   page /crm/pipeline/demo unit -> Result<OpportunitaPage> = PaginaOpportunitaDemoUnit
     kanban stadio "Pipeline commerciale (demo)"
+
+api BaseApi
+  get /apps/{id} uuid -> Result<Modulo> = CercaModuloSqlite from path.id
+  post /apps/query ModuloQuery -> Result<ModuloPage> = InterrogaModuliSqlite
+  post /apps/{id}/installa uuid -> Result<Modulo> = InstallaModuloSqlite from path.id
+    guard session RequireSession from cookie.sid
+  post /apps/{id}/disinstalla uuid -> Result<Modulo> = DisinstallaModuloSqlite from path.id
+    guard session RequireSession from cookie.sid
+
+ui BaseUi
+  page /apps ModuloSessioneQuery -> Result<ModuloPage> = PaginaAppInstallate
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 100
+    pagination offset = query.offset default 0
+    gallery "Le tue app" link rotta
+  page /apps/store ModuloSessioneQuery -> Result<ModuloPage> = PaginaAppCatalogo
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 100
+    pagination offset = query.offset default 0
+    gallery "App disponibili"
+  drawer /apps/dettaglio/{id} uuid -> Result<Modulo> = CercaModuloSqlite from path.id on /apps/store
+  action /apps/installa POST /apps/{id}/installa on /apps/dettaglio/{id} redirect /apps/dettaglio/{id}
+  action /apps/disinstalla POST /apps/{id}/disinstalla on /apps/dettaglio/{id} redirect /apps/dettaglio/{id}
