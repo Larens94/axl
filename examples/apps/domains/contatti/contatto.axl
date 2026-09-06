@@ -1,0 +1,119 @@
+axl 4
+app ContattiContatto
+
+enum TipoContatto
+  cliente
+  fornitore
+  partner
+
+entity Contatto
+  id: uuid key
+  nome: text required
+  azienda: text required
+  email: email required
+  telefono: text required
+  tipo: TipoContatto required
+
+entity ContattoQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity ContattoPage
+  items: List<Contatto> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioContatti
+  op save Contatto -> Result<Contatto>
+  op find uuid -> Result<Contatto> idempotent
+  op list unit -> Result<List<Contatto>> idempotent
+  op query ContattoQuery -> Result<ContattoPage> idempotent
+
+skill MemoriaContatti provides ArchivioContatti
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteContatti provides ArchivioContatti
+  native rust axl::store::sqlite
+  config path: text = "./build/contatti.db"
+  effect db.read
+  effect db.write
+
+flow ValidaContatto Contatto -> Result<Contatto>
+  let nome_presente = input.nome != ""
+  require nome_presente else "nome_obbligatorio"
+  return input
+
+flow CreaContattoSqlite Contatto -> Result<Contatto>
+  in store: ArchivioContatti = SqliteContatti
+  make contatto: Contatto
+    id = input.id
+    nome = input.nome
+    azienda = input.azienda
+    email = input.email
+    telefono = input.telefono
+    tipo = input.tipo
+  run valida = ValidaContatto(contatto)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaContattoSqlite uuid -> Result<Contatto>
+  in store: ArchivioContatti = SqliteContatti
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaContattiSqlite ContattoQuery -> Result<ContattoPage>
+  in store: ArchivioContatti = SqliteContatti
+  call pagina = store.query(input)?
+  return pagina
+
+flow SeedContattiSqlite unit -> Result<ContattoPage>
+  in store: ArchivioContatti = SqliteContatti
+  make c1: Contatto
+    id = "contatto-001"
+    nome = "Mario Rossi"
+    azienda = "Acme Corp"
+    email = "mario.rossi@acme.example"
+    telefono = "+39 02 1234567"
+    tipo = TipoContatto.cliente
+  make c2: Contatto
+    id = "contatto-002"
+    nome = "Luisa Bianchi"
+    azienda = "Beta SpA"
+    email = "luisa.bianchi@beta.example"
+    telefono = "+39 06 7654321"
+    tipo = TipoContatto.fornitore
+  make c3: Contatto
+    id = "contatto-003"
+    nome = "Giovanni Verdi"
+    azienda = "Gamma Srl"
+    email = "giovanni.verdi@gamma.example"
+    telefono = "+39 011 2223344"
+    tipo = TipoContatto.partner
+  make c4: Contatto
+    id = "contatto-004"
+    nome = "Anna Neri"
+    azienda = "Delta Ltd"
+    email = "anna.neri@delta.example"
+    telefono = "+39 055 9988776"
+    tipo = TipoContatto.cliente
+  run v1 = ValidaContatto(c1)?
+  call _s1 = store.save(v1)?
+  run v2 = ValidaContatto(c2)?
+  call _s2 = store.save(v2)?
+  run v3 = ValidaContatto(c3)?
+  call _s3 = store.save(v3)?
+  run v4 = ValidaContatto(c4)?
+  call _s4 = store.save(v4)?
+  make query: ContattoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina

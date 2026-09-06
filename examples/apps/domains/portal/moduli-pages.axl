@@ -1,0 +1,52 @@
+// Portal module pages — session-gated list/kanban flows for installable modules.
+axl 4
+app PortalModuliPages
+
+entity ListaSessioneInput
+  session_id: uuid required
+  limit: int required
+  offset: int required
+
+flow PaginaContattiSessione ListaSessioneInput -> Result<ContattoPage>
+  run _ = RequireSession(input.session_id)?
+  in store: ArchivioContatti = SqliteContatti
+  make query: ContattoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = input.limit
+    offset = input.offset
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaInventarioSessione ListaSessioneInput -> Result<ArticoloPage>
+  run _ = RequireSession(input.session_id)?
+  in store: ArchivioArticoli = SqliteArticoli
+  make query: ArticoloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = input.limit
+    offset = input.offset
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaProgettiSessione ListaSessioneInput -> Result<TaskPage>
+  run _ = RequireSession(input.session_id)?
+  in store: ArchivioTask = SqliteTask
+  make query: TaskQuery
+    order_by = "titolo"
+    direction = "asc"
+    limit = input.limit
+    offset = input.offset
+  call pagina = store.query(query)?
+  return pagina
+
+flow PaginaContabilitaSessione ListaSessioneInput -> Result<FatturaPage>
+  run _ = RequireSession(input.session_id)?
+  in store: ArchivioFatture = SqliteFatture
+  make query: FatturaQuery
+    order_by = "numero"
+    direction = "asc"
+    limit = input.limit
+    offset = input.offset
+  call pagina = store.query(query)?
+  return pagina

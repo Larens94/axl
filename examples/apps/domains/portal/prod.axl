@@ -94,6 +94,10 @@ flow BootstrapPortalProd unit -> Result<HomePage>
   run _prodotti = SeedProdottiSqlite(input)?
   run _listino = SeedListinoSqlite(input)?
   run _preventivo = SeedPreventivoSqlite(input)?
+  run _contatti = SeedContattiSqlite(input)?
+  run _articoli = SeedArticoliSqlite(input)?
+  run _task = SeedTaskSqlite(input)?
+  run _fatture = SeedFattureSqlite(input)?
   make query: UtenteQuery
     limit = 1
     offset = 0

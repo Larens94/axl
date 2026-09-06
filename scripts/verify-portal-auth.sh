@@ -14,11 +14,13 @@ echo "== check auth domain =="
 echo "== check portal (auth + vendite) =="
 "${BIN[@]}" check "$PORTAL" --json | jq -e '.protocol == "axl-check/1" and .ok == true and .app == "Portal"'
 
-echo "== ui manifest modular portal (Auth + Vendite + Crm + Base) =="
-"${BIN[@]}" ui "$PORTAL" | jq -e '.app == "Portal" and (.uis | length) == 6'
+echo "== ui manifest modular portal (Auth + Vendite + Crm + Base + moduli) =="
+"${BIN[@]}" ui "$PORTAL" | jq -e '.app == "Portal" and (.uis | length) == 10'
 "${BIN[@]}" ui "$PORTAL" | jq -e '[.uis[].name] | index("AuthUi") != null and index("VenditeUi") != null and index("VenditeDemoUi") != null'
 "${BIN[@]}" ui "$PORTAL" | jq -e '[.uis[].name] | index("CrmUi") != null and index("CrmDemoUi") != null and index("BaseUi") != null'
+"${BIN[@]}" ui "$PORTAL" | jq -e '[.uis[].name] | index("ContattiUi") != null and index("InventarioUi") != null and index("ProgettiUi") != null and index("ContabilitaUi") != null'
 "${BIN[@]}" ui "$PORTAL" | jq -e '[.uis[] | select(.name=="CrmUi") | .pages[] | select(.path=="/crm/pipeline") | .kanbans[0].field] | index("stadio") != null'
+"${BIN[@]}" ui "$PORTAL" | jq -e '[.uis[] | select(.name=="ProgettiUi") | .pages[] | select(.path=="/progetti") | .kanbans[0].field] | index("stato") != null'
 "${BIN[@]}" ui "$PORTAL" | jq -e '[.uis[] | select(.name=="BaseUi") | .pages[] | select(.path=="/apps") | .galleries[0].link] | index("rotta") != null'
 
 echo "== eval RegistraUtente =="

@@ -117,7 +117,7 @@ flow SeedModuliSqlite unit -> Result<ModuloPage>
     categoria = "Produttivita"
     icona = "CT"
     rotta = "/contatti"
-    installato = false
+    installato = true
   make m_inventario: Modulo
     id = "mod-inventario"
     chiave = "inventario"
@@ -126,7 +126,7 @@ flow SeedModuliSqlite unit -> Result<ModuloPage>
     categoria = "Operazioni"
     icona = "IN"
     rotta = "/inventario"
-    installato = false
+    installato = true
   make m_progetti: Modulo
     id = "mod-progetti"
     chiave = "progetti"
@@ -135,7 +135,7 @@ flow SeedModuliSqlite unit -> Result<ModuloPage>
     categoria = "Produttivita"
     icona = "PR"
     rotta = "/progetti"
-    installato = false
+    installato = true
   make m_contabilita: Modulo
     id = "mod-contabilita"
     chiave = "contabilita"
@@ -144,7 +144,7 @@ flow SeedModuliSqlite unit -> Result<ModuloPage>
     categoria = "Finanza"
     icona = "CO"
     rotta = "/contabilita"
-    installato = false
+    installato = true
   run v1 = ValidaModulo(m_crm)?
   call _s1 = store.save(v1)?
   run v2 = ValidaModulo(m_vendite)?

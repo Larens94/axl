@@ -79,4 +79,10 @@ The **`gallery`** page primitive (`gallery "Title" [link <field>]`) renders item
 as a card grid (app launcher). It backs the **modular platform base**
 (`examples/apps/domains/base/modulo.axl`): an installable module registry with an
 app launcher (`/apps`), app catalog (`/apps/store`) and install/uninstall actions.
+The portal ships an installable **module suite** authored in AXL — CRM
+(`/crm/pipeline` kanban), Vendite, Contatti (`/contatti`), Inventario
+(`/inventario` + `/inventario/bacheca` kanban), Progetti (`/progetti` task-board
+kanban with an `avanza` stage action) and Contabilita (`/contabilita` +
+`/contabilita/bacheca` kanban) — each list/kanban/form/drawer registered in
+`examples/apps/portal.axl` and seeded by `BootstrapPortalProd`.
 Remaining Gate 4 polish: timeline/activity widgets.
