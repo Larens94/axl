@@ -555,6 +555,13 @@ pub struct UiChart {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiKanban {
+    pub field: String,
+    pub label: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiSlot {
     pub name: String,
     pub component: String,
@@ -574,6 +581,7 @@ pub struct UiPage {
     pub pagination: Vec<UiPaginationBinding>,
     pub kpis: Vec<UiKpi>,
     pub charts: Vec<UiChart>,
+    pub kanbans: Vec<UiKanban>,
     pub span: SourceSpan,
 }
 

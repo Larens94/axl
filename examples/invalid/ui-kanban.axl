@@ -1,0 +1,23 @@
+axl 4
+app InvalidKanban
+entity Riga
+  id: uuid key
+  titolo: text required
+entity RigaPage
+  items: List<Riga> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Elenco unit -> Result<RigaPage>
+  make riga: Riga
+    id = "riga-1"
+    titolo = "x"
+  make page: RigaPage
+    items = [riga]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+ui BadKanbanUi
+  page / unit -> Result<RigaPage> = Elenco
+    kanban titolo "Non un enum"

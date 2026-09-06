@@ -65,11 +65,14 @@ executable via `axl::tx::document` and `axl::migrate::document` with durable
 SQLite/PostgreSQL/MySQL uses SQL pushdown for equality `filter`, `order_by` and
 `limit`/`offset` over JSON payload fields.
 Gate 4 foundation is executable: `ui` / `page` / `form` / **`drawer`** / **`modal`** /
-**`kpi`** / **`chart`** / **`slot`** lower to Graph IR, emit `axl-ui/1` (with `kit.slots` + shell), and
+**`kpi`** / **`chart`** / **`kanban`** / **`slot`** lower to Graph IR, emit `axl-ui/1` (with `kit.slots` + shell), and
 `render` / `serve` produce HTML with sidebar + mobile bottom nav, KPI dashboards,
-bar charts, overlays and error/empty states (`balance-ui.axl`, `form-demo.axl`,
+bar charts, kanban boards, overlays and error/empty states (`balance-ui.axl`, `form-demo.axl`,
 `drawer-boundary.axl`, `modal-boundary.axl`, `bottom-nav-boundary.axl`,
 `kpi-registry-boundary.axl`, `chart-boundary.axl`, `portal-usable-boundary.axl`). Form POST failures re-render HTML with
 field errors (`form-validation-boundary.axl`); portal clienti use a detail **drawer**.
 `bootstrap` runs once on `serve`; session-gated pages redirect to `/login`; forms support `title`, `submit_label`, `nav hidden`, `omit field`.
+The **`kanban`** page primitive (`kanban <enum-field> "Title"`) groups an `items`
+list into columns by enum stage; see the CRM pipeline module
+(`examples/apps/domains/crm/opportunita.axl`, `CrmUi` in `examples/apps/portal.axl`).
 Remaining Gate 4 polish: timeline/activity widgets.

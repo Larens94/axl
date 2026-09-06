@@ -965,6 +965,21 @@ ui DashboardUi
 
 See `examples/apps/chart-boundary.axl`.
 
+A list page whose `items` entity has an `enum`-typed field may declare a **kanban**
+board. Columns follow the enum's declared variant order; each item renders as a
+card grouped under its stage:
+
+```axl
+ui CrmUi
+  page /crm/pipeline OpportunitaSessioneQuery -> Result<OpportunitaPage> = PaginaPipelineSessione
+    bind session_id = cookie.sid
+    kanban stadio "Pipeline commerciale"
+```
+
+The kanban field must be an `enum` field on the page output's `items` entity.
+See `examples/apps/domains/crm/opportunita.axl` and the `CrmUi` block in
+`examples/apps/portal.axl`.
+
 A form binds an absolute path to an entity type and flow. The optional `submit` clause
 names the POST api route that receives the entity JSON; when omitted, the analyzer
 infers a POST route at the same path as the form. The optional `redirect` clause
@@ -1058,9 +1073,11 @@ Implemented UI diagnostics:
 | `AXL-U923` | unknown UI kit slot name |
 | `AXL-U924` | duplicate UI slot in one `ui` |
 | `AXL-U925` | invalid chart field (must be List of label+value entity) |
+| `AXL-U927` | invalid kanban field (must be an enum field on the items entity) |
 | `AXL-P992` | kpi missing field / quoted label |
 | `AXL-P993` | invalid UI slot binding |
 | `AXL-P994` | chart missing field / quoted title |
+| `AXL-P996` | kanban missing field / quoted title |
 
 Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`, `ui_action` = `57`,
 `route_guard` = `58`, `ui_drawer` = `59`, `ui_filter` = `60`, `ui_pagination` = `61`,

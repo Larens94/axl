@@ -477,6 +477,13 @@ pub fn format(program: &Program) -> String {
                             chart.label.replace('"', "\\\"")
                         ));
                     }
+                    for kanban in &page.kanbans {
+                        output.push(format!(
+                            "    kanban {} \"{}\"",
+                            kanban.field,
+                            kanban.label.replace('"', "\\\"")
+                        ));
+                    }
                 }
                 for slot in &ui.slots {
                     output.push(format!("  slot {} = {}", slot.name, slot.component));

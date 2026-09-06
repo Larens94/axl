@@ -169,6 +169,14 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                             .and_then(|value| value.parse::<usize>().ok())
                             .unwrap_or(usize::MAX)
                     });
+                    let mut kanbans = children(graph, &page.id, "ui_kanban");
+                    kanbans.sort_by_key(|kanban| {
+                        kanban
+                            .metadata
+                            .get("order")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .unwrap_or(usize::MAX)
+                    });
                     json!({
                         "path": path,
                         "template": template,
@@ -192,6 +200,10 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "charts": charts.into_iter().map(|chart| json!({
                             "field": chart.name,
                             "label": chart.metadata.get("label"),
+                        })).collect::<Vec<_>>(),
+                        "kanbans": kanbans.into_iter().map(|kanban| json!({
+                            "field": kanban.name,
+                            "label": kanban.metadata.get("label"),
                         })).collect::<Vec<_>>(),
                     })
                 }).collect::<Vec<_>>(),
@@ -477,6 +489,8 @@ fn nav_group(path: &str) -> &'static str {
         || normalized.contains("reimposta")
     {
         "Accesso"
+    } else if normalized.starts_with("/crm") || normalized.starts_with("/opportunita") {
+        "CRM"
     } else {
         "Vendite"
     }
@@ -505,6 +519,10 @@ fn nav_label(path: &str) -> String {
         "/listini" => "Listini".into(),
         "/listini/new" => "Nuovo listino".into(),
         "/listini/demo" => "Listini demo".into(),
+        "/crm/pipeline" => "Pipeline".into(),
+        "/crm/pipeline/demo" => "Pipeline demo".into(),
+        "/opportunita" => "Opportunità".into(),
+        "/opportunita/new" => "Nuova opportunità".into(),
         "/admin/utenti" => "Utenti".into(),
         "/admin/ruoli" => "Ruoli".into(),
         "/admin/ruoli/new" => "Nuovo ruolo".into(),
@@ -516,9 +534,10 @@ fn nav_group_order(group: &str) -> u8 {
     match group {
         "Home" => 0,
         "Accesso" => 1,
-        "Vendite" => 2,
-        "Amministrazione" => 3,
-        _ => 4,
+        "CRM" => 2,
+        "Vendite" => 3,
+        "Amministrazione" => 4,
+        _ => 5,
     }
 }
 
@@ -1038,6 +1057,9 @@ fn render_page_html(
         render_error_state(error)
     } else if let Some(dashboard) = render_kpi_dashboard(graph, page, data) {
         dashboard
+    } else if let Some(board) = render_kanban_board(graph, page, path, output_type, data) {
+        let filters = render_page_filters(graph, page, path).unwrap_or_default();
+        format!("{filters}{board}")
     } else if let Some(table) = render_items_table(graph, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
         let pagination = render_page_pagination(path, path, data).unwrap_or_default();
@@ -1555,6 +1577,35 @@ fn enum_variants(graph: &GraphIr, type_name: &str) -> Option<Vec<String>> {
     Some(variants)
 }
 
+/// Enum variants in declaration order (kanban columns / workflow stages).
+fn enum_variants_ordered(graph: &GraphIr, type_name: &str) -> Option<Vec<String>> {
+    let enum_node = graph
+        .nodes
+        .iter()
+        .find(|node| node.kind == "enum" && node.name == type_name)?;
+    let mut variants = children(graph, &enum_node.id, "variant");
+    variants.sort_by_key(|variant| {
+        variant
+            .metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    let names = variants
+        .into_iter()
+        .map(|variant| variant.name.clone())
+        .collect::<Vec<_>>();
+    (!names.is_empty()).then_some(names)
+}
+
+fn stage_label(variant: &str) -> String {
+    let mut chars = variant.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 fn entity_fields<'a>(graph: &'a GraphIr, entity_name: &str) -> Vec<&'a super::ir::GraphNode> {
     graph
         .nodes
@@ -1875,6 +1926,90 @@ fn dashboard_styles() -> &'static str {
       padding: 2.5rem 1.35rem;
       text-align: center;
       color: var(--muted);
+    }
+    .kanban-card { padding: 1rem 1.1rem 1.35rem; }
+    .kanban-board {
+      display: grid;
+      grid-auto-flow: column;
+      grid-auto-columns: minmax(15rem, 1fr);
+      gap: 0.9rem;
+      overflow-x: auto;
+      padding: 0.35rem 0.25rem 0.5rem;
+      align-items: start;
+    }
+    .kanban-column {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 0.9rem;
+      padding: 0.6rem;
+      min-height: 6rem;
+    }
+    .kanban-column-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.15rem 0.5rem 0.6rem;
+    }
+    .kanban-stage {
+      font-weight: 650;
+      font-size: 0.82rem;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+    .kanban-count {
+      font-size: 0.72rem;
+      font-weight: 650;
+      color: var(--muted);
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.05rem 0.5rem;
+    }
+    .kanban-cards { display: flex; flex-direction: column; gap: 0.55rem; }
+    .kanban-empty {
+      margin: 0;
+      padding: 0.75rem 0.5rem;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+    .kanban-item {
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 0.7rem 0.8rem;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .kanban-item:hover { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+    .kanban-title {
+      font-weight: 620;
+      font-size: 0.95rem;
+      color: var(--text);
+      text-decoration: none;
+    }
+    a.kanban-title:hover { color: var(--accent); text-decoration: underline; }
+    .kanban-meta {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .kanban-meta b { color: var(--text); font-weight: 600; }
+    .stage-badge {
+      display: inline-block;
+      padding: 0.1rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 620;
+      background: color-mix(in srgb, var(--accent) 12%, var(--surface-solid));
+      color: var(--accent);
+      border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
     }
     .error-card {
       border-color: color-mix(in srgb, #dc2626 35%, var(--border));
@@ -2372,6 +2507,162 @@ fn render_items_table(
     </div>
   </section>"#
     ))
+}
+
+fn render_kanban_board(
+    graph: &GraphIr,
+    page: &super::ir::GraphNode,
+    page_path: &str,
+    output_type: &str,
+    data: &Value,
+) -> Option<String> {
+    let kanban = children(graph, &page.id, "ui_kanban").into_iter().next()?;
+    let field = kanban.name.clone();
+    let board_label = kanban
+        .metadata
+        .get("label")
+        .cloned()
+        .unwrap_or_else(|| "Kanban".into());
+
+    let payload = data.get("ok").unwrap_or(data);
+    let Value::Object(map) = payload else {
+        return None;
+    };
+    let Value::Array(items) = map.get("items")? else {
+        return None;
+    };
+
+    let item_type = page_item_type(graph, output_type)?;
+    let enum_name = field_type(graph, &item_type, &field)?;
+    let variants = enum_variants_ordered(graph, &enum_name)?;
+    let detail_template = detail_path_template_for_list(graph, page_path, &item_type);
+    let card_fields = entity_fields(graph, &item_type)
+        .into_iter()
+        .map(|node| node.name.clone())
+        .filter(|name| name != &field && name != "id")
+        .collect::<Vec<_>>();
+
+    let mut columns = String::new();
+    for variant in &variants {
+        let cards = items
+            .iter()
+            .filter_map(Value::as_object)
+            .filter(|row| row.get(&field).and_then(Value::as_str) == Some(variant.as_str()))
+            .map(|row| {
+                render_kanban_card(
+                    graph,
+                    &item_type,
+                    row,
+                    &card_fields,
+                    detail_template.as_deref(),
+                )
+            })
+            .collect::<Vec<_>>();
+        let count = cards.len();
+        let cards_html = if cards.is_empty() {
+            r#"        <p class="kanban-empty">Nessun elemento</p>"#.to_string()
+        } else {
+            cards.join("\n")
+        };
+        columns.push_str(&format!(
+            r#"    <div class="kanban-column" data-stage="{stage}">
+      <div class="kanban-column-head">
+        <span class="kanban-stage">{label}</span>
+        <span class="kanban-count">{count}</span>
+      </div>
+      <div class="kanban-cards" data-slot="data.kanban">
+{cards_html}
+      </div>
+    </div>
+"#,
+            stage = html_escape(variant),
+            label = html_escape(&stage_label(variant)),
+            count = count,
+            cards_html = cards_html,
+        ));
+    }
+
+    Some(format!(
+        r#"  <section class="card kanban-card">
+    <div class="card-header"><h2 class="card-title">{label}</h2></div>
+    <div class="kanban-board">
+{columns}    </div>
+  </section>"#,
+        label = html_escape(&board_label),
+        columns = columns,
+    ))
+}
+
+fn render_kanban_card(
+    graph: &GraphIr,
+    item_type: &str,
+    row: &serde_json::Map<String, Value>,
+    card_fields: &[String],
+    detail_template: Option<&str>,
+) -> String {
+    let title = card_fields
+        .iter()
+        .find_map(|name| {
+            row.get(name)
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+        })
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            row.get("id")
+                .map(display_value)
+                .unwrap_or_else(|| "—".into())
+        });
+    let title_field = card_fields.iter().find(|name| {
+        row.get(name.as_str())
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+    });
+    let meta = card_fields
+        .iter()
+        .filter(|name| Some(*name) != title_field)
+        .filter_map(|name| {
+            let value = row.get(name)?;
+            if value.is_null() {
+                return None;
+            }
+            Some(format!(
+                r#"        <div class="kanban-meta"><span>{label}</span><b>{value}</b></div>"#,
+                label = html_escape(&human_field_label(name)),
+                value = html_escape(&display_value(value)),
+            ))
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let title_html = match (row.get("id"), detail_template) {
+        (Some(id), Some(template))
+            if field_type(graph, item_type, "id").as_deref() == Some("uuid") =>
+        {
+            let id_text = display_value(id);
+            let href = substitute_path_template(
+                template,
+                &BTreeMap::from([("id".into(), id_text.clone())]),
+            )
+            .unwrap_or_else(|| template.replace("{id}", &id_text));
+            format!(
+                r#"<a class="kanban-title" href="{href}">{title}</a>"#,
+                href = html_escape(&href),
+                title = html_escape(&title),
+            )
+        }
+        _ => format!(
+            r#"<span class="kanban-title">{title}</span>"#,
+            title = html_escape(&title)
+        ),
+    };
+    format!(
+        r#"        <article class="kanban-item">
+          {title_html}
+{meta}
+        </article>"#,
+        title_html = title_html,
+        meta = meta,
+    )
 }
 
 fn page_item_type(graph: &GraphIr, output_type: &str) -> Option<String> {
@@ -3023,6 +3314,60 @@ ui Screen
         assert!(rendered.html.contains("Serie"));
         assert!(rendered.html.contains("class=\"chart-bar\""));
         assert!(rendered.html.contains(">A<") || rendered.html.contains("A</span>"));
+    }
+
+    #[test]
+    fn render_page_emits_kanban_board_in_stage_order() {
+        const SOURCE: &str = r#"axl 4
+app KanbanUi
+enum Stadio
+  nuovo
+  vinto
+  perso
+entity Opportunita
+  id: uuid key
+  titolo: text required
+  stadio: Stadio required
+entity OpportunitaPage
+  items: List<Opportunita> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Pipeline unit -> Result<OpportunitaPage>
+  make a: Opportunita
+    id = "opp-1"
+    titolo = "Alpha"
+    stadio = Stadio.nuovo
+  make b: Opportunita
+    id = "opp-2"
+    titolo = "Beta"
+    stadio = Stadio.vinto
+  make page: OpportunitaPage
+    items = [a, b]
+    total = 2
+    limit = 10
+    offset = 0
+  return page
+ui Screen
+  page /pipeline unit -> Result<OpportunitaPage> = Pipeline
+    kanban stadio "Pipeline"
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(
+            manifest["uis"][0]["pages"][0]["kanbans"][0]["field"],
+            "stadio"
+        );
+        let rendered = render_page(&graph, "/pipeline", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"kanban-board\""));
+        assert!(rendered.html.contains("data-stage=\"nuovo\""));
+        assert!(rendered.html.contains("Alpha"));
+        assert!(rendered.html.contains("Beta"));
+        // Columns follow enum declaration order (nuovo before vinto before perso).
+        let nuovo = rendered.html.find("data-stage=\"nuovo\"").unwrap();
+        let vinto = rendered.html.find("data-stage=\"vinto\"").unwrap();
+        let perso = rendered.html.find("data-stage=\"perso\"").unwrap();
+        assert!(nuovo < vinto && vinto < perso);
     }
 
     #[test]

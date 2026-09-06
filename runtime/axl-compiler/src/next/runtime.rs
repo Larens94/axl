@@ -777,9 +777,10 @@ fn evaluate_flow_inner(
                             object.insert(assignment.name.clone(), value);
                         }
                     } else {
-                        let value = expression::evaluate(&expression, &values).map_err(
-                            |message| RuntimeError(format!("{}: {message}", assignment.id)),
-                        )?;
+                        let value =
+                            expression::evaluate(&expression, &values).map_err(|message| {
+                                RuntimeError(format!("{}: {message}", assignment.id))
+                            })?;
                         object.insert(assignment.name.clone(), value);
                     }
                 }
