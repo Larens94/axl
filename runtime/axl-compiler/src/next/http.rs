@@ -162,7 +162,7 @@ pub fn dispatch_with_headers(
     apply_response_middleware(graph, runtime, route, &mut result);
     if method == "post" {
         apply_form_post_redirect(graph, request_path, headers, &mut result);
-        apply_form_post_validation_html(graph, request_path, headers, &input, &mut result);
+        apply_form_post_validation_html(graph, runtime, request_path, headers, &input, &mut result);
     }
     apply_api_redirect(route, &mut result);
     result
@@ -256,7 +256,9 @@ fn dispatch_ui_get(
     request_path: &str,
     headers: &BTreeMap<String, String>,
 ) -> Option<HttpResult> {
-    if let Ok(rendered) = ui::render_form(graph, request_path) {
+    if let Ok(rendered) =
+        ui::render_form_with_runtime(graph, runtime, request_path, &Value::Null, None)
+    {
         let mut result = HttpResult::new(200, Value::String(rendered.html));
         result
             .headers
@@ -826,6 +828,7 @@ fn apply_form_post_redirect(
 
 fn apply_form_post_validation_html(
     graph: &GraphIr,
+    runtime: &mut dyn ProviderRuntime,
     submit_path: &str,
     headers: &BTreeMap<String, String>,
     input: &Value,
@@ -842,7 +845,8 @@ fn apply_form_post_validation_html(
     let Some(form_path) = ui::find_form_path_for_submit(graph, submit_path) else {
         return;
     };
-    let Ok(rendered) = ui::render_form_with_state(graph, &form_path, input, Some(error)) else {
+    let Ok(rendered) = ui::render_form_with_runtime(graph, runtime, &form_path, input, Some(error))
+    else {
         return;
     };
     result.status = 422;

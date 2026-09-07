@@ -1030,6 +1030,20 @@ ui ClienteScreen
   form /clienti/new Cliente -> Result<Cliente> = CreaCliente submit /clienti redirect /clienti
 ```
 
+A form field may render as a **relation dropdown** (Many2one-style picker) with
+`select <field> from <Flow> [value <f>] [label <f>]`. At render time the runtime
+runs `<Flow>` (a `unit -> Result<EntityPage>` or `unit -> Result<List<Entity>>`
+that lists the related records) and populates a `<select>`; each option uses the
+`value` field (default `id`) and the `label` field (default `nome`). The `field`
+must be on the form entity; the `value`/`label` fields must be on the related
+entity:
+
+```axl
+ui CrmUi
+  form /opportunita/new Opportunita -> Result<Opportunita> = CreaOpportunitaSqlite submit /opportunita
+    select cliente from OpzioniContattiSqlite value nome label nome
+```
+
 An action binds a label path to a POST api route and optional redirect page. Actions render
 as inline POST forms on the page named by `redirect` (or on pages that declare them).
 Redirect paths may use the same `{param}` templates; after a successful POST the runtime
@@ -1116,9 +1130,11 @@ Implemented UI diagnostics:
 | `AXL-P992` | kpi missing field / quoted label |
 | `AXL-P993` | invalid UI slot binding |
 | `AXL-P994` | chart missing field / quoted title |
+| `AXL-P995` | form select missing field / flow (`select field from Flow`) |
 | `AXL-P996` | kanban missing field / quoted title |
 | `AXL-P997` | view missing quoted label / target path |
 | `AXL-P998` | gallery missing quoted title / invalid link field |
+| `AXL-U933` | form select field, options flow or value/label field invalid |
 
 Packed IR opcodes: `ui` = `54`, `page` = `55`, `form` = `56`, `ui_action` = `57`,
 `route_guard` = `58`, `ui_drawer` = `59`, `ui_filter` = `60`, `ui_pagination` = `61`,

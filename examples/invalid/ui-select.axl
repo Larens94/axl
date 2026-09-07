@@ -1,0 +1,31 @@
+axl 4
+app InvalidSelect
+entity Contatto
+  id: uuid key
+  nome: text required
+entity ContattoPage
+  items: List<Contatto> required
+  total: int required
+  limit: int required
+  offset: int required
+entity Opportunita
+  id: uuid key
+  titolo: text required
+  cliente: text required
+flow OpzioniContatti unit -> Result<ContattoPage>
+  make a: Contatto
+    id = "c1"
+    nome = "Alice"
+  make page: ContattoPage
+    items = [a]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+flow Crea Opportunita -> Result<Opportunita>
+  return input
+api Api
+  post /opp Opportunita -> Result<Opportunita> = Crea
+ui Screen
+  form /opp/new Opportunita -> Result<Opportunita> = Crea submit /opp
+    select nonesistente from OpzioniContatti value nome label nome

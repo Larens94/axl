@@ -609,6 +609,10 @@ fn documented_invalid_examples_report_stable_codes() {
             "AXL-P997",
             include_str!("../../../examples/invalid/ui-view.axl"),
         ),
+        (
+            "AXL-U933",
+            include_str!("../../../examples/invalid/ui-select.axl"),
+        ),
     ];
 
     for (code, source) in cases {

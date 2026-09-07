@@ -89,4 +89,8 @@ The **`view`** page primitive (`view "Label" /path`) renders a control-panel
 view switcher (segmented tabs), and list/kanban pages get a primary "Nuovo"
 create button when a matching create form exists — used by Inventario, Progetti
 and Contabilita (Lista/Bacheca toggles).
+The **`select`** form primitive (`select <field> from <Flow> [value f] [label f]`)
+renders a relation dropdown (Many2one-style picker) populated at render time by
+running an options flow — e.g. the Opportunita form picks its `cliente` from the
+Contatti records instead of free text.
 Remaining Gate 4 polish: timeline/activity widgets.

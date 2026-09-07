@@ -536,6 +536,22 @@ pub fn format(program: &Program) -> String {
                     for field in &form.omit_fields {
                         output.push(format!("    omit {field}"));
                     }
+                    for select in &form.selects {
+                        let value = select
+                            .value_field
+                            .as_deref()
+                            .map(|field| format!(" value {field}"))
+                            .unwrap_or_default();
+                        let label = select
+                            .label_field
+                            .as_deref()
+                            .map(|field| format!(" label {field}"))
+                            .unwrap_or_default();
+                        output.push(format!(
+                            "    select {} from {}{value}{label}",
+                            select.field, select.flow
+                        ));
+                    }
                 }
                 for action in &ui.actions {
                     let on = action

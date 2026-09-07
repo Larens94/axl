@@ -3498,10 +3498,17 @@ fn parse_ui_form_block(
     let mut submit_label = None;
     let mut nav_hidden = false;
     let mut omit_fields = Vec::new();
+    let mut selects = Vec::new();
     let mut cursor = start + 1;
     while cursor < body.len() && body[cursor].indent > line.indent {
         let binding_line = &body[cursor];
-        if let Some(value) = binding_line.text.strip_prefix("title ") {
+        if let Some(value) = binding_line.text.strip_prefix("select ") {
+            if let Some(select) =
+                parse_ui_form_select(value.trim(), span(binding_line), diagnostics)
+            {
+                selects.push(select);
+            }
+        } else if let Some(value) = binding_line.text.strip_prefix("title ") {
             title = Some(parse_quoted_ui_label(
                 value,
                 binding_line,
@@ -3541,7 +3548,7 @@ fn parse_ui_form_block(
                     span(binding_line),
                 )
                 .expected(
-                    "title \"Label\"\n  submit_label \"Salva\"\n  nav hidden\n  omit field",
+                    "title \"Label\"\n  submit_label \"Salva\"\n  nav hidden\n  omit field\n  select field from Flow [value f] [label f]",
                     &binding_line.text,
                 ),
             );
@@ -3554,9 +3561,66 @@ fn parse_ui_form_block(
         form.submit_label = submit_label;
         form.nav_hidden = nav_hidden;
         form.omit_fields = omit_fields;
+        form.selects = selects;
         forms.push(form);
     }
     cursor
+}
+
+fn parse_ui_form_select(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiFormSelect> {
+    let tokens = source.split_whitespace().collect::<Vec<_>>();
+    // select <field> from <Flow> [value <f>] [label <f>]
+    let bad = |diagnostics: &mut Vec<Diagnostic>| {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P995",
+                "parse",
+                "a UI form select requires: field from Flow [value f] [label f]",
+                span.clone(),
+            )
+            .expected("select field from Flow [value f] [label f]", source),
+        );
+    };
+    if tokens.len() < 3 || tokens[1] != "from" {
+        bad(diagnostics);
+        return None;
+    }
+    let field = tokens[0];
+    let flow = tokens[2];
+    if !valid_name(field, false) || !valid_name(flow, true) {
+        bad(diagnostics);
+        return None;
+    }
+    let mut value_field = None;
+    let mut label_field = None;
+    let mut index = 3;
+    while index < tokens.len() {
+        match tokens[index] {
+            "value" if index + 1 < tokens.len() => {
+                value_field = Some(tokens[index + 1].to_string());
+                index += 2;
+            }
+            "label" if index + 1 < tokens.len() => {
+                label_field = Some(tokens[index + 1].to_string());
+                index += 2;
+            }
+            _ => {
+                bad(diagnostics);
+                return None;
+            }
+        }
+    }
+    Some(UiFormSelect {
+        field: field.to_string(),
+        flow: flow.to_string(),
+        value_field,
+        label_field,
+        span,
+    })
 }
 
 fn parse_quoted_ui_label(
@@ -3679,6 +3743,7 @@ fn parse_ui_form_line(line: &SourceLine, diagnostics: &mut Vec<Diagnostic>) -> O
         submit_label: None,
         nav_hidden: false,
         omit_fields: Vec::new(),
+        selects: Vec::new(),
         span: span(line),
     })
 }

@@ -419,7 +419,7 @@ pub fn render_modal_with_runtime(
 }
 
 pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, String> {
-    render_form_with_state(graph, path, &Value::Null, None)
+    render_form_with_options(graph, path, &Value::Null, None, &BTreeMap::new())
 }
 
 pub fn render_form_with_state(
@@ -427,6 +427,89 @@ pub fn render_form_with_state(
     path: &str,
     values: &Value,
     error: Option<&str>,
+) -> Result<UiFormRenderResult, String> {
+    render_form_with_options(graph, path, values, error, &BTreeMap::new())
+}
+
+/// Render a form, populating relation dropdowns (`select field from Flow`) by
+/// running each options flow against the runtime.
+pub fn render_form_with_runtime(
+    graph: &GraphIr,
+    provider_runtime: &mut dyn runtime::ProviderRuntime,
+    path: &str,
+    values: &Value,
+    error: Option<&str>,
+) -> Result<UiFormRenderResult, String> {
+    let normalized = normalize_path(path);
+    let form = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "form")
+        .find(|node| {
+            node.metadata
+                .get("path")
+                .is_some_and(|value| normalize_path(value) == normalized)
+        })
+        .ok_or_else(|| format!("ui_form_not_found:{path}"))?;
+    let options = collect_form_select_options(graph, provider_runtime, form);
+    render_form_with_options(graph, path, values, error, &options)
+}
+
+fn collect_form_select_options(
+    graph: &GraphIr,
+    provider_runtime: &mut dyn runtime::ProviderRuntime,
+    form: &super::ir::GraphNode,
+) -> BTreeMap<String, Vec<(String, String)>> {
+    let mut options = BTreeMap::new();
+    let mut selects = children(graph, &form.id, "ui_select");
+    selects.sort_by_key(|select| {
+        select
+            .metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    for select in selects {
+        let Some(flow) = select.metadata.get("flow") else {
+            continue;
+        };
+        let value_field = select.metadata.get("value").map_or("id", String::as_str);
+        let label_field = select.metadata.get("label").map_or("nome", String::as_str);
+        let Ok(data) =
+            runtime::evaluate_flow_with_runtime(graph, flow, Value::Null, provider_runtime)
+        else {
+            continue;
+        };
+        let payload = data.get("ok").unwrap_or(&data);
+        let items = match payload {
+            Value::Array(items) => Some(items.clone()),
+            Value::Object(map) => map.get("items").and_then(|value| value.as_array()).cloned(),
+            _ => None,
+        };
+        let Some(items) = items else { continue };
+        let choices = items
+            .iter()
+            .filter_map(|item| {
+                let object = item.as_object()?;
+                let value = object.get(value_field).map(display_value)?;
+                let label = object
+                    .get(label_field)
+                    .map(display_value)
+                    .unwrap_or_else(|| value.clone());
+                Some((value, label))
+            })
+            .collect::<Vec<_>>();
+        options.insert(select.name.clone(), choices);
+    }
+    options
+}
+
+fn render_form_with_options(
+    graph: &GraphIr,
+    path: &str,
+    values: &Value,
+    error: Option<&str>,
+    options: &BTreeMap<String, Vec<(String, String)>>,
 ) -> Result<UiFormRenderResult, String> {
     let normalized = normalize_path(path);
     let form = graph
@@ -460,7 +543,7 @@ pub fn render_form_with_state(
         .cloned()
         .ok_or_else(|| "ui_form_has_no_submit".to_string())?;
     let html = render_form_html(
-        graph, form, &graph.app, path, &entity, &submit, values, error,
+        graph, form, &graph.app, path, &entity, &submit, values, error, options,
     );
     Ok(UiFormRenderResult {
         path: path.into(),
@@ -1344,7 +1427,7 @@ fn render_action_form(
         .map(|entity| {
             entity_fields(graph, entity)
                 .iter()
-                .map(|field| render_form_field(graph, field, None, None))
+                .map(|field| render_form_field(graph, field, None, None, None))
                 .collect::<Vec<_>>()
                 .join("\n")
         })
@@ -1474,6 +1557,7 @@ fn render_form_html(
     submit: &str,
     values: &Value,
     error: Option<&str>,
+    options: &BTreeMap<String, Vec<(String, String)>>,
 ) -> String {
     let card_title = form
         .metadata
@@ -1507,7 +1591,13 @@ fn render_form_html(
             let field_error =
                 error.and_then(|message| field_validation_message(&field.name, message));
             let value = values_object.and_then(|object| object.get(&field.name));
-            render_form_field(graph, field, value, field_error.as_deref())
+            render_form_field(
+                graph,
+                field,
+                value,
+                field_error.as_deref(),
+                options.get(&field.name).map(Vec::as_slice),
+            )
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -1581,6 +1671,7 @@ fn render_form_field(
     field: &super::ir::GraphNode,
     value: Option<&Value>,
     error: Option<&str>,
+    options: Option<&[(String, String)]>,
 ) -> String {
     let name = &field.name;
     let type_name = field.type_name.as_deref().unwrap_or("text");
@@ -1600,6 +1691,45 @@ fn render_form_field(
             )
         })
         .unwrap_or_default();
+    // Relation field: render a dropdown populated from a related-records flow.
+    if let Some(options) = options {
+        let selected = value
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+            .unwrap_or_default();
+        let blank = if optional {
+            r#"      <option value="">—</option>
+"#
+            .to_string()
+        } else {
+            String::new()
+        };
+        let choices = options
+            .iter()
+            .map(|(option_value, option_label)| {
+                let is_selected = if selected == *option_value {
+                    " selected"
+                } else {
+                    ""
+                };
+                format!(
+                    r#"      <option value="{value}"{is_selected}>{label}</option>"#,
+                    value = html_escape(option_value),
+                    label = html_escape(option_label),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        return format!(
+            r#"  <div class="field{invalid}">
+{label}
+    <select id="{name}" name="{name}" class="control"{required} aria-invalid="{aria}">
+{blank}{choices}
+    </select>{message}
+  </div>"#,
+            aria = if error.is_some() { "true" } else { "false" },
+        );
+    }
     if let Some(variants) = enum_variants(graph, type_name) {
         let selected = value
             .and_then(|value| value.as_str())
@@ -3864,6 +3994,62 @@ ui Screen
                 .html
                 .contains(r#"class="btn-create" href="/task/new""#)
         );
+    }
+
+    #[test]
+    fn render_form_relation_field_becomes_dropdown_from_flow() {
+        const SOURCE: &str = r#"axl 4
+app SelectUi
+entity Contatto
+  id: uuid key
+  nome: text required
+entity ContattoPage
+  items: List<Contatto> required
+  total: int required
+  limit: int required
+  offset: int required
+entity Opportunita
+  id: uuid key
+  titolo: text required
+  cliente: text required
+flow OpzioniContatti unit -> Result<ContattoPage>
+  make a: Contatto
+    id = "c1"
+    nome = "Alice"
+  make b: Contatto
+    id = "c2"
+    nome = "Bob"
+  make page: ContattoPage
+    items = [a, b]
+    total = 2
+    limit = 10
+    offset = 0
+  return page
+flow Crea Opportunita -> Result<Opportunita>
+  return input
+api Api
+  post /opp Opportunita -> Result<Opportunita> = Crea
+ui Screen
+  form /opp/new Opportunita -> Result<Opportunita> = Crea submit /opp
+    select cliente from OpzioniContatti value nome label nome
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = runtime::BuiltinRuntime::new().unwrap();
+        let rendered =
+            render_form_with_runtime(&graph, &mut runtime, "/opp/new", &json!(null), None).unwrap();
+        assert!(rendered.html.contains(r#"<select id="cliente""#));
+        assert!(
+            rendered
+                .html
+                .contains(r#"<option value="Alice">Alice</option>"#)
+        );
+        assert!(
+            rendered
+                .html
+                .contains(r#"<option value="Bob">Bob</option>"#)
+        );
+        // The free-text input is replaced by the relation dropdown.
+        assert!(!rendered.html.contains(r#"<input id="cliente""#));
     }
 
     #[test]

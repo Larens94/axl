@@ -3409,6 +3409,7 @@ fn check_ui(
                 form.span.clone(),
             ));
         }
+        check_form_selects(form, declarations, diagnostics);
     }
     let mut action_paths = BTreeSet::new();
     for action in &ui.actions {
@@ -4077,6 +4078,132 @@ fn check_page_galleries(
                         gallery.span.clone(),
                     )
                     .expected("text-typed field", &field.type_name),
+                );
+            }
+        }
+    }
+}
+
+fn option_entity_of(output: &str, declarations: &BTreeMap<&str, &Declaration>) -> Option<String> {
+    let inner = output
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(output)
+        .trim();
+    if let Some(item) = inner
+        .strip_prefix("List<")
+        .and_then(|v| v.strip_suffix('>'))
+    {
+        return Some(item.trim().to_string());
+    }
+    if let Some(Declaration::Entity(entity)) = declarations.get(inner) {
+        if let Some(items) = entity.fields.iter().find(|field| field.name == "items")
+            && let Some(item) = items
+                .type_name
+                .strip_prefix("List<")
+                .and_then(|v| v.strip_suffix('>'))
+        {
+            return Some(item.trim().to_string());
+        }
+        return Some(inner.to_string());
+    }
+    None
+}
+
+fn check_form_selects(
+    form: &UiForm,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if form.selects.is_empty() {
+        return;
+    }
+    let Some(Declaration::Entity(entity)) = declarations.get(form.entity.as_str()) else {
+        return;
+    };
+    for select in &form.selects {
+        if !entity.fields.iter().any(|field| field.name == select.field) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U933",
+                    "ui",
+                    format!(
+                        "select field '{}' is not on form entity '{}'",
+                        select.field, entity.name
+                    ),
+                    select.span.clone(),
+                )
+                .expected(
+                    entity
+                        .fields
+                        .iter()
+                        .map(|field| field.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("|"),
+                    &select.field,
+                ),
+            );
+            continue;
+        }
+        let Some(Declaration::Flow(flow)) = declarations.get(select.flow.as_str()) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U933",
+                    "ui",
+                    format!(
+                        "select options flow '{}' is not a declared flow",
+                        select.flow
+                    ),
+                    select.span.clone(),
+                )
+                .expected("declared flow", &select.flow),
+            );
+            continue;
+        };
+        let Some(option_entity_name) = option_entity_of(&flow.output, declarations) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U933",
+                    "ui",
+                    format!(
+                        "select flow '{}' must return a list or page of an entity",
+                        select.flow
+                    ),
+                    select.span.clone(),
+                )
+                .expected("Result<EntityPage> or Result<List<Entity>>", &flow.output),
+            );
+            continue;
+        };
+        let Some(Declaration::Entity(option_entity)) =
+            declarations.get(option_entity_name.as_str())
+        else {
+            continue;
+        };
+        for (kind, field) in [
+            ("value", select.value_field.as_deref().unwrap_or("id")),
+            ("label", select.label_field.as_deref().unwrap_or("nome")),
+        ] {
+            if !option_entity.fields.iter().any(|f| f.name == field) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U933",
+                        "ui",
+                        format!(
+                            "select {kind} field '{field}' is not on option entity '{}'",
+                            option_entity.name
+                        ),
+                        select.span.clone(),
+                    )
+                    .expected(
+                        option_entity
+                            .fields
+                            .iter()
+                            .map(|f| f.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join("|"),
+                        field,
+                    ),
                 );
             }
         }
@@ -5886,6 +6013,28 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         }
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));
+        for (select_index, select) in form.selects.iter().enumerate() {
+            let select_id = format!("{id}.ui_select.{select_index}");
+            let mut select_node = node(&select_id, "ui_select", &select.field);
+            select_node
+                .metadata
+                .insert("flow".into(), select.flow.clone());
+            if let Some(value_field) = &select.value_field {
+                select_node
+                    .metadata
+                    .insert("value".into(), value_field.clone());
+            }
+            if let Some(label_field) = &select.label_field {
+                select_node
+                    .metadata
+                    .insert("label".into(), label_field.clone());
+            }
+            select_node
+                .metadata
+                .insert("order".into(), select_index.to_string());
+            graph.nodes.push(select_node);
+            graph.edges.push(edge(&id, &select_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", form.flow),
