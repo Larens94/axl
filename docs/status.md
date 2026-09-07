@@ -93,4 +93,6 @@ The **`select`** form primitive (`select <field> from <Flow> [value f] [label f]
 renders a relation dropdown (Many2one-style picker) populated at render time by
 running an options flow — e.g. the Opportunita form picks its `cliente` from the
 Contatti records instead of free text.
-Remaining Gate 4 polish: timeline/activity widgets.
+Remaining Gate 4 polish: timeline/activity widgets. The target ERP layout anatomy
+and the gap list/roadmap for the shell (control panel, form sheet + statusbar +
+notebook + chatter, search/group-by) are captured in `docs/erp-layout-reference.md`.
