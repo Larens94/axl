@@ -263,6 +263,7 @@ ui CrmUi
     submit_label "Crea opportunità"
     nav hidden
     omit id
+    select cliente from OpzioniContattiSqlite value nome label nome
   drawer /opportunita/{id} uuid -> Result<Opportunita> = CercaOpportunitaSqlite from path.id on /opportunita
 
 ui CrmDemoUi

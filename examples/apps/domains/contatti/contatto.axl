@@ -72,6 +72,16 @@ flow InterrogaContattiSqlite ContattoQuery -> Result<ContattoPage>
   call pagina = store.query(input)?
   return pagina
 
+flow OpzioniContattiSqlite unit -> Result<ContattoPage>
+  in store: ArchivioContatti = SqliteContatti
+  make query: ContattoQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 200
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina
+
 flow SeedContattiSqlite unit -> Result<ContattoPage>
   in store: ArchivioContatti = SqliteContatti
   make c1: Contatto
