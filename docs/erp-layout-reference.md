@@ -102,10 +102,14 @@ Calendar, Pivot, Graph, Activity, Gantt — each selectable from the view switch
 
 ## 5. Priority gap list for our AXL portal (roadmap)
 Ordered by impact for "feels like an ERP":
-1. **Form sheet layout**: two-column grouped fields + a bold title (primitive:
-   field groups / `group`), replacing the flat list.
-2. **Statusbar** on record forms: clickable stage pipeline + status action
-   buttons (primitive: `statusbar <enum-field>` + status actions).
+1. ~~**Form sheet layout**: two-column fields.~~ DONE — create forms render a
+   two-column `.form-grid` sheet (single column on mobile / guest layout).
+2. ~~**Statusbar** on record detail: stage pipeline.~~ DONE — record detail
+   (drawer / modal / detail page) renders a chevron status bar for the record's
+   first enum field (done / current / pending); the status action buttons already
+   render via `action` (e.g. `avanza`, `invia`, `conferma`). Currently derived
+   automatically from the entity's enum; a `statusbar <field>` override can be
+   added later when drawers gain block-nested declarations.
 3. **Notebook tabs** on forms for related line tables (primitive: `tab "Label"`).
 4. **Chatter / activity** timeline on record detail (primitive: `chatter` / a
    messages+activities widget backed by an AXL store).
