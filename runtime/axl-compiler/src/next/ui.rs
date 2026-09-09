@@ -1191,8 +1191,8 @@ fn render_page_html(
         let pagination = render_page_pagination(path, path, data).unwrap_or_default();
         format!("{filters}{table}{pagination}")
     } else {
-        let fields = collect_fields(graph, output_type, data);
-        render_detail_card(&fields)
+        let (statusbar, detail) = render_statusbar_and_detail(graph, output_type, data);
+        format!("{statusbar}{detail}")
     };
     let actions = render_page_actions(graph, path, data);
     let control_panel = render_control_panel(graph, page, path);
@@ -1218,8 +1218,7 @@ fn render_drawer_html(
 ) -> String {
     let title = format!("{app}{path}");
     let heading = page_heading(path);
-    let fields = collect_fields(graph, output_type, data);
-    let detail = render_detail_card(&fields);
+    let (statusbar, detail) = render_statusbar_and_detail(graph, output_type, data);
     let actions = render_page_actions(graph, path, data);
     let drawer = format!(
         r#"  <a class="drawer-backdrop" href="{close}" aria-label="Chiudi"></a>
@@ -1228,7 +1227,7 @@ fn render_drawer_html(
       <h1>{heading}</h1>
       <a class="drawer-close" href="{close}">Chiudi</a>
     </div>
-{detail}{actions}
+{statusbar}{detail}{actions}
   </aside>"#,
         close = html_escape(close_href),
         heading = html_escape(&heading),
@@ -1262,8 +1261,8 @@ fn render_modal_html(
 ) -> String {
     let title = format!("{app}{path}");
     let heading = page_heading(path);
-    let fields = collect_fields(graph, output_type, data);
-    let detail = render_detail_card(&fields);
+    let (statusbar, detail_card) = render_statusbar_and_detail(graph, output_type, data);
+    let detail = format!("{statusbar}{detail_card}");
     let actions = render_page_actions(graph, path, data);
     let modal = format!(
         r#"  <a class="modal-backdrop" href="{close}" aria-label="Chiudi"></a>
@@ -1624,7 +1623,9 @@ fn render_form_html(
       <h2 class="card-title">{card_title}</h2>
 {subtitle}    </div>
 {alert}    <form method="post" action="{submit}" class="stack-form" novalidate>
+      <div class="form-grid">
 {inputs}
+      </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">{submit_label}</button>
       </div>
@@ -1841,11 +1842,85 @@ fn enum_variants_ordered(graph: &GraphIr, type_name: &str) -> Option<Vec<String>
 }
 
 fn stage_label(variant: &str) -> String {
-    let mut chars = variant.chars();
+    let spaced = variant.replace('_', " ");
+    let mut chars = spaced.chars();
     match chars.next() {
         None => String::new(),
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
     }
+}
+
+/// First enum-typed field of an entity (used as the record's workflow status).
+fn first_enum_field(graph: &GraphIr, entity_name: &str) -> Option<(String, String)> {
+    entity_fields(graph, entity_name)
+        .into_iter()
+        .find_map(|field| {
+            let type_name = field.type_name.as_deref()?;
+            enum_variants_ordered(graph, type_name)
+                .map(|_| (field.name.clone(), type_name.to_string()))
+        })
+}
+
+/// Render an ERP-style status bar (stage pipeline) for a record's enum field:
+/// prior stages are "done", the current one is highlighted, later ones pending.
+/// Returns the HTML and the field name so it can be omitted from the field list.
+fn render_statusbar(graph: &GraphIr, entity_name: &str, data: &Value) -> Option<(String, String)> {
+    let (field, enum_type) = first_enum_field(graph, entity_name)?;
+    let variants = enum_variants_ordered(graph, &enum_type)?;
+    if variants.len() < 2 {
+        return None;
+    }
+    let payload = data.get("ok").unwrap_or(data);
+    let current = payload
+        .as_object()
+        .and_then(|object| object.get(&field))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_default();
+    let current_index = variants.iter().position(|variant| variant == &current);
+    let steps = variants
+        .iter()
+        .enumerate()
+        .map(|(index, variant)| {
+            let state = match current_index {
+                Some(current) if index < current => "done",
+                Some(current) if index == current => "current",
+                _ => "todo",
+            };
+            format!(
+                r#"      <span class="statusbar-step {state}">{label}</span>"#,
+                label = html_escape(&stage_label(variant)),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let html = format!(
+        r#"  <div class="statusbar" data-field="{field}" role="list">
+{steps}
+  </div>"#,
+        field = html_escape(&field),
+    );
+    Some((html, field))
+}
+
+/// Build a record detail: an optional status bar plus the field card, with the
+/// status field omitted from the card so it is not shown twice.
+fn render_statusbar_and_detail(
+    graph: &GraphIr,
+    output_type: &str,
+    data: &Value,
+) -> (String, String) {
+    let entity = strip_result(output_type);
+    let statusbar = render_statusbar(graph, entity, data);
+    let exclude = statusbar.as_ref().map(|(_, field)| field.clone());
+    let fields = collect_fields(graph, output_type, data)
+        .into_iter()
+        .filter(|(name, _)| exclude.as_deref() != Some(name.as_str()))
+        .collect::<Vec<_>>();
+    let statusbar_html = statusbar
+        .map(|(html, _)| format!("{html}\n"))
+        .unwrap_or_default();
+    (statusbar_html, render_detail_card(&fields))
 }
 
 fn entity_fields<'a>(graph: &'a GraphIr, entity_name: &str) -> Vec<&'a super::ir::GraphNode> {
@@ -2301,6 +2376,39 @@ fn dashboard_styles() -> &'static str {
     }
     .btn-create::before { content: "+"; font-size: 1.05rem; line-height: 1; }
     .btn-create:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .statusbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin: 0 0 1rem;
+    }
+    .statusbar-step {
+      position: relative;
+      padding: 0.4rem 1.1rem 0.4rem 1.35rem;
+      font-size: 0.82rem;
+      font-weight: 620;
+      color: var(--muted);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      clip-path: polygon(0 0, calc(100% - 0.7rem) 0, 100% 50%, calc(100% - 0.7rem) 100%, 0 100%, 0.7rem 50%);
+    }
+    .statusbar-step:first-child { padding-left: 1rem; clip-path: polygon(0 0, calc(100% - 0.7rem) 0, 100% 50%, calc(100% - 0.7rem) 100%, 0 100%); }
+    .statusbar-step.done { color: var(--text); background: var(--surface-solid); }
+    .statusbar-step.current {
+      color: #fff;
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .stack-form .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.4rem 1.35rem;
+    }
+    .stack-form .form-actions { margin-top: 0.5rem; }
+    .guest-layout .stack-form .form-grid { grid-template-columns: 1fr; }
+    @media (max-width: 760px) {
+      .stack-form .form-grid { grid-template-columns: 1fr; }
+    }
     .gallery-card { padding: 1rem 1.35rem 1.5rem; }
     .gallery-grid {
       display: grid;
@@ -4050,6 +4158,37 @@ ui Screen
         );
         // The free-text input is replaced by the relation dropdown.
         assert!(!rendered.html.contains(r#"<input id="cliente""#));
+    }
+
+    #[test]
+    fn render_detail_emits_statusbar_pipeline() {
+        const SOURCE: &str = r#"axl 4
+app StatusUi
+enum Stadio
+  nuovo
+  attivo
+  chiuso
+entity Rec
+  id: uuid key
+  titolo: text required
+  stadio: Stadio required
+flow Dettaglio unit -> Result<Rec>
+  make r: Rec
+    id = "r1"
+    titolo = "Alpha"
+    stadio = Stadio.attivo
+  return r
+ui Screen
+  page /r unit -> Result<Rec> = Dettaglio
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let rendered = render_page(&graph, "/r", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"statusbar\""));
+        assert!(rendered.html.contains(r#"statusbar-step done">Nuovo"#));
+        assert!(rendered.html.contains(r#"statusbar-step current">Attivo"#));
+        assert!(rendered.html.contains(r#"statusbar-step todo">Chiuso"#));
+        // The status field is shown as the bar, not duplicated in the field list.
+        assert!(!rendered.html.contains("<dt>stadio</dt>"));
     }
 
     #[test]
