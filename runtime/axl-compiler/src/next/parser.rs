@@ -2679,6 +2679,8 @@ fn parse_ui_page_block(
     let mut kpis = Vec::new();
     let mut charts = Vec::new();
     let mut kanbans = Vec::new();
+    let mut galleries = Vec::new();
+    let mut views = Vec::new();
     let mut cursor = start + 1;
     let mut found_nested = false;
     while cursor < body.len() && body[cursor].indent > line.indent {
@@ -2704,6 +2706,20 @@ fn parse_ui_page_block(
             cursor += 1;
             continue;
         }
+        if let Some(value) = binding_line.text.strip_prefix("gallery ") {
+            if let Some(gallery) = parse_ui_gallery(value.trim(), span(binding_line), diagnostics) {
+                galleries.push(gallery);
+            }
+            cursor += 1;
+            continue;
+        }
+        if let Some(value) = binding_line.text.strip_prefix("view ") {
+            if let Some(view) = parse_ui_view(value.trim(), span(binding_line), diagnostics) {
+                views.push(view);
+            }
+            cursor += 1;
+            continue;
+        }
         let (kind, prefix) = if let Some(value) = binding_line.text.strip_prefix("pagination ") {
             ("pagination", value)
         } else if let Some(value) = binding_line.text.strip_prefix("filter ") {
@@ -2719,7 +2735,7 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"\n  kanban field \"Title\"",
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"\n  kanban field \"Title\"\n  gallery \"Title\" [link field]\n  view \"Label\" /path",
                     &binding_line.text,
                 ),
             );
@@ -2888,6 +2904,8 @@ fn parse_ui_page_block(
         kpis,
         charts,
         kanbans,
+        galleries,
+        views,
         span: span(line),
     });
     cursor
@@ -3275,6 +3293,109 @@ fn parse_ui_kanban(
     })
 }
 
+fn parse_ui_gallery(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiGallery> {
+    let Some((label, rest_after)) = take_quoted_string(source.trim()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P998",
+                "parse",
+                "a UI gallery requires a quoted title",
+                span,
+            )
+            .expected("gallery \"Title\" [link field]", source),
+        );
+        return None;
+    };
+    let rest = rest_after.trim();
+    let link_field = if rest.is_empty() {
+        None
+    } else if let Some(field) = rest.strip_prefix("link ") {
+        let field = field.trim();
+        if !valid_name(field, false) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-P998",
+                    "parse",
+                    format!("invalid UI gallery link field '{field}'"),
+                    span,
+                )
+                .expected("identifier field name", field),
+            );
+            return None;
+        }
+        Some(field.to_string())
+    } else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P998",
+                "parse",
+                "a UI gallery takes a quoted title and an optional 'link field'",
+                span,
+            )
+            .expected("gallery \"Title\" [link field]", source),
+        );
+        return None;
+    };
+    Some(UiGallery {
+        label,
+        link_field,
+        span,
+    })
+}
+
+fn parse_ui_view(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiView> {
+    let Some((label, rest_after)) = take_quoted_string(source.trim()) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P997",
+                "parse",
+                "a UI view requires a quoted label",
+                span,
+            )
+            .expected("view \"Label\" /path", source),
+        );
+        return None;
+    };
+    let path = rest_after.trim();
+    if !path.starts_with('/') {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P997",
+                "parse",
+                "a UI view requires a target path starting with '/'",
+                span,
+            )
+            .expected("view \"Label\" /path", source),
+        );
+        return None;
+    }
+    if path.split_whitespace().count() != 1 {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P997",
+                "parse",
+                "a UI view takes one quoted label and one path",
+                span,
+            )
+            .expected("view \"Label\" /path", source),
+        );
+        return None;
+    }
+    Some(UiView {
+        label,
+        path: path.to_string(),
+        span,
+    })
+}
+
 fn parse_one_or_two_quoted_strings(source: &str) -> Option<(String, Option<String>)> {
     let (first, rest) = take_quoted_string(source)?;
     let rest = rest.trim();
@@ -3377,10 +3498,17 @@ fn parse_ui_form_block(
     let mut submit_label = None;
     let mut nav_hidden = false;
     let mut omit_fields = Vec::new();
+    let mut selects = Vec::new();
     let mut cursor = start + 1;
     while cursor < body.len() && body[cursor].indent > line.indent {
         let binding_line = &body[cursor];
-        if let Some(value) = binding_line.text.strip_prefix("title ") {
+        if let Some(value) = binding_line.text.strip_prefix("select ") {
+            if let Some(select) =
+                parse_ui_form_select(value.trim(), span(binding_line), diagnostics)
+            {
+                selects.push(select);
+            }
+        } else if let Some(value) = binding_line.text.strip_prefix("title ") {
             title = Some(parse_quoted_ui_label(
                 value,
                 binding_line,
@@ -3420,7 +3548,7 @@ fn parse_ui_form_block(
                     span(binding_line),
                 )
                 .expected(
-                    "title \"Label\"\n  submit_label \"Salva\"\n  nav hidden\n  omit field",
+                    "title \"Label\"\n  submit_label \"Salva\"\n  nav hidden\n  omit field\n  select field from Flow [value f] [label f]",
                     &binding_line.text,
                 ),
             );
@@ -3433,9 +3561,66 @@ fn parse_ui_form_block(
         form.submit_label = submit_label;
         form.nav_hidden = nav_hidden;
         form.omit_fields = omit_fields;
+        form.selects = selects;
         forms.push(form);
     }
     cursor
+}
+
+fn parse_ui_form_select(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiFormSelect> {
+    let tokens = source.split_whitespace().collect::<Vec<_>>();
+    // select <field> from <Flow> [value <f>] [label <f>]
+    let bad = |diagnostics: &mut Vec<Diagnostic>| {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P995",
+                "parse",
+                "a UI form select requires: field from Flow [value f] [label f]",
+                span.clone(),
+            )
+            .expected("select field from Flow [value f] [label f]", source),
+        );
+    };
+    if tokens.len() < 3 || tokens[1] != "from" {
+        bad(diagnostics);
+        return None;
+    }
+    let field = tokens[0];
+    let flow = tokens[2];
+    if !valid_name(field, false) || !valid_name(flow, true) {
+        bad(diagnostics);
+        return None;
+    }
+    let mut value_field = None;
+    let mut label_field = None;
+    let mut index = 3;
+    while index < tokens.len() {
+        match tokens[index] {
+            "value" if index + 1 < tokens.len() => {
+                value_field = Some(tokens[index + 1].to_string());
+                index += 2;
+            }
+            "label" if index + 1 < tokens.len() => {
+                label_field = Some(tokens[index + 1].to_string());
+                index += 2;
+            }
+            _ => {
+                bad(diagnostics);
+                return None;
+            }
+        }
+    }
+    Some(UiFormSelect {
+        field: field.to_string(),
+        flow: flow.to_string(),
+        value_field,
+        label_field,
+        span,
+    })
 }
 
 fn parse_quoted_ui_label(
@@ -3558,6 +3743,7 @@ fn parse_ui_form_line(line: &SourceLine, diagnostics: &mut Vec<Diagnostic>) -> O
         submit_label: None,
         nav_hidden: false,
         omit_fields: Vec::new(),
+        selects: Vec::new(),
         span: span(line),
     })
 }

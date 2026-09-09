@@ -177,6 +177,14 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                             .and_then(|value| value.parse::<usize>().ok())
                             .unwrap_or(usize::MAX)
                     });
+                    let mut galleries = children(graph, &page.id, "ui_gallery");
+                    galleries.sort_by_key(|gallery| {
+                        gallery
+                            .metadata
+                            .get("order")
+                            .and_then(|value| value.parse::<usize>().ok())
+                            .unwrap_or(usize::MAX)
+                    });
                     json!({
                         "path": path,
                         "template": template,
@@ -204,6 +212,10 @@ pub fn ui_manifest(graph: &GraphIr) -> Value {
                         "kanbans": kanbans.into_iter().map(|kanban| json!({
                             "field": kanban.name,
                             "label": kanban.metadata.get("label"),
+                        })).collect::<Vec<_>>(),
+                        "galleries": galleries.into_iter().map(|gallery| json!({
+                            "label": gallery.metadata.get("label"),
+                            "link": gallery.metadata.get("link"),
                         })).collect::<Vec<_>>(),
                     })
                 }).collect::<Vec<_>>(),
@@ -407,7 +419,7 @@ pub fn render_modal_with_runtime(
 }
 
 pub fn render_form(graph: &GraphIr, path: &str) -> Result<UiFormRenderResult, String> {
-    render_form_with_state(graph, path, &Value::Null, None)
+    render_form_with_options(graph, path, &Value::Null, None, &BTreeMap::new())
 }
 
 pub fn render_form_with_state(
@@ -415,6 +427,89 @@ pub fn render_form_with_state(
     path: &str,
     values: &Value,
     error: Option<&str>,
+) -> Result<UiFormRenderResult, String> {
+    render_form_with_options(graph, path, values, error, &BTreeMap::new())
+}
+
+/// Render a form, populating relation dropdowns (`select field from Flow`) by
+/// running each options flow against the runtime.
+pub fn render_form_with_runtime(
+    graph: &GraphIr,
+    provider_runtime: &mut dyn runtime::ProviderRuntime,
+    path: &str,
+    values: &Value,
+    error: Option<&str>,
+) -> Result<UiFormRenderResult, String> {
+    let normalized = normalize_path(path);
+    let form = graph
+        .nodes
+        .iter()
+        .filter(|node| node.kind == "form")
+        .find(|node| {
+            node.metadata
+                .get("path")
+                .is_some_and(|value| normalize_path(value) == normalized)
+        })
+        .ok_or_else(|| format!("ui_form_not_found:{path}"))?;
+    let options = collect_form_select_options(graph, provider_runtime, form);
+    render_form_with_options(graph, path, values, error, &options)
+}
+
+fn collect_form_select_options(
+    graph: &GraphIr,
+    provider_runtime: &mut dyn runtime::ProviderRuntime,
+    form: &super::ir::GraphNode,
+) -> BTreeMap<String, Vec<(String, String)>> {
+    let mut options = BTreeMap::new();
+    let mut selects = children(graph, &form.id, "ui_select");
+    selects.sort_by_key(|select| {
+        select
+            .metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    for select in selects {
+        let Some(flow) = select.metadata.get("flow") else {
+            continue;
+        };
+        let value_field = select.metadata.get("value").map_or("id", String::as_str);
+        let label_field = select.metadata.get("label").map_or("nome", String::as_str);
+        let Ok(data) =
+            runtime::evaluate_flow_with_runtime(graph, flow, Value::Null, provider_runtime)
+        else {
+            continue;
+        };
+        let payload = data.get("ok").unwrap_or(&data);
+        let items = match payload {
+            Value::Array(items) => Some(items.clone()),
+            Value::Object(map) => map.get("items").and_then(|value| value.as_array()).cloned(),
+            _ => None,
+        };
+        let Some(items) = items else { continue };
+        let choices = items
+            .iter()
+            .filter_map(|item| {
+                let object = item.as_object()?;
+                let value = object.get(value_field).map(display_value)?;
+                let label = object
+                    .get(label_field)
+                    .map(display_value)
+                    .unwrap_or_else(|| value.clone());
+                Some((value, label))
+            })
+            .collect::<Vec<_>>();
+        options.insert(select.name.clone(), choices);
+    }
+    options
+}
+
+fn render_form_with_options(
+    graph: &GraphIr,
+    path: &str,
+    values: &Value,
+    error: Option<&str>,
+    options: &BTreeMap<String, Vec<(String, String)>>,
 ) -> Result<UiFormRenderResult, String> {
     let normalized = normalize_path(path);
     let form = graph
@@ -448,7 +543,7 @@ pub fn render_form_with_state(
         .cloned()
         .ok_or_else(|| "ui_form_has_no_submit".to_string())?;
     let html = render_form_html(
-        graph, form, &graph.app, path, &entity, &submit, values, error,
+        graph, form, &graph.app, path, &entity, &submit, values, error, options,
     );
     Ok(UiFormRenderResult {
         path: path.into(),
@@ -481,6 +576,8 @@ fn nav_group(path: &str) -> &'static str {
     let normalized = normalize_path(path);
     if normalized == "/" || normalized == "/home" {
         "Home"
+    } else if normalized.starts_with("/apps") {
+        "App"
     } else if normalized.starts_with("/admin") {
         "Amministrazione"
     } else if normalized.starts_with("/login")
@@ -491,6 +588,14 @@ fn nav_group(path: &str) -> &'static str {
         "Accesso"
     } else if normalized.starts_with("/crm") || normalized.starts_with("/opportunita") {
         "CRM"
+    } else if normalized.starts_with("/contatti") {
+        "Contatti"
+    } else if normalized.starts_with("/inventario") {
+        "Inventario"
+    } else if normalized.starts_with("/progetti") {
+        "Progetti"
+    } else if normalized.starts_with("/contabilita") {
+        "Contabilita"
     } else {
         "Vendite"
     }
@@ -519,6 +624,19 @@ fn nav_label(path: &str) -> String {
         "/listini" => "Listini".into(),
         "/listini/new" => "Nuovo listino".into(),
         "/listini/demo" => "Listini demo".into(),
+        "/apps" => "Le mie app".into(),
+        "/apps/store" => "Store app".into(),
+        "/contatti" => "Contatti".into(),
+        "/contatti/new" => "Nuovo contatto".into(),
+        "/inventario" => "Inventario".into(),
+        "/inventario/bacheca" => "Bacheca magazzino".into(),
+        "/inventario/new" => "Nuovo articolo".into(),
+        "/progetti" => "Bacheca progetti".into(),
+        "/progetti/lista" => "Elenco attivita".into(),
+        "/progetti/new" => "Nuova attivita".into(),
+        "/contabilita" => "Contabilita".into(),
+        "/contabilita/bacheca" => "Bacheca fatture".into(),
+        "/contabilita/new" => "Nuova fattura".into(),
         "/crm/pipeline" => "Pipeline".into(),
         "/crm/pipeline/demo" => "Pipeline demo".into(),
         "/opportunita" => "Opportunità".into(),
@@ -533,11 +651,16 @@ fn nav_label(path: &str) -> String {
 fn nav_group_order(group: &str) -> u8 {
     match group {
         "Home" => 0,
-        "Accesso" => 1,
-        "CRM" => 2,
-        "Vendite" => 3,
-        "Amministrazione" => 4,
-        _ => 5,
+        "App" => 1,
+        "Accesso" => 2,
+        "CRM" => 3,
+        "Vendite" => 4,
+        "Contatti" => 5,
+        "Inventario" => 6,
+        "Progetti" => 7,
+        "Contabilita" => 8,
+        "Amministrazione" => 9,
+        _ => 10,
     }
 }
 
@@ -1060,16 +1183,20 @@ fn render_page_html(
     } else if let Some(board) = render_kanban_board(graph, page, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
         format!("{filters}{board}")
+    } else if let Some(grid) = render_gallery(graph, page, path, output_type, data) {
+        let filters = render_page_filters(graph, page, path).unwrap_or_default();
+        format!("{filters}{grid}")
     } else if let Some(table) = render_items_table(graph, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
         let pagination = render_page_pagination(path, path, data).unwrap_or_default();
         format!("{filters}{table}{pagination}")
     } else {
-        let fields = collect_fields(graph, output_type, data);
-        render_detail_card(&fields)
+        let (statusbar, detail) = render_statusbar_and_detail(graph, output_type, data);
+        format!("{statusbar}{detail}")
     };
     let actions = render_page_actions(graph, path, data);
-    let content = format!("{body}{actions}");
+    let control_panel = render_control_panel(graph, page, path);
+    let content = format!("{control_panel}{body}{actions}");
     if is_guest_path(path) {
         return wrap_html_guest(app, path, &title, &heading, &content);
     }
@@ -1091,8 +1218,7 @@ fn render_drawer_html(
 ) -> String {
     let title = format!("{app}{path}");
     let heading = page_heading(path);
-    let fields = collect_fields(graph, output_type, data);
-    let detail = render_detail_card(&fields);
+    let (statusbar, detail) = render_statusbar_and_detail(graph, output_type, data);
     let actions = render_page_actions(graph, path, data);
     let drawer = format!(
         r#"  <a class="drawer-backdrop" href="{close}" aria-label="Chiudi"></a>
@@ -1101,7 +1227,7 @@ fn render_drawer_html(
       <h1>{heading}</h1>
       <a class="drawer-close" href="{close}">Chiudi</a>
     </div>
-{detail}{actions}
+{statusbar}{detail}{actions}
   </aside>"#,
         close = html_escape(close_href),
         heading = html_escape(&heading),
@@ -1135,8 +1261,8 @@ fn render_modal_html(
 ) -> String {
     let title = format!("{app}{path}");
     let heading = page_heading(path);
-    let fields = collect_fields(graph, output_type, data);
-    let detail = render_detail_card(&fields);
+    let (statusbar, detail_card) = render_statusbar_and_detail(graph, output_type, data);
+    let detail = format!("{statusbar}{detail_card}");
     let actions = render_page_actions(graph, path, data);
     let modal = format!(
         r#"  <a class="modal-backdrop" href="{close}" aria-label="Chiudi"></a>
@@ -1167,6 +1293,74 @@ fn render_modal_html(
     wrap_html(
         graph, path, &title, &heading, close_href, &content, body_class,
     )
+}
+
+fn render_control_panel(graph: &GraphIr, page: &super::ir::GraphNode, page_path: &str) -> String {
+    if is_guest_path(page_path) {
+        return String::new();
+    }
+    let tabs = render_view_switcher(graph, page, page_path);
+    let create = create_button(graph, page_path).unwrap_or_default();
+    if tabs.is_empty() && create.is_empty() {
+        return String::new();
+    }
+    format!(
+        r#"  <div class="control-panel">
+    <div class="control-views">{tabs}</div>
+    <div class="control-actions">{create}</div>
+  </div>
+"#
+    )
+}
+
+/// A page declares alternate views (`view "Lista" /x`, `view "Bacheca" /x/board`)
+/// which render as a switcher; the tab whose target matches the current path is
+/// marked active.
+fn render_view_switcher(graph: &GraphIr, page: &super::ir::GraphNode, page_path: &str) -> String {
+    let mut views = children(graph, &page.id, "ui_view");
+    if views.is_empty() {
+        return String::new();
+    }
+    views.sort_by_key(|view| {
+        view.metadata
+            .get("order")
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(usize::MAX)
+    });
+    let current = normalize_path(page_path);
+    let tabs = views
+        .iter()
+        .map(|view| {
+            let target = view.metadata.get("target").cloned().unwrap_or_default();
+            let label = view.metadata.get("label").cloned().unwrap_or_default();
+            let active = if normalize_path(&target) == current {
+                " active"
+            } else {
+                ""
+            };
+            format!(
+                r#"<a class="view-tab{active}" href="{href}">{label}</a>"#,
+                href = html_escape(&target),
+                label = html_escape(&label),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("");
+    format!(r#"<div class="view-switcher">{tabs}</div>"#)
+}
+
+/// A list/kanban page gets a primary "Nuovo" action when a create form submits
+/// back to it (e.g. /clienti has form /clienti/new submit /clienti).
+fn create_button(graph: &GraphIr, page_path: &str) -> Option<String> {
+    let normalized = normalize_path(page_path);
+    let form_path = find_form_path_for_submit(graph, &normalized)?;
+    if normalize_path(&form_path) == normalized {
+        return None;
+    }
+    Some(format!(
+        r#"<a class="btn-create" href="{href}">Nuovo</a>"#,
+        href = html_escape(&form_path)
+    ))
 }
 
 fn render_page_actions(graph: &GraphIr, page_path: &str, page_data: &Value) -> String {
@@ -1232,7 +1426,7 @@ fn render_action_form(
         .map(|entity| {
             entity_fields(graph, entity)
                 .iter()
-                .map(|field| render_form_field(graph, field, None, None))
+                .map(|field| render_form_field(graph, field, None, None, None))
                 .collect::<Vec<_>>()
                 .join("\n")
         })
@@ -1362,6 +1556,7 @@ fn render_form_html(
     submit: &str,
     values: &Value,
     error: Option<&str>,
+    options: &BTreeMap<String, Vec<(String, String)>>,
 ) -> String {
     let card_title = form
         .metadata
@@ -1395,7 +1590,13 @@ fn render_form_html(
             let field_error =
                 error.and_then(|message| field_validation_message(&field.name, message));
             let value = values_object.and_then(|object| object.get(&field.name));
-            render_form_field(graph, field, value, field_error.as_deref())
+            render_form_field(
+                graph,
+                field,
+                value,
+                field_error.as_deref(),
+                options.get(&field.name).map(Vec::as_slice),
+            )
         })
         .collect::<Vec<_>>()
         .join("\n");
@@ -1422,7 +1623,9 @@ fn render_form_html(
       <h2 class="card-title">{card_title}</h2>
 {subtitle}    </div>
 {alert}    <form method="post" action="{submit}" class="stack-form" novalidate>
+      <div class="form-grid">
 {inputs}
+      </div>
       <div class="form-actions">
         <button type="submit" class="btn btn-primary">{submit_label}</button>
       </div>
@@ -1469,6 +1672,7 @@ fn render_form_field(
     field: &super::ir::GraphNode,
     value: Option<&Value>,
     error: Option<&str>,
+    options: Option<&[(String, String)]>,
 ) -> String {
     let name = &field.name;
     let type_name = field.type_name.as_deref().unwrap_or("text");
@@ -1488,6 +1692,45 @@ fn render_form_field(
             )
         })
         .unwrap_or_default();
+    // Relation field: render a dropdown populated from a related-records flow.
+    if let Some(options) = options {
+        let selected = value
+            .and_then(|value| value.as_str())
+            .map(str::to_string)
+            .unwrap_or_default();
+        let blank = if optional {
+            r#"      <option value="">—</option>
+"#
+            .to_string()
+        } else {
+            String::new()
+        };
+        let choices = options
+            .iter()
+            .map(|(option_value, option_label)| {
+                let is_selected = if selected == *option_value {
+                    " selected"
+                } else {
+                    ""
+                };
+                format!(
+                    r#"      <option value="{value}"{is_selected}>{label}</option>"#,
+                    value = html_escape(option_value),
+                    label = html_escape(option_label),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        return format!(
+            r#"  <div class="field{invalid}">
+{label}
+    <select id="{name}" name="{name}" class="control"{required} aria-invalid="{aria}">
+{blank}{choices}
+    </select>{message}
+  </div>"#,
+            aria = if error.is_some() { "true" } else { "false" },
+        );
+    }
     if let Some(variants) = enum_variants(graph, type_name) {
         let selected = value
             .and_then(|value| value.as_str())
@@ -1599,11 +1842,85 @@ fn enum_variants_ordered(graph: &GraphIr, type_name: &str) -> Option<Vec<String>
 }
 
 fn stage_label(variant: &str) -> String {
-    let mut chars = variant.chars();
+    let spaced = variant.replace('_', " ");
+    let mut chars = spaced.chars();
     match chars.next() {
         None => String::new(),
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
     }
+}
+
+/// First enum-typed field of an entity (used as the record's workflow status).
+fn first_enum_field(graph: &GraphIr, entity_name: &str) -> Option<(String, String)> {
+    entity_fields(graph, entity_name)
+        .into_iter()
+        .find_map(|field| {
+            let type_name = field.type_name.as_deref()?;
+            enum_variants_ordered(graph, type_name)
+                .map(|_| (field.name.clone(), type_name.to_string()))
+        })
+}
+
+/// Render an ERP-style status bar (stage pipeline) for a record's enum field:
+/// prior stages are "done", the current one is highlighted, later ones pending.
+/// Returns the HTML and the field name so it can be omitted from the field list.
+fn render_statusbar(graph: &GraphIr, entity_name: &str, data: &Value) -> Option<(String, String)> {
+    let (field, enum_type) = first_enum_field(graph, entity_name)?;
+    let variants = enum_variants_ordered(graph, &enum_type)?;
+    if variants.len() < 2 {
+        return None;
+    }
+    let payload = data.get("ok").unwrap_or(data);
+    let current = payload
+        .as_object()
+        .and_then(|object| object.get(&field))
+        .and_then(Value::as_str)
+        .map(str::to_string)
+        .unwrap_or_default();
+    let current_index = variants.iter().position(|variant| variant == &current);
+    let steps = variants
+        .iter()
+        .enumerate()
+        .map(|(index, variant)| {
+            let state = match current_index {
+                Some(current) if index < current => "done",
+                Some(current) if index == current => "current",
+                _ => "todo",
+            };
+            format!(
+                r#"      <span class="statusbar-step {state}">{label}</span>"#,
+                label = html_escape(&stage_label(variant)),
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let html = format!(
+        r#"  <div class="statusbar" data-field="{field}" role="list">
+{steps}
+  </div>"#,
+        field = html_escape(&field),
+    );
+    Some((html, field))
+}
+
+/// Build a record detail: an optional status bar plus the field card, with the
+/// status field omitted from the card so it is not shown twice.
+fn render_statusbar_and_detail(
+    graph: &GraphIr,
+    output_type: &str,
+    data: &Value,
+) -> (String, String) {
+    let entity = strip_result(output_type);
+    let statusbar = render_statusbar(graph, entity, data);
+    let exclude = statusbar.as_ref().map(|(_, field)| field.clone());
+    let fields = collect_fields(graph, output_type, data)
+        .into_iter()
+        .filter(|(name, _)| exclude.as_deref() != Some(name.as_str()))
+        .collect::<Vec<_>>();
+    let statusbar_html = statusbar
+        .map(|(html, _)| format!("{html}\n"))
+        .unwrap_or_default();
+    (statusbar_html, render_detail_card(&fields))
 }
 
 fn entity_fields<'a>(graph: &'a GraphIr, entity_name: &str) -> Vec<&'a super::ir::GraphNode> {
@@ -2011,6 +2328,140 @@ fn dashboard_styles() -> &'static str {
       color: var(--accent);
       border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border));
     }
+    .control-panel {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      flex-wrap: wrap;
+    }
+    .control-views { display: flex; }
+    .control-actions { display: flex; gap: 0.6rem; margin-left: auto; }
+    .view-switcher {
+      display: inline-flex;
+      gap: 0.2rem;
+      padding: 0.2rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    .view-tab {
+      padding: 0.35rem 0.9rem;
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-decoration: none;
+    }
+    .view-tab:hover { color: var(--text); }
+    .view-tab.active {
+      background: var(--surface-solid);
+      color: var(--accent);
+      box-shadow: var(--shadow);
+    }
+    .btn-create {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.55rem 1.1rem;
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 620;
+      font-size: 0.9rem;
+      text-decoration: none;
+      box-shadow: var(--shadow);
+      transition: background 0.12s ease, transform 0.12s ease;
+    }
+    .btn-create::before { content: "+"; font-size: 1.05rem; line-height: 1; }
+    .btn-create:hover { background: var(--accent-hover); transform: translateY(-1px); }
+    .statusbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.35rem;
+      margin: 0 0 1rem;
+    }
+    .statusbar-step {
+      position: relative;
+      padding: 0.4rem 1.1rem 0.4rem 1.35rem;
+      font-size: 0.82rem;
+      font-weight: 620;
+      color: var(--muted);
+      background: var(--bg);
+      border: 1px solid var(--border);
+      clip-path: polygon(0 0, calc(100% - 0.7rem) 0, 100% 50%, calc(100% - 0.7rem) 100%, 0 100%, 0.7rem 50%);
+    }
+    .statusbar-step:first-child { padding-left: 1rem; clip-path: polygon(0 0, calc(100% - 0.7rem) 0, 100% 50%, calc(100% - 0.7rem) 100%, 0 100%); }
+    .statusbar-step.done { color: var(--text); background: var(--surface-solid); }
+    .statusbar-step.current {
+      color: #fff;
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .stack-form .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.4rem 1.35rem;
+    }
+    .stack-form .form-actions { margin-top: 0.5rem; }
+    .guest-layout .stack-form .form-grid { grid-template-columns: 1fr; }
+    @media (max-width: 760px) {
+      .stack-form .form-grid { grid-template-columns: 1fr; }
+    }
+    .gallery-card { padding: 1rem 1.35rem 1.5rem; }
+    .gallery-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(13.5rem, 1fr));
+      gap: 1rem;
+    }
+    .gallery-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 1.15rem 1.15rem 1.25rem;
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: 1rem;
+      box-shadow: var(--shadow);
+      text-decoration: none;
+      color: var(--text);
+      transition: transform 0.12s ease, border-color 0.12s ease;
+    }
+    a.gallery-item:hover {
+      transform: translateY(-2px);
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+    }
+    .gallery-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 3rem;
+      height: 3rem;
+      border-radius: 0.85rem;
+      font-size: 1.6rem;
+      background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+      border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--border));
+    }
+    .gallery-title { font-weight: 650; font-size: 1rem; }
+    .gallery-desc { margin: 0; font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
+    .gallery-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: auto; }
+    .gallery-badge {
+      display: inline-block;
+      padding: 0.1rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
+    }
+    .gallery-badge.on {
+      background: color-mix(in srgb, #16a34a 14%, var(--surface-solid));
+      color: #15803d;
+      border-color: color-mix(in srgb, #16a34a 30%, var(--border));
+    }
+    .gallery-badge.off { color: var(--muted); }
     .error-card {
       border-color: color-mix(in srgb, #dc2626 35%, var(--border));
     }
@@ -2663,6 +3114,192 @@ fn render_kanban_card(
         title_html = title_html,
         meta = meta,
     )
+}
+
+fn render_gallery(
+    graph: &GraphIr,
+    page: &super::ir::GraphNode,
+    page_path: &str,
+    output_type: &str,
+    data: &Value,
+) -> Option<String> {
+    let gallery = children(graph, &page.id, "ui_gallery").into_iter().next()?;
+    let board_label = gallery
+        .metadata
+        .get("label")
+        .cloned()
+        .unwrap_or_else(|| "Catalogo".into());
+    let link_field = gallery.metadata.get("link").cloned();
+
+    let payload = data.get("ok").unwrap_or(data);
+    let Value::Object(map) = payload else {
+        return None;
+    };
+    let Value::Array(items) = map.get("items")? else {
+        return None;
+    };
+
+    let item_type = page_item_type(graph, output_type)?;
+    let detail_template = detail_path_template_for_list(graph, page_path, &item_type);
+    let field_names = entity_field_names(graph, &item_type);
+    let has = |name: &str| field_names.iter().any(|field| field == name);
+
+    let cards = items
+        .iter()
+        .filter_map(Value::as_object)
+        .map(|row| {
+            render_gallery_card(
+                graph,
+                &item_type,
+                row,
+                &field_names,
+                link_field.as_deref(),
+                detail_template.as_deref(),
+                has("icona"),
+                has("nome"),
+                has("descrizione"),
+            )
+        })
+        .collect::<Vec<_>>();
+    let cards_html = if cards.is_empty() {
+        r#"    <p class="empty-state" data-slot="state.empty">Nessuna app da mostrare.</p>"#
+            .to_string()
+    } else {
+        cards.join("\n")
+    };
+
+    Some(format!(
+        r#"  <section class="card gallery-card">
+    <div class="card-header"><h2 class="card-title">{label}</h2></div>
+    <div class="gallery-grid" data-slot="data.gallery">
+{cards_html}
+    </div>
+  </section>"#,
+        label = html_escape(&board_label),
+        cards_html = cards_html,
+    ))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_gallery_card(
+    graph: &GraphIr,
+    item_type: &str,
+    row: &serde_json::Map<String, Value>,
+    field_names: &[String],
+    link_field: Option<&str>,
+    detail_template: Option<&str>,
+    has_icon: bool,
+    has_nome: bool,
+    has_descrizione: bool,
+) -> String {
+    let title = if has_nome {
+        row.get("nome").map(display_value).unwrap_or_default()
+    } else {
+        field_names
+            .iter()
+            .find_map(|name| {
+                row.get(name)
+                    .and_then(Value::as_str)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| row.get("id").map(display_value).unwrap_or_default())
+    };
+    let icon = if has_icon {
+        row.get("icona")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                format!(
+                    r#"      <span class="gallery-icon" aria-hidden="true">{}</span>
+"#,
+                    html_escape(value)
+                )
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let description = if has_descrizione {
+        row.get("descrizione")
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .map(|value| {
+                format!(
+                    r#"      <p class="gallery-desc">{}</p>
+"#,
+                    html_escape(value)
+                )
+            })
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let mut badges = String::new();
+    if let Some(categoria) = row.get("categoria").and_then(Value::as_str) {
+        badges.push_str(&format!(
+            r#"<span class="gallery-badge">{}</span>"#,
+            html_escape(categoria)
+        ));
+    }
+    if let Some(installato) = row.get("installato").and_then(Value::as_bool) {
+        let (label, class) = if installato {
+            ("Installato", "gallery-badge on")
+        } else {
+            ("Non installato", "gallery-badge off")
+        };
+        badges.push_str(&format!(r#"<span class="{class}">{label}</span>"#));
+    }
+    let badges_html = if badges.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"      <div class="gallery-badges">{badges}</div>
+"#
+        )
+    };
+
+    let href = match link_field {
+        Some(field) => row.get(field).and_then(Value::as_str).map(str::to_string),
+        None => {
+            if field_type(graph, item_type, "id").as_deref() == Some("uuid")
+                && let (Some(id), Some(template)) = (row.get("id"), detail_template)
+            {
+                let id_text = display_value(id);
+                Some(
+                    substitute_path_template(
+                        template,
+                        &BTreeMap::from([("id".into(), id_text.clone())]),
+                    )
+                    .unwrap_or_else(|| template.replace("{id}", &id_text)),
+                )
+            } else {
+                None
+            }
+        }
+    };
+
+    let inner = format!(
+        r#"{icon}      <span class="gallery-title">{title}</span>
+{description}{badges_html}"#,
+        icon = icon,
+        title = html_escape(&title),
+        description = description,
+        badges_html = badges_html,
+    );
+    match href {
+        Some(href) => format!(
+            r#"    <a class="gallery-item" href="{href}">
+{inner}    </a>"#,
+            href = html_escape(&href),
+            inner = inner,
+        ),
+        None => format!(
+            r#"    <article class="gallery-item">
+{inner}    </article>"#,
+            inner = inner,
+        ),
+    }
 }
 
 fn page_item_type(graph: &GraphIr, output_type: &str) -> Option<String> {
@@ -3368,6 +4005,190 @@ ui Screen
         let vinto = rendered.html.find("data-stage=\"vinto\"").unwrap();
         let perso = rendered.html.find("data-stage=\"perso\"").unwrap();
         assert!(nuovo < vinto && vinto < perso);
+    }
+
+    #[test]
+    fn render_page_emits_gallery_grid_with_link_field() {
+        const SOURCE: &str = r#"axl 4
+app GalleryUi
+entity Modulo
+  id: uuid key
+  nome: text required
+  descrizione: text required
+  rotta: text required
+  installato: bool required
+entity ModuloPage
+  items: List<Modulo> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Apps unit -> Result<ModuloPage>
+  make a: Modulo
+    id = "mod-crm"
+    nome = "CRM"
+    descrizione = "Pipeline"
+    rotta = "/crm/pipeline"
+    installato = true
+  make page: ModuloPage
+    items = [a]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+ui Screen
+  page /apps unit -> Result<ModuloPage> = Apps
+    gallery "Le tue app" link rotta
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let manifest = ui_manifest(&graph);
+        assert_eq!(
+            manifest["uis"][0]["pages"][0]["galleries"][0]["link"],
+            "rotta"
+        );
+        let rendered = render_page(&graph, "/apps", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"gallery-grid\""));
+        assert!(rendered.html.contains(r#"href="/crm/pipeline""#));
+        assert!(rendered.html.contains("CRM"));
+        assert!(rendered.html.contains("gallery-badge on"));
+    }
+
+    #[test]
+    fn render_page_emits_view_switcher_and_create_button() {
+        const SOURCE: &str = r#"axl 4
+app ViewUi
+entity Task
+  id: uuid key
+  titolo: text required
+entity TaskPage
+  items: List<Task> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Elenco unit -> Result<TaskPage>
+  make t: Task
+    id = "task-1"
+    titolo = "Alpha"
+  make page: TaskPage
+    items = [t]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+flow Crea Task -> Result<Task>
+  return input
+api Api
+  post /task Task -> Result<Task> = Crea
+ui Screen
+  page /task unit -> Result<TaskPage> = Elenco
+    view "Elenco" /task
+    view "Bacheca" /task/bacheca
+  page /task/bacheca unit -> Result<TaskPage> = Elenco
+    view "Elenco" /task
+    view "Bacheca" /task/bacheca
+  form /task/new Task -> Result<Task> = Crea submit /task
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let rendered = render_page(&graph, "/task", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"view-switcher\""));
+        assert!(
+            rendered
+                .html
+                .contains(r#"class="view-tab active" href="/task""#)
+        );
+        assert!(rendered.html.contains(r#"href="/task/bacheca""#));
+        // The list page also gets a primary create button to its /task/new form.
+        assert!(
+            rendered
+                .html
+                .contains(r#"class="btn-create" href="/task/new""#)
+        );
+    }
+
+    #[test]
+    fn render_form_relation_field_becomes_dropdown_from_flow() {
+        const SOURCE: &str = r#"axl 4
+app SelectUi
+entity Contatto
+  id: uuid key
+  nome: text required
+entity ContattoPage
+  items: List<Contatto> required
+  total: int required
+  limit: int required
+  offset: int required
+entity Opportunita
+  id: uuid key
+  titolo: text required
+  cliente: text required
+flow OpzioniContatti unit -> Result<ContattoPage>
+  make a: Contatto
+    id = "c1"
+    nome = "Alice"
+  make b: Contatto
+    id = "c2"
+    nome = "Bob"
+  make page: ContattoPage
+    items = [a, b]
+    total = 2
+    limit = 10
+    offset = 0
+  return page
+flow Crea Opportunita -> Result<Opportunita>
+  return input
+api Api
+  post /opp Opportunita -> Result<Opportunita> = Crea
+ui Screen
+  form /opp/new Opportunita -> Result<Opportunita> = Crea submit /opp
+    select cliente from OpzioniContatti value nome label nome
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let mut runtime = runtime::BuiltinRuntime::new().unwrap();
+        let rendered =
+            render_form_with_runtime(&graph, &mut runtime, "/opp/new", &json!(null), None).unwrap();
+        assert!(rendered.html.contains(r#"<select id="cliente""#));
+        assert!(
+            rendered
+                .html
+                .contains(r#"<option value="Alice">Alice</option>"#)
+        );
+        assert!(
+            rendered
+                .html
+                .contains(r#"<option value="Bob">Bob</option>"#)
+        );
+        // The free-text input is replaced by the relation dropdown.
+        assert!(!rendered.html.contains(r#"<input id="cliente""#));
+    }
+
+    #[test]
+    fn render_detail_emits_statusbar_pipeline() {
+        const SOURCE: &str = r#"axl 4
+app StatusUi
+enum Stadio
+  nuovo
+  attivo
+  chiuso
+entity Rec
+  id: uuid key
+  titolo: text required
+  stadio: Stadio required
+flow Dettaglio unit -> Result<Rec>
+  make r: Rec
+    id = "r1"
+    titolo = "Alpha"
+    stadio = Stadio.attivo
+  return r
+ui Screen
+  page /r unit -> Result<Rec> = Dettaglio
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let rendered = render_page(&graph, "/r", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"statusbar\""));
+        assert!(rendered.html.contains(r#"statusbar-step done">Nuovo"#));
+        assert!(rendered.html.contains(r#"statusbar-step current">Attivo"#));
+        assert!(rendered.html.contains(r#"statusbar-step todo">Chiuso"#));
+        // The status field is shown as the bar, not duplicated in the field list.
+        assert!(!rendered.html.contains("<dt>stadio</dt>"));
     }
 
     #[test]

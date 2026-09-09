@@ -562,6 +562,20 @@ pub struct UiKanban {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiGallery {
+    pub label: String,
+    pub link_field: Option<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiView {
+    pub label: String,
+    pub path: String,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiSlot {
     pub name: String,
     pub component: String,
@@ -582,6 +596,8 @@ pub struct UiPage {
     pub kpis: Vec<UiKpi>,
     pub charts: Vec<UiChart>,
     pub kanbans: Vec<UiKanban>,
+    pub galleries: Vec<UiGallery>,
+    pub views: Vec<UiView>,
     pub span: SourceSpan,
 }
 
@@ -610,6 +626,15 @@ pub struct UiModal {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UiFormSelect {
+    pub field: String,
+    pub flow: String,
+    pub value_field: Option<String>,
+    pub label_field: Option<String>,
+    pub span: SourceSpan,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiForm {
     pub path: String,
     pub entity: String,
@@ -621,6 +646,7 @@ pub struct UiForm {
     pub submit_label: Option<String>,
     pub nav_hidden: bool,
     pub omit_fields: Vec<String>,
+    pub selects: Vec<UiFormSelect>,
     pub span: SourceSpan,
 }
 

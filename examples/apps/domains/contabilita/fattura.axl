@@ -1,0 +1,125 @@
+// Contabilita aggregate: Fattura (invoices with lifecycle states)
+axl 4
+app ContabilitaFattura
+
+enum StatoFattura
+  bozza
+  emessa
+  pagata
+  scaduta
+
+entity Fattura
+  id: uuid key
+  numero: text required
+  cliente: text required
+  importo: money required
+  stato: StatoFattura required
+
+entity FatturaQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity FatturaPage
+  items: List<Fattura> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioFatture
+  op save Fattura -> Result<Fattura>
+  op find uuid -> Result<Fattura> idempotent
+  op list unit -> Result<List<Fattura>> idempotent
+  op query FatturaQuery -> Result<FatturaPage> idempotent
+
+skill MemoriaFatture provides ArchivioFatture
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteFatture provides ArchivioFatture
+  native rust axl::store::sqlite
+  config path: text = "./build/contabilita.db"
+  effect db.read
+  effect db.write
+
+flow ValidaFattura Fattura -> Result<Fattura>
+  let numero_presente = input.numero != ""
+  require numero_presente else "numero_obbligatorio"
+  let importo_valido = input.importo > 0
+  require importo_valido else "importo_non_valido"
+  return input
+
+flow CreaFatturaSqlite Fattura -> Result<Fattura>
+  in store: ArchivioFatture = SqliteFatture
+  make fattura: Fattura
+    id = input.id
+    numero = input.numero
+    cliente = input.cliente
+    importo = input.importo
+    stato = input.stato
+  run valida = ValidaFattura(fattura)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaFatturaSqlite uuid -> Result<Fattura>
+  in store: ArchivioFatture = SqliteFatture
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaFattureSqlite FatturaQuery -> Result<FatturaPage>
+  in store: ArchivioFatture = SqliteFatture
+  call pagina = store.query(input)?
+  return pagina
+
+flow SeedFattureSqlite unit -> Result<FatturaPage>
+  in store: ArchivioFatture = SqliteFatture
+  make f1: Fattura
+    id = "fattura-001"
+    numero = "FT-2026-001"
+    cliente = "Acme Corp"
+    importo = 150000
+    stato = StatoFattura.bozza
+  make f2: Fattura
+    id = "fattura-002"
+    numero = "FT-2026-002"
+    cliente = "Beta SpA"
+    importo = 320000
+    stato = StatoFattura.emessa
+  make f3: Fattura
+    id = "fattura-003"
+    numero = "FT-2026-003"
+    cliente = "Gamma Srl"
+    importo = 89000
+    stato = StatoFattura.pagata
+  make f4: Fattura
+    id = "fattura-004"
+    numero = "FT-2026-004"
+    cliente = "Delta Ltd"
+    importo = 275000
+    stato = StatoFattura.scaduta
+  make f5: Fattura
+    id = "fattura-005"
+    numero = "FT-2026-005"
+    cliente = "Epsilon Inc"
+    importo = 410000
+    stato = StatoFattura.emessa
+  run v1 = ValidaFattura(f1)?
+  call _c1 = store.save(v1)?
+  run v2 = ValidaFattura(f2)?
+  call _c2 = store.save(v2)?
+  run v3 = ValidaFattura(f3)?
+  call _c3 = store.save(v3)?
+  run v4 = ValidaFattura(f4)?
+  call _c4 = store.save(v4)?
+  run v5 = ValidaFattura(f5)?
+  call _c5 = store.save(v5)?
+  make query: FatturaQuery
+    order_by = "numero"
+    direction = "asc"
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina

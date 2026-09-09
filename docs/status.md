@@ -75,4 +75,27 @@ field errors (`form-validation-boundary.axl`); portal clienti use a detail **dra
 The **`kanban`** page primitive (`kanban <enum-field> "Title"`) groups an `items`
 list into columns by enum stage; see the CRM pipeline module
 (`examples/apps/domains/crm/opportunita.axl`, `CrmUi` in `examples/apps/portal.axl`).
-Remaining Gate 4 polish: timeline/activity widgets.
+The **`gallery`** page primitive (`gallery "Title" [link <field>]`) renders items
+as a card grid (app launcher). It backs the **modular platform base**
+(`examples/apps/domains/base/modulo.axl`): an installable module registry with an
+app launcher (`/apps`), app catalog (`/apps/store`) and install/uninstall actions.
+The portal ships an installable **module suite** authored in AXL — CRM
+(`/crm/pipeline` kanban), Vendite, Contatti (`/contatti`), Inventario
+(`/inventario` + `/inventario/bacheca` kanban), Progetti (`/progetti` task-board
+kanban with an `avanza` stage action) and Contabilita (`/contabilita` +
+`/contabilita/bacheca` kanban) — each list/kanban/form/drawer registered in
+`examples/apps/portal.axl` and seeded by `BootstrapPortalProd`.
+The **`view`** page primitive (`view "Label" /path`) renders a control-panel
+view switcher (segmented tabs), and list/kanban pages get a primary "Nuovo"
+create button when a matching create form exists — used by Inventario, Progetti
+and Contabilita (Lista/Bacheca toggles).
+The **`select`** form primitive (`select <field> from <Flow> [value f] [label f]`)
+renders a relation dropdown (Many2one-style picker) populated at render time by
+running an options flow — e.g. the Opportunita form picks its `cliente` from the
+Contatti records instead of free text.
+Record detail views (drawer / modal / detail page) render an ERP-style
+**status bar** (stage pipeline) for the record's first enum field — prior stages
+"done", current highlighted — and create forms render a **two-column sheet**.
+Remaining Gate 4 polish: notebook tabs, chatter/activity, search + group-by. The
+target ERP layout anatomy and the gap list/roadmap are captured in
+`docs/erp-layout-reference.md`.

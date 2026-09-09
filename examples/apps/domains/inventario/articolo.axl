@@ -1,0 +1,131 @@
+// Inventario aggregate: Articolo (warehouse stock with state and pagination)
+axl 4
+app InventarioArticolo
+
+enum StatoArticolo
+  disponibile
+  in_arrivo
+  esaurito
+
+entity Articolo
+  id: uuid key
+  sku: text required
+  nome: text required
+  quantita: int required
+  ubicazione: text required
+  stato: StatoArticolo required
+
+entity ArticoloQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity ArticoloPage
+  items: List<Articolo> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioArticoli
+  op save Articolo -> Result<Articolo>
+  op find uuid -> Result<Articolo> idempotent
+  op list unit -> Result<List<Articolo>> idempotent
+  op query ArticoloQuery -> Result<ArticoloPage> idempotent
+
+skill MemoriaArticoli provides ArchivioArticoli
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteArticoli provides ArchivioArticoli
+  native rust axl::store::sqlite
+  config path: text = "./build/inventario.db"
+  effect db.read
+  effect db.write
+
+flow ValidaArticolo Articolo -> Result<Articolo>
+  let sku_presente = input.sku != ""
+  require sku_presente else "sku_obbligatorio"
+  let qta_valida = input.quantita >= 0
+  require qta_valida else "quantita_non_valida"
+  return input
+
+flow CreaArticoloSqlite Articolo -> Result<Articolo>
+  in store: ArchivioArticoli = SqliteArticoli
+  make articolo: Articolo
+    id = input.id
+    sku = input.sku
+    nome = input.nome
+    quantita = input.quantita
+    ubicazione = input.ubicazione
+    stato = input.stato
+  run valida = ValidaArticolo(articolo)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaArticoloSqlite uuid -> Result<Articolo>
+  in store: ArchivioArticoli = SqliteArticoli
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaArticoliSqlite ArticoloQuery -> Result<ArticoloPage>
+  in store: ArchivioArticoli = SqliteArticoli
+  call pagina = store.query(input)?
+  return pagina
+
+flow SeedArticoliSqlite unit -> Result<ArticoloPage>
+  in store: ArchivioArticoli = SqliteArticoli
+  make a1: Articolo
+    id = "articolo-001"
+    sku = "SKU-1001"
+    nome = "Vite M6 zincata"
+    quantita = 1200
+    ubicazione = "A-01-03"
+    stato = StatoArticolo.disponibile
+  make a2: Articolo
+    id = "articolo-002"
+    sku = "SKU-1002"
+    nome = "Dado M6 inox"
+    quantita = 0
+    ubicazione = "A-02-01"
+    stato = StatoArticolo.esaurito
+  make a3: Articolo
+    id = "articolo-003"
+    sku = "SKU-1003"
+    nome = "Rondella piana M6"
+    quantita = 350
+    ubicazione = "A-02-05"
+    stato = StatoArticolo.in_arrivo
+  make a4: Articolo
+    id = "articolo-004"
+    sku = "SKU-1004"
+    nome = "Cuscinetto 608ZZ"
+    quantita = 80
+    ubicazione = "B-04-02"
+    stato = StatoArticolo.disponibile
+  make a5: Articolo
+    id = "articolo-005"
+    sku = "SKU-1005"
+    nome = "Guarnizione OR 20x2"
+    quantita = 15
+    ubicazione = "B-05-07"
+    stato = StatoArticolo.in_arrivo
+  run v1 = ValidaArticolo(a1)?
+  call _c1 = store.save(v1)?
+  run v2 = ValidaArticolo(a2)?
+  call _c2 = store.save(v2)?
+  run v3 = ValidaArticolo(a3)?
+  call _c3 = store.save(v3)?
+  run v4 = ValidaArticolo(a4)?
+  call _c4 = store.save(v4)?
+  run v5 = ValidaArticolo(a5)?
+  call _c5 = store.save(v5)?
+  make query: ArticoloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina

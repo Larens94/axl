@@ -1,0 +1,166 @@
+// Base platform: module registry (installable apps) — the modular core.
+axl 4
+app BaseModulo
+
+entity Modulo
+  id: uuid key
+  chiave: text required
+  nome: text required
+  descrizione: text required
+  categoria: text required
+  icona: text required
+  rotta: text required
+  installato: bool required
+
+entity ModuloQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity ModuloPage
+  items: List<Modulo> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioModuli
+  op save Modulo -> Result<Modulo>
+  op find uuid -> Result<Modulo> idempotent
+  op list unit -> Result<List<Modulo>> idempotent
+  op query ModuloQuery -> Result<ModuloPage> idempotent
+
+skill MemoriaModuli provides ArchivioModuli
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteModuli provides ArchivioModuli
+  native rust axl::store::sqlite
+  config path: text = "./build/apps.db"
+  effect db.read
+  effect db.write
+
+flow ValidaModulo Modulo -> Result<Modulo>
+  let nome_presente = input.nome != ""
+  require nome_presente else "nome_obbligatorio"
+  let rotta_presente = input.rotta != ""
+  require rotta_presente else "rotta_obbligatoria"
+  return input
+
+flow CercaModuloSqlite uuid -> Result<Modulo>
+  in store: ArchivioModuli = SqliteModuli
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaModuliSqlite ModuloQuery -> Result<ModuloPage>
+  in store: ArchivioModuli = SqliteModuli
+  call pagina = store.query(input)?
+  return pagina
+
+flow InstallaModuloSqlite uuid -> Result<Modulo>
+  in store: ArchivioModuli = SqliteModuli
+  call trovato = store.find(input)?
+  make aggiornato: Modulo
+    id = trovato.id
+    chiave = trovato.chiave
+    nome = trovato.nome
+    descrizione = trovato.descrizione
+    categoria = trovato.categoria
+    icona = trovato.icona
+    rotta = trovato.rotta
+    installato = true
+  call salvato = store.save(aggiornato)?
+  return salvato
+
+flow DisinstallaModuloSqlite uuid -> Result<Modulo>
+  in store: ArchivioModuli = SqliteModuli
+  call trovato = store.find(input)?
+  make aggiornato: Modulo
+    id = trovato.id
+    chiave = trovato.chiave
+    nome = trovato.nome
+    descrizione = trovato.descrizione
+    categoria = trovato.categoria
+    icona = trovato.icona
+    rotta = trovato.rotta
+    installato = false
+  call salvato = store.save(aggiornato)?
+  return salvato
+
+flow SeedModuliSqlite unit -> Result<ModuloPage>
+  in store: ArchivioModuli = SqliteModuli
+  make m_crm: Modulo
+    id = "mod-crm"
+    chiave = "crm"
+    nome = "CRM"
+    descrizione = "Pipeline commerciale e opportunita"
+    categoria = "Vendite"
+    icona = "CR"
+    rotta = "/crm/pipeline"
+    installato = true
+  make m_vendite: Modulo
+    id = "mod-vendite"
+    chiave = "vendite"
+    nome = "Vendite"
+    descrizione = "Clienti, prodotti, listini e preventivi"
+    categoria = "Vendite"
+    icona = "VE"
+    rotta = "/clienti"
+    installato = true
+  make m_contatti: Modulo
+    id = "mod-contatti"
+    chiave = "contatti"
+    nome = "Contatti"
+    descrizione = "Rubrica aziende e persone"
+    categoria = "Produttivita"
+    icona = "CT"
+    rotta = "/contatti"
+    installato = true
+  make m_inventario: Modulo
+    id = "mod-inventario"
+    chiave = "inventario"
+    nome = "Inventario"
+    descrizione = "Magazzino, giacenze e movimenti"
+    categoria = "Operazioni"
+    icona = "IN"
+    rotta = "/inventario"
+    installato = true
+  make m_progetti: Modulo
+    id = "mod-progetti"
+    chiave = "progetti"
+    nome = "Progetti"
+    descrizione = "Attivita, task e milestone"
+    categoria = "Produttivita"
+    icona = "PR"
+    rotta = "/progetti"
+    installato = true
+  make m_contabilita: Modulo
+    id = "mod-contabilita"
+    chiave = "contabilita"
+    nome = "Contabilita"
+    descrizione = "Fatture, pagamenti e libro cassa"
+    categoria = "Finanza"
+    icona = "CO"
+    rotta = "/contabilita"
+    installato = true
+  run v1 = ValidaModulo(m_crm)?
+  call _s1 = store.save(v1)?
+  run v2 = ValidaModulo(m_vendite)?
+  call _s2 = store.save(v2)?
+  run v3 = ValidaModulo(m_contatti)?
+  call _s3 = store.save(v3)?
+  run v4 = ValidaModulo(m_inventario)?
+  call _s4 = store.save(v4)?
+  run v5 = ValidaModulo(m_progetti)?
+  call _s5 = store.save(v5)?
+  run v6 = ValidaModulo(m_contabilita)?
+  call _s6 = store.save(v6)?
+  make query: ModuloQuery
+    order_by = "nome"
+    direction = "asc"
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina

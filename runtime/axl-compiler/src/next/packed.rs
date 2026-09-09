@@ -440,6 +440,26 @@ fn reconstruct_id(
             })?;
             Ok(format!("{parent}.ui_kanban.{order}"))
         }
+        Some(parent) if kind == "ui_view" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("ui_view node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.ui_view.{order}"))
+        }
+        Some(parent) if kind == "ui_select" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!("ui_select node '{name}' is missing order metadata"))
+            })?;
+            Ok(format!("{parent}.ui_select.{order}"))
+        }
+        Some(parent) if kind == "ui_gallery" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!(
+                    "ui_gallery node '{name}' is missing order metadata"
+                ))
+            })?;
+            Ok(format!("{parent}.ui_gallery.{order}"))
+        }
         Some(parent) if kind == "ui_slot" => {
             let order = metadata.get("order").ok_or_else(|| {
                 PackedError(format!("ui_slot node '{name}' is missing order metadata"))
@@ -544,6 +564,9 @@ fn node_kind_code(kind: &str) -> &str {
         "ui_slot" => "64",
         "ui_chart" => "65",
         "ui_kanban" => "66",
+        "ui_gallery" => "67",
+        "ui_view" => "68",
+        "ui_select" => "69",
         other => other,
     }
 }
@@ -617,6 +640,9 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "64" => "ui_slot",
         "65" => "ui_chart",
         "66" => "ui_kanban",
+        "67" => "ui_gallery",
+        "68" => "ui_view",
+        "69" => "ui_select",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

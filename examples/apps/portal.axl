@@ -3,11 +3,18 @@ axl 4
 app Portal
 bootstrap BootstrapPortalProd
 import "./auth-domain.axl"
+import "./base-domain.axl"
 import "./sales-domain.axl"
 import "./crm-domain.axl"
+import "./domains/contatti/contatto.axl"
+import "./domains/inventario/articolo.axl"
+import "./domains/progetti/task.axl"
+import "./domains/contabilita/fattura.axl"
 import "./domains/portal/core.axl"
 import "./domains/portal/vendite-pages.axl"
 import "./domains/portal/crm-pages.axl"
+import "./domains/portal/base-pages.axl"
+import "./domains/portal/moduli-pages.axl"
 import "./domains/portal/prod.axl"
 import "./oauth-boundary.axl"
 
@@ -256,8 +263,134 @@ ui CrmUi
     submit_label "Crea opportunità"
     nav hidden
     omit id
+    select cliente from OpzioniContattiSqlite value nome label nome
   drawer /opportunita/{id} uuid -> Result<Opportunita> = CercaOpportunitaSqlite from path.id on /opportunita
 
 ui CrmDemoUi
   page /crm/pipeline/demo unit -> Result<OpportunitaPage> = PaginaOpportunitaDemoUnit
     kanban stadio "Pipeline commerciale (demo)"
+
+api BaseApi
+  get /apps/{id} uuid -> Result<Modulo> = CercaModuloSqlite from path.id
+  post /apps/query ModuloQuery -> Result<ModuloPage> = InterrogaModuliSqlite
+  post /apps/{id}/installa uuid -> Result<Modulo> = InstallaModuloSqlite from path.id
+    guard session RequireSession from cookie.sid
+  post /apps/{id}/disinstalla uuid -> Result<Modulo> = DisinstallaModuloSqlite from path.id
+    guard session RequireSession from cookie.sid
+
+ui BaseUi
+  page /apps ModuloSessioneQuery -> Result<ModuloPage> = PaginaAppInstallate
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 100
+    pagination offset = query.offset default 0
+    gallery "Le tue app" link rotta
+  page /apps/store ModuloSessioneQuery -> Result<ModuloPage> = PaginaAppCatalogo
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 100
+    pagination offset = query.offset default 0
+    gallery "App disponibili"
+  drawer /apps/dettaglio/{id} uuid -> Result<Modulo> = CercaModuloSqlite from path.id on /apps/store
+  action /apps/installa POST /apps/{id}/installa on /apps/dettaglio/{id} redirect /apps/dettaglio/{id}
+  action /apps/disinstalla POST /apps/{id}/disinstalla on /apps/dettaglio/{id} redirect /apps/dettaglio/{id}
+
+api ContattiApi
+  post /contatti Contatto -> Result<Contatto> = CreaContattoSqlite
+    guard session RequireSession from cookie.sid
+  get /contatti/{id} uuid -> Result<Contatto> = CercaContattoSqlite from path.id
+  post /contatti/query ContattoQuery -> Result<ContattoPage> = InterrogaContattiSqlite
+
+ui ContattiUi
+  page /contatti ListaSessioneInput -> Result<ContattoPage> = PaginaContattiSessione
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 50
+    pagination offset = query.offset default 0
+  form /contatti/new Contatto -> Result<Contatto> = CreaContattoSqlite submit /contatti
+    title "Nuovo contatto"
+    submit_label "Crea contatto"
+    nav hidden
+    omit id
+  drawer /contatti/{id} uuid -> Result<Contatto> = CercaContattoSqlite from path.id on /contatti
+
+api InventarioApi
+  post /inventario Articolo -> Result<Articolo> = CreaArticoloSqlite
+    guard session RequireSession from cookie.sid
+  get /inventario/{id} uuid -> Result<Articolo> = CercaArticoloSqlite from path.id
+  post /inventario/query ArticoloQuery -> Result<ArticoloPage> = InterrogaArticoliSqlite
+
+ui InventarioUi
+  page /inventario ListaSessioneInput -> Result<ArticoloPage> = PaginaInventarioSessione
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 50
+    pagination offset = query.offset default 0
+    view "Lista" /inventario
+    view "Bacheca" /inventario/bacheca
+  page /inventario/bacheca ListaSessioneInput -> Result<ArticoloPage> = PaginaInventarioSessione
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 200
+    pagination offset = query.offset default 0
+    view "Lista" /inventario
+    view "Bacheca" /inventario/bacheca
+    kanban stato "Stato magazzino"
+  form /inventario/new Articolo -> Result<Articolo> = CreaArticoloSqlite submit /inventario
+    title "Nuovo articolo"
+    submit_label "Crea articolo"
+    nav hidden
+    omit id
+  drawer /inventario/{id} uuid -> Result<Articolo> = CercaArticoloSqlite from path.id on /inventario
+
+api ProgettiApi
+  post /progetti Task -> Result<Task> = CreaTaskSqlite
+    guard session RequireSession from cookie.sid
+  get /progetti/{id} uuid -> Result<Task> = CercaTaskSqlite from path.id
+  post /progetti/query TaskQuery -> Result<TaskPage> = InterrogaTaskSqlite
+  post /progetti/{id}/avanza uuid -> Result<Task> = AvanzaTaskSqlite from path.id
+    guard session RequireSession from cookie.sid
+
+ui ProgettiUi
+  page /progetti ListaSessioneInput -> Result<TaskPage> = PaginaProgettiSessione
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 200
+    pagination offset = query.offset default 0
+    view "Bacheca" /progetti
+    view "Elenco" /progetti/lista
+    kanban stato "Bacheca attivita"
+  page /progetti/lista ListaSessioneInput -> Result<TaskPage> = PaginaProgettiSessione
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 50
+    pagination offset = query.offset default 0
+    view "Bacheca" /progetti
+    view "Elenco" /progetti/lista
+  form /progetti/new Task -> Result<Task> = CreaTaskSqlite submit /progetti
+    title "Nuova attivita"
+    submit_label "Crea attivita"
+    nav hidden
+    omit id
+  drawer /progetti/dettaglio/{id} uuid -> Result<Task> = CercaTaskSqlite from path.id on /progetti
+  action /progetti/avanza POST /progetti/{id}/avanza on /progetti/dettaglio/{id} redirect /progetti/dettaglio/{id}
+
+api ContabilitaApi
+  post /contabilita Fattura -> Result<Fattura> = CreaFatturaSqlite
+    guard session RequireSession from cookie.sid
+  get /contabilita/{id} uuid -> Result<Fattura> = CercaFatturaSqlite from path.id
+  post /contabilita/query FatturaQuery -> Result<FatturaPage> = InterrogaFattureSqlite
+
+ui ContabilitaUi
+  page /contabilita ListaSessioneInput -> Result<FatturaPage> = PaginaContabilitaSessione
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 50
+    pagination offset = query.offset default 0
+    view "Lista" /contabilita
+    view "Bacheca" /contabilita/bacheca
+  page /contabilita/bacheca ListaSessioneInput -> Result<FatturaPage> = PaginaContabilitaSessione
+    bind session_id = cookie.sid
+    pagination limit = query.limit default 200
+    pagination offset = query.offset default 0
+    view "Lista" /contabilita
+    view "Bacheca" /contabilita/bacheca
+    kanban stato "Stato fatture"
+  form /contabilita/new Fattura -> Result<Fattura> = CreaFatturaSqlite submit /contabilita
+    title "Nuova fattura"
+    submit_label "Crea fattura"
+    nav hidden
+    omit id
+  drawer /contabilita/{id} uuid -> Result<Fattura> = CercaFatturaSqlite from path.id on /contabilita

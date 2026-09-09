@@ -1,0 +1,23 @@
+axl 4
+app InvalidGallery
+entity Modulo
+  id: uuid key
+  nome: text required
+entity ModuloPage
+  items: List<Modulo> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Apps unit -> Result<ModuloPage>
+  make a: Modulo
+    id = "mod-1"
+    nome = "CRM"
+  make page: ModuloPage
+    items = [a]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+ui BadGalleryUi
+  page /apps unit -> Result<ModuloPage> = Apps
+    gallery "App" link rotta

@@ -1,0 +1,148 @@
+// Progetti aggregate: Task (project task board with workflow stages)
+axl 4
+app ProgettiTask
+
+enum StatoTask
+  da_fare
+  in_corso
+  in_revisione
+  completato
+
+entity Task
+  id: uuid key
+  titolo: text required
+  assegnatario: text required
+  progetto: text required
+  stato: StatoTask required
+
+entity TaskQuery
+  filter: Map<text,text> optional
+  order_by: text optional
+  direction: text optional
+  limit: int optional
+  offset: int optional
+
+entity TaskPage
+  items: List<Task> required
+  total: int required
+  limit: int required
+  offset: int required
+
+capacity ArchivioTask
+  op save Task -> Result<Task>
+  op find uuid -> Result<Task> idempotent
+  op list unit -> Result<List<Task>> idempotent
+  op query TaskQuery -> Result<TaskPage> idempotent
+
+skill MemoriaTask provides ArchivioTask
+  native rust axl::store::memory
+  effect db.read
+  effect db.write
+
+skill SqliteTask provides ArchivioTask
+  native rust axl::store::sqlite
+  config path: text = "./build/progetti.db"
+  effect db.read
+  effect db.write
+
+flow ValidaTask Task -> Result<Task>
+  let titolo_presente = input.titolo != ""
+  require titolo_presente else "titolo_obbligatorio"
+  return input
+
+flow CreaTaskSqlite Task -> Result<Task>
+  in store: ArchivioTask = SqliteTask
+  make task: Task
+    id = input.id
+    titolo = input.titolo
+    assegnatario = input.assegnatario
+    progetto = input.progetto
+    stato = input.stato
+  run valida = ValidaTask(task)?
+  call salvato = store.save(valida)?
+  return salvato
+
+flow CercaTaskSqlite uuid -> Result<Task>
+  in store: ArchivioTask = SqliteTask
+  call trovato = store.find(input)?
+  return trovato
+
+flow InterrogaTaskSqlite TaskQuery -> Result<TaskPage>
+  in store: ArchivioTask = SqliteTask
+  call pagina = store.query(input)?
+  return pagina
+
+flow AvanzaTaskSqlite uuid -> Result<Task>
+  in store: ArchivioTask = SqliteTask
+  call trovato = store.find(input)?
+  match prossimo: StatoTask = trovato.stato
+    da_fare => StatoTask.in_corso
+    in_corso => StatoTask.in_revisione
+    in_revisione => StatoTask.completato
+    completato => StatoTask.completato
+  make aggiornato: Task
+    id = trovato.id
+    titolo = trovato.titolo
+    assegnatario = trovato.assegnatario
+    progetto = trovato.progetto
+    stato = prossimo
+  call salvato = store.save(aggiornato)?
+  return salvato
+
+flow SeedTaskSqlite unit -> Result<TaskPage>
+  in store: ArchivioTask = SqliteTask
+  make t1: Task
+    id = "task-001"
+    titolo = "Analisi requisiti portale"
+    assegnatario = "Giulia Bianchi"
+    progetto = "Portale Clienti"
+    stato = StatoTask.da_fare
+  make t2: Task
+    id = "task-002"
+    titolo = "Disegno interfaccia dashboard"
+    assegnatario = "Marco Rossi"
+    progetto = "Portale Clienti"
+    stato = StatoTask.in_corso
+  make t3: Task
+    id = "task-003"
+    titolo = "Integrazione API pagamenti"
+    assegnatario = "Sara Verdi"
+    progetto = "Piattaforma Vendite"
+    stato = StatoTask.in_revisione
+  make t4: Task
+    id = "task-004"
+    titolo = "Migrazione database legacy"
+    assegnatario = "Luca Neri"
+    progetto = "Piattaforma Vendite"
+    stato = StatoTask.completato
+  make t5: Task
+    id = "task-005"
+    titolo = "Configurazione pipeline CI"
+    assegnatario = "Elena Conti"
+    progetto = "Infrastruttura"
+    stato = StatoTask.da_fare
+  make t6: Task
+    id = "task-006"
+    titolo = "Redazione documentazione API"
+    assegnatario = "Paolo Ferrari"
+    progetto = "Infrastruttura"
+    stato = StatoTask.in_corso
+  run v1 = ValidaTask(t1)?
+  call _c1 = store.save(v1)?
+  run v2 = ValidaTask(t2)?
+  call _c2 = store.save(v2)?
+  run v3 = ValidaTask(t3)?
+  call _c3 = store.save(v3)?
+  run v4 = ValidaTask(t4)?
+  call _c4 = store.save(v4)?
+  run v5 = ValidaTask(t5)?
+  call _c5 = store.save(v5)?
+  run v6 = ValidaTask(t6)?
+  call _c6 = store.save(v6)?
+  make query: TaskQuery
+    order_by = "titolo"
+    direction = "asc"
+    limit = 100
+    offset = 0
+  call pagina = store.query(query)?
+  return pagina

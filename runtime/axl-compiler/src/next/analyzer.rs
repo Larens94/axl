@@ -3298,6 +3298,7 @@ fn check_ui(
         check_page_kpis(page, declarations, diagnostics);
         check_page_charts(page, declarations, diagnostics);
         check_page_kanbans(page, declarations, diagnostics);
+        check_page_galleries(page, declarations, diagnostics);
         match declarations.get(page.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
                 if flow.input != page.input || flow.output != page.output {
@@ -3408,6 +3409,7 @@ fn check_ui(
                 form.span.clone(),
             ));
         }
+        check_form_selects(form, declarations, diagnostics);
     }
     let mut action_paths = BTreeSet::new();
     for action in &ui.actions {
@@ -3974,6 +3976,236 @@ fn check_page_kanbans(
                 )
                 .expected("enum-typed field", &field.type_name),
             );
+        }
+    }
+}
+
+fn check_page_galleries(
+    page: &UiPage,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if page.galleries.is_empty() {
+        return;
+    }
+    let output = page
+        .output
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(page.output.as_str());
+    let Some(Declaration::Entity(entity)) = declarations.get(output) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U929",
+                "ui",
+                format!("gallery pages require an entity output, found '{output}'"),
+                page.span.clone(),
+            )
+            .expected("Result<EntityPage> or EntityPage", &page.output),
+        );
+        return;
+    };
+    let item_type = entity
+        .fields
+        .iter()
+        .find(|field| field.name == "items")
+        .and_then(|field| {
+            field
+                .type_name
+                .strip_prefix("List<")
+                .and_then(|value| value.strip_suffix('>'))
+        });
+    let Some(item_type) = item_type else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U929",
+                "ui",
+                format!(
+                    "gallery page output '{}' must expose an 'items: List<Entity>' field",
+                    entity.name
+                ),
+                page.span.clone(),
+            )
+            .expected("entity with items: List<Entity>", &entity.name),
+        );
+        return;
+    };
+    let Some(Declaration::Entity(item)) = declarations.get(item_type) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U929",
+                "ui",
+                format!("gallery list item '{item_type}' is not an entity"),
+                page.span.clone(),
+            )
+            .expected("declared entity", item_type),
+        );
+        return;
+    };
+    for gallery in &page.galleries {
+        if let Some(link_field) = &gallery.link_field {
+            let Some(field) = item.fields.iter().find(|field| &field.name == link_field) else {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U929",
+                        "ui",
+                        format!(
+                            "gallery link field '{}' is not on item entity '{}'",
+                            link_field, item.name
+                        ),
+                        gallery.span.clone(),
+                    )
+                    .expected(
+                        item.fields
+                            .iter()
+                            .map(|field| field.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join("|"),
+                        link_field,
+                    ),
+                );
+                continue;
+            };
+            if !matches!(field.type_name.as_str(), "text" | "string") {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U929",
+                        "ui",
+                        format!(
+                            "gallery link field '{}' must be text (a route), found '{}'",
+                            link_field, field.type_name
+                        ),
+                        gallery.span.clone(),
+                    )
+                    .expected("text-typed field", &field.type_name),
+                );
+            }
+        }
+    }
+}
+
+fn option_entity_of(output: &str, declarations: &BTreeMap<&str, &Declaration>) -> Option<String> {
+    let inner = output
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(output)
+        .trim();
+    if let Some(item) = inner
+        .strip_prefix("List<")
+        .and_then(|v| v.strip_suffix('>'))
+    {
+        return Some(item.trim().to_string());
+    }
+    if let Some(Declaration::Entity(entity)) = declarations.get(inner) {
+        if let Some(items) = entity.fields.iter().find(|field| field.name == "items")
+            && let Some(item) = items
+                .type_name
+                .strip_prefix("List<")
+                .and_then(|v| v.strip_suffix('>'))
+        {
+            return Some(item.trim().to_string());
+        }
+        return Some(inner.to_string());
+    }
+    None
+}
+
+fn check_form_selects(
+    form: &UiForm,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if form.selects.is_empty() {
+        return;
+    }
+    let Some(Declaration::Entity(entity)) = declarations.get(form.entity.as_str()) else {
+        return;
+    };
+    for select in &form.selects {
+        if !entity.fields.iter().any(|field| field.name == select.field) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U933",
+                    "ui",
+                    format!(
+                        "select field '{}' is not on form entity '{}'",
+                        select.field, entity.name
+                    ),
+                    select.span.clone(),
+                )
+                .expected(
+                    entity
+                        .fields
+                        .iter()
+                        .map(|field| field.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("|"),
+                    &select.field,
+                ),
+            );
+            continue;
+        }
+        let Some(Declaration::Flow(flow)) = declarations.get(select.flow.as_str()) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U933",
+                    "ui",
+                    format!(
+                        "select options flow '{}' is not a declared flow",
+                        select.flow
+                    ),
+                    select.span.clone(),
+                )
+                .expected("declared flow", &select.flow),
+            );
+            continue;
+        };
+        let Some(option_entity_name) = option_entity_of(&flow.output, declarations) else {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U933",
+                    "ui",
+                    format!(
+                        "select flow '{}' must return a list or page of an entity",
+                        select.flow
+                    ),
+                    select.span.clone(),
+                )
+                .expected("Result<EntityPage> or Result<List<Entity>>", &flow.output),
+            );
+            continue;
+        };
+        let Some(Declaration::Entity(option_entity)) =
+            declarations.get(option_entity_name.as_str())
+        else {
+            continue;
+        };
+        for (kind, field) in [
+            ("value", select.value_field.as_deref().unwrap_or("id")),
+            ("label", select.label_field.as_deref().unwrap_or("nome")),
+        ] {
+            if !option_entity.fields.iter().any(|f| f.name == field) {
+                diagnostics.push(
+                    Diagnostic::error(
+                        "AXL-U933",
+                        "ui",
+                        format!(
+                            "select {kind} field '{field}' is not on option entity '{}'",
+                            option_entity.name
+                        ),
+                        select.span.clone(),
+                    )
+                    .expected(
+                        option_entity
+                            .fields
+                            .iter()
+                            .map(|f| f.name.as_str())
+                            .collect::<Vec<_>>()
+                            .join("|"),
+                        field,
+                    ),
+                );
+            }
         }
     }
 }
@@ -5719,6 +5951,30 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &kanban_id, "owns", None));
         }
+        for (gallery_index, gallery) in page.galleries.iter().enumerate() {
+            let gallery_id = format!("{id}.ui_gallery.{gallery_index}");
+            let mut value = node(&gallery_id, "ui_gallery", &gallery.label);
+            value.metadata.insert("label".into(), gallery.label.clone());
+            if let Some(link_field) = &gallery.link_field {
+                value.metadata.insert("link".into(), link_field.clone());
+            }
+            value
+                .metadata
+                .insert("order".into(), gallery_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &gallery_id, "owns", None));
+        }
+        for (view_index, view) in page.views.iter().enumerate() {
+            let view_id = format!("{id}.ui_view.{view_index}");
+            let mut value = node(&view_id, "ui_view", &view.label);
+            value.metadata.insert("label".into(), view.label.clone());
+            value.metadata.insert("target".into(), view.path.clone());
+            value
+                .metadata
+                .insert("order".into(), view_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &view_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", page.flow),
@@ -5757,6 +6013,28 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
         }
         graph.nodes.push(value);
         graph.edges.push(edge(&ui_id, &id, "owns", None));
+        for (select_index, select) in form.selects.iter().enumerate() {
+            let select_id = format!("{id}.ui_select.{select_index}");
+            let mut select_node = node(&select_id, "ui_select", &select.field);
+            select_node
+                .metadata
+                .insert("flow".into(), select.flow.clone());
+            if let Some(value_field) = &select.value_field {
+                select_node
+                    .metadata
+                    .insert("value".into(), value_field.clone());
+            }
+            if let Some(label_field) = &select.label_field {
+                select_node
+                    .metadata
+                    .insert("label".into(), label_field.clone());
+            }
+            select_node
+                .metadata
+                .insert("order".into(), select_index.to_string());
+            graph.nodes.push(select_node);
+            graph.edges.push(edge(&id, &select_id, "owns", None));
+        }
         graph.edges.push(edge(
             &id,
             &format!("flow.{}", form.flow),

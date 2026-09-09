@@ -1,0 +1,23 @@
+axl 4
+app InvalidView
+entity Task
+  id: uuid key
+  titolo: text required
+entity TaskPage
+  items: List<Task> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Elenco unit -> Result<TaskPage>
+  make t: Task
+    id = "task-1"
+    titolo = "Alpha"
+  make page: TaskPage
+    items = [t]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+ui BadViewUi
+  page /task unit -> Result<TaskPage> = Elenco
+    view "Solo etichetta"

@@ -484,6 +484,24 @@ pub fn format(program: &Program) -> String {
                             kanban.label.replace('"', "\\\"")
                         ));
                     }
+                    for gallery in &page.galleries {
+                        let link = gallery
+                            .link_field
+                            .as_ref()
+                            .map(|field| format!(" link {field}"))
+                            .unwrap_or_default();
+                        output.push(format!(
+                            "    gallery \"{}\"{link}",
+                            gallery.label.replace('"', "\\\"")
+                        ));
+                    }
+                    for view in &page.views {
+                        output.push(format!(
+                            "    view \"{}\" {}",
+                            view.label.replace('"', "\\\""),
+                            view.path
+                        ));
+                    }
                 }
                 for slot in &ui.slots {
                     output.push(format!("  slot {} = {}", slot.name, slot.component));
@@ -517,6 +535,22 @@ pub fn format(program: &Program) -> String {
                     }
                     for field in &form.omit_fields {
                         output.push(format!("    omit {field}"));
+                    }
+                    for select in &form.selects {
+                        let value = select
+                            .value_field
+                            .as_deref()
+                            .map(|field| format!(" value {field}"))
+                            .unwrap_or_default();
+                        let label = select
+                            .label_field
+                            .as_deref()
+                            .map(|field| format!(" label {field}"))
+                            .unwrap_or_default();
+                        output.push(format!(
+                            "    select {} from {}{value}{label}",
+                            select.field, select.flow
+                        ));
                     }
                 }
                 for action in &ui.actions {
