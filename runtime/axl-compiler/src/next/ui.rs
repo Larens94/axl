@@ -1001,21 +1001,87 @@ fn render_error_state(error: &Value) -> String {
     )
 }
 
-fn render_detail_card(fields: &[(String, String)]) -> String {
+fn detail_list_html(fields: &[(String, String)]) -> String {
     let rows = fields
         .iter()
-        .map(|(label, value)| format!("        <dt>{label}</dt>\n        <dd>{value}</dd>"))
+        .map(|(label, value)| {
+            format!(
+                "        <dt>{}</dt>\n        <dd>{value}</dd>",
+                human_field_label(label)
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
+    format!(
+        r#"    <dl class="detail-list">
+{rows}
+    </dl>"#
+    )
+}
+
+fn render_detail_card(fields: &[(String, String)]) -> String {
     format!(
         r#"  <section class="card detail-card">
     <div class="card-header">
       <h2 class="card-title">Dettaglio</h2>
     </div>
-    <dl class="detail-list">
-{rows}
-    </dl>
-  </section>"#
+{list}
+  </section>"#,
+        list = detail_list_html(fields)
+    )
+}
+
+/// Render a record body as an ERP-style notebook: a "Dettaglio" tab with the
+/// scalar fields, plus one tab per related `List<Entity>` field (line tables).
+/// Pure-CSS tabs (radio inputs), no JavaScript.
+fn render_notebook(scalars: &[(String, String)], list_tabs: &[(String, String)]) -> String {
+    let total = 1 + list_tabs.len();
+    let radios = (0..total)
+        .map(|index| {
+            let checked = if index == 0 { " checked" } else { "" };
+            format!(
+                r#"    <input type="radio" name="notebook" id="nb-{index}" class="nb-radio"{checked}>"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut tabs = vec![r#"      <label for="nb-0" class="nb-tab">Dettaglio</label>"#.to_string()];
+    for (index, (name, _)) in list_tabs.iter().enumerate() {
+        tabs.push(format!(
+            r#"      <label for="nb-{i}" class="nb-tab">{label}</label>"#,
+            i = index + 1,
+            label = html_escape(&human_field_label(name)),
+        ));
+    }
+    let mut panels = vec![format!(
+        r#"      <section class="nb-panel">
+{detail}
+      </section>"#,
+        detail = detail_list_html(scalars)
+    )];
+    for (_, table) in list_tabs {
+        panels.push(format!(
+            r#"      <section class="nb-panel">
+    <div class="table-wrap">
+{table}
+    </div>
+      </section>"#
+        ));
+    }
+    format!(
+        r#"  <section class="card notebook-card">
+    <div class="notebook">
+{radios}
+    <div class="nb-tabs">
+{tabs}
+    </div>
+    <div class="nb-panels">
+{panels}
+    </div>
+    </div>
+  </section>"#,
+        tabs = tabs.join("\n"),
+        panels = panels.join("\n"),
     )
 }
 
@@ -1913,14 +1979,40 @@ fn render_statusbar_and_detail(
     let entity = strip_result(output_type);
     let statusbar = render_statusbar(graph, entity, data);
     let exclude = statusbar.as_ref().map(|(_, field)| field.clone());
-    let fields = collect_fields(graph, output_type, data)
+    let list_field_set = entity_fields(graph, entity)
+        .iter()
+        .filter(|field| {
+            field
+                .type_name
+                .as_deref()
+                .and_then(strip_list_type)
+                .is_some()
+        })
+        .map(|field| field.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let collected = collect_fields(graph, output_type, data)
         .into_iter()
         .filter(|(name, _)| exclude.as_deref() != Some(name.as_str()))
+        .collect::<Vec<_>>();
+    let list_tabs = collected
+        .iter()
+        .filter(|(name, value)| list_field_set.contains(name) && value.contains("nested-table"))
+        .cloned()
+        .collect::<Vec<_>>();
+    let scalars = collected
+        .iter()
+        .filter(|(name, _)| !list_field_set.contains(name))
+        .cloned()
         .collect::<Vec<_>>();
     let statusbar_html = statusbar
         .map(|(html, _)| format!("{html}\n"))
         .unwrap_or_default();
-    (statusbar_html, render_detail_card(&fields))
+    let detail = if list_tabs.is_empty() {
+        render_detail_card(&scalars)
+    } else {
+        render_notebook(&scalars, &list_tabs)
+    };
+    (statusbar_html, detail)
 }
 
 fn entity_fields<'a>(graph: &'a GraphIr, entity_name: &str) -> Vec<&'a super::ir::GraphNode> {
@@ -2409,6 +2501,40 @@ fn dashboard_styles() -> &'static str {
     @media (max-width: 760px) {
       .stack-form .form-grid { grid-template-columns: 1fr; }
     }
+    .notebook-card { padding: 0.5rem 0.5rem 1rem; }
+    .notebook .nb-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .notebook .nb-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      border-bottom: 1px solid var(--border);
+      padding: 0 0.85rem;
+      margin-bottom: 1rem;
+    }
+    .notebook .nb-tab {
+      padding: 0.6rem 0.95rem;
+      cursor: pointer;
+      font-weight: 620;
+      font-size: 0.9rem;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .notebook .nb-tab:hover { color: var(--text); }
+    .notebook .nb-panels { padding: 0 0.85rem; }
+    .notebook .nb-panel { display: none; }
+    .notebook .nb-radio:nth-of-type(1):checked ~ .nb-panels .nb-panel:nth-child(1),
+    .notebook .nb-radio:nth-of-type(2):checked ~ .nb-panels .nb-panel:nth-child(2),
+    .notebook .nb-radio:nth-of-type(3):checked ~ .nb-panels .nb-panel:nth-child(3),
+    .notebook .nb-radio:nth-of-type(4):checked ~ .nb-panels .nb-panel:nth-child(4),
+    .notebook .nb-radio:nth-of-type(5):checked ~ .nb-panels .nb-panel:nth-child(5),
+    .notebook .nb-radio:nth-of-type(6):checked ~ .nb-panels .nb-panel:nth-child(6) { display: block; }
+    .notebook .nb-radio:nth-of-type(1):checked ~ .nb-tabs .nb-tab:nth-child(1),
+    .notebook .nb-radio:nth-of-type(2):checked ~ .nb-tabs .nb-tab:nth-child(2),
+    .notebook .nb-radio:nth-of-type(3):checked ~ .nb-tabs .nb-tab:nth-child(3),
+    .notebook .nb-radio:nth-of-type(4):checked ~ .nb-tabs .nb-tab:nth-child(4),
+    .notebook .nb-radio:nth-of-type(5):checked ~ .nb-tabs .nb-tab:nth-child(5),
+    .notebook .nb-radio:nth-of-type(6):checked ~ .nb-tabs .nb-tab:nth-child(6) { color: var(--accent); border-bottom-color: var(--accent); }
     .gallery-card { padding: 1rem 1.35rem 1.5rem; }
     .gallery-grid {
       display: grid;
@@ -3834,7 +3960,7 @@ flow EchoClienti unit -> text
         assert!(rendered.html.contains("class=\"app-shell\""));
         assert!(rendered.html.contains("class=\"sidebar\""));
         assert!(rendered.html.contains("80000"));
-        assert!(rendered.html.contains("<dt>money</dt>"));
+        assert!(rendered.html.contains("<dt>Money</dt>"));
     }
 
     #[test]
@@ -4206,9 +4332,9 @@ ui Screen
         )
         .unwrap();
         assert_eq!(rendered.data["direction"], "Entrata");
-        assert!(rendered.html.contains("<dt>direction</dt>"));
+        assert!(rendered.html.contains("<dt>Direction</dt>"));
         assert!(rendered.html.contains("Entrata"));
-        assert!(rendered.html.contains("<dt>signed_amount</dt>"));
+        assert!(rendered.html.contains("<dt>Signed_amount</dt>"));
     }
 
     #[test]
@@ -4533,7 +4659,9 @@ ui PreventivoScreen
     fn render_detail_page_emits_nested_entity_list_table() {
         let graph = compile_source(NESTED_DETAIL_UI).unwrap().graph;
         let rendered = render_page(&graph, "/preventivi", json!(null)).unwrap();
-        assert!(rendered.html.contains("<dt>righe</dt>"));
+        // The related List<> field now renders as a notebook tab (line table).
+        assert!(rendered.html.contains("class=\"notebook\""));
+        assert!(rendered.html.contains(r#"nb-tab">Righe"#));
         assert!(rendered.html.contains("class=\"nested-table\""));
         assert!(rendered.html.contains("<th>prodotto_id</th>"));
         assert!(rendered.html.contains("<th>quantita</th>"));
