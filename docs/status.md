@@ -95,7 +95,9 @@ running an options flow — e.g. the Opportunita form picks its `cliente` from t
 Contatti records instead of free text.
 Record detail views (drawer / modal / detail page) render an ERP-style
 **status bar** (stage pipeline) for the record's first enum field — prior stages
-"done", current highlighted — and create forms render a **two-column sheet**.
-Remaining Gate 4 polish: notebook tabs, chatter/activity, search + group-by. The
+"done", current highlighted — a pure-CSS **notebook** (a "Dettaglio" tab of
+scalar fields plus one tab per related `List<Entity>` line table), and create
+forms render a **two-column sheet**.
+Remaining Gate 4 polish: chatter/activity, search + group-by. The
 target ERP layout anatomy and the gap list/roadmap are captured in
 `docs/erp-layout-reference.md`.
