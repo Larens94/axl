@@ -452,6 +452,14 @@ fn reconstruct_id(
             })?;
             Ok(format!("{parent}.ui_select.{order}"))
         }
+        Some(parent) if kind == "ui_groupby" => {
+            let order = metadata.get("order").ok_or_else(|| {
+                PackedError(format!(
+                    "ui_groupby node '{name}' is missing order metadata"
+                ))
+            })?;
+            Ok(format!("{parent}.ui_groupby.{order}"))
+        }
         Some(parent) if kind == "ui_gallery" => {
             let order = metadata.get("order").ok_or_else(|| {
                 PackedError(format!(
@@ -567,6 +575,7 @@ fn node_kind_code(kind: &str) -> &str {
         "ui_gallery" => "67",
         "ui_view" => "68",
         "ui_select" => "69",
+        "ui_groupby" => "70",
         other => other,
     }
 }
@@ -643,6 +652,7 @@ fn node_kind_from_code(code: &str) -> Result<String, PackedError> {
         "67" => "ui_gallery",
         "68" => "ui_view",
         "69" => "ui_select",
+        "70" => "ui_groupby",
         _ => return Err(PackedError(format!("unknown node kind code '{code}'"))),
     }
     .into())

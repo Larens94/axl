@@ -110,12 +110,17 @@ Ordered by impact for "feels like an ERP":
    render via `action` (e.g. `avanza`, `invia`, `conferma`). Currently derived
    automatically from the entity's enum; a `statusbar <field>` override can be
    added later when drawers gain block-nested declarations.
-3. **Notebook tabs** on forms for related line tables (primitive: `tab "Label"`).
+3. ~~**Notebook tabs** for related line tables.~~ DONE — record detail renders a
+   pure-CSS notebook: a "Dettaglio" tab with the scalar fields plus one tab per
+   related `List<Entity>` field (line table). Currently auto-derived from the
+   entity's list fields; an explicit `tab "Label"` grouping can come later.
 4. **Chatter / activity** timeline on record detail (primitive: `chatter` / a
    messages+activities widget backed by an AXL store).
 5. **Search + Group By + Favorites** in the control panel (primitives:
    `search`, `groupby`, saved-view metadata).
-6. **List grouping + aggregates** and **multi-select bulk actions**.
+6. **List grouping + aggregates** (DONE — `groupby <field>` renders collapsible
+   groups with per-group counts and numeric column sums) and **multi-select bulk
+   actions** (pending).
 7. **Kanban quick-create + drag/reorder** (drag needs a client hook; keep the
    state transition in AXL via the existing `avanza`-style actions).
 8. **Systray**: global search + user menu; **app menu bar** per app.

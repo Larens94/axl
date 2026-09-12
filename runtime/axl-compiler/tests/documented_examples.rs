@@ -613,6 +613,10 @@ fn documented_invalid_examples_report_stable_codes() {
             "AXL-U933",
             include_str!("../../../examples/invalid/ui-select.axl"),
         ),
+        (
+            "AXL-U935",
+            include_str!("../../../examples/invalid/ui-groupby.axl"),
+        ),
     ];
 
     for (code, source) in cases {

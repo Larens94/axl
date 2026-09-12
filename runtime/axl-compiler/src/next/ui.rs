@@ -1001,21 +1001,87 @@ fn render_error_state(error: &Value) -> String {
     )
 }
 
-fn render_detail_card(fields: &[(String, String)]) -> String {
+fn detail_list_html(fields: &[(String, String)]) -> String {
     let rows = fields
         .iter()
-        .map(|(label, value)| format!("        <dt>{label}</dt>\n        <dd>{value}</dd>"))
+        .map(|(label, value)| {
+            format!(
+                "        <dt>{}</dt>\n        <dd>{value}</dd>",
+                human_field_label(label)
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
+    format!(
+        r#"    <dl class="detail-list">
+{rows}
+    </dl>"#
+    )
+}
+
+fn render_detail_card(fields: &[(String, String)]) -> String {
     format!(
         r#"  <section class="card detail-card">
     <div class="card-header">
       <h2 class="card-title">Dettaglio</h2>
     </div>
-    <dl class="detail-list">
-{rows}
-    </dl>
-  </section>"#
+{list}
+  </section>"#,
+        list = detail_list_html(fields)
+    )
+}
+
+/// Render a record body as an ERP-style notebook: a "Dettaglio" tab with the
+/// scalar fields, plus one tab per related `List<Entity>` field (line tables).
+/// Pure-CSS tabs (radio inputs), no JavaScript.
+fn render_notebook(scalars: &[(String, String)], list_tabs: &[(String, String)]) -> String {
+    let total = 1 + list_tabs.len();
+    let radios = (0..total)
+        .map(|index| {
+            let checked = if index == 0 { " checked" } else { "" };
+            format!(
+                r#"    <input type="radio" name="notebook" id="nb-{index}" class="nb-radio"{checked}>"#
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut tabs = vec![r#"      <label for="nb-0" class="nb-tab">Dettaglio</label>"#.to_string()];
+    for (index, (name, _)) in list_tabs.iter().enumerate() {
+        tabs.push(format!(
+            r#"      <label for="nb-{i}" class="nb-tab">{label}</label>"#,
+            i = index + 1,
+            label = html_escape(&human_field_label(name)),
+        ));
+    }
+    let mut panels = vec![format!(
+        r#"      <section class="nb-panel">
+{detail}
+      </section>"#,
+        detail = detail_list_html(scalars)
+    )];
+    for (_, table) in list_tabs {
+        panels.push(format!(
+            r#"      <section class="nb-panel">
+    <div class="table-wrap">
+{table}
+    </div>
+      </section>"#
+        ));
+    }
+    format!(
+        r#"  <section class="card notebook-card">
+    <div class="notebook">
+{radios}
+    <div class="nb-tabs">
+{tabs}
+    </div>
+    <div class="nb-panels">
+{panels}
+    </div>
+    </div>
+  </section>"#,
+        tabs = tabs.join("\n"),
+        panels = panels.join("\n"),
     )
 }
 
@@ -1186,7 +1252,7 @@ fn render_page_html(
     } else if let Some(grid) = render_gallery(graph, page, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
         format!("{filters}{grid}")
-    } else if let Some(table) = render_items_table(graph, path, output_type, data) {
+    } else if let Some(table) = render_items_table(graph, page, path, output_type, data) {
         let filters = render_page_filters(graph, page, path).unwrap_or_default();
         let pagination = render_page_pagination(path, path, data).unwrap_or_default();
         format!("{filters}{table}{pagination}")
@@ -1913,14 +1979,40 @@ fn render_statusbar_and_detail(
     let entity = strip_result(output_type);
     let statusbar = render_statusbar(graph, entity, data);
     let exclude = statusbar.as_ref().map(|(_, field)| field.clone());
-    let fields = collect_fields(graph, output_type, data)
+    let list_field_set = entity_fields(graph, entity)
+        .iter()
+        .filter(|field| {
+            field
+                .type_name
+                .as_deref()
+                .and_then(strip_list_type)
+                .is_some()
+        })
+        .map(|field| field.name.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let collected = collect_fields(graph, output_type, data)
         .into_iter()
         .filter(|(name, _)| exclude.as_deref() != Some(name.as_str()))
+        .collect::<Vec<_>>();
+    let list_tabs = collected
+        .iter()
+        .filter(|(name, value)| list_field_set.contains(name) && value.contains("nested-table"))
+        .cloned()
+        .collect::<Vec<_>>();
+    let scalars = collected
+        .iter()
+        .filter(|(name, _)| !list_field_set.contains(name))
+        .cloned()
         .collect::<Vec<_>>();
     let statusbar_html = statusbar
         .map(|(html, _)| format!("{html}\n"))
         .unwrap_or_default();
-    (statusbar_html, render_detail_card(&fields))
+    let detail = if list_tabs.is_empty() {
+        render_detail_card(&scalars)
+    } else {
+        render_notebook(&scalars, &list_tabs)
+    };
+    (statusbar_html, detail)
 }
 
 fn entity_fields<'a>(graph: &'a GraphIr, entity_name: &str) -> Vec<&'a super::ir::GraphNode> {
@@ -2409,6 +2501,76 @@ fn dashboard_styles() -> &'static str {
     @media (max-width: 760px) {
       .stack-form .form-grid { grid-template-columns: 1fr; }
     }
+    .notebook-card { padding: 0.5rem 0.5rem 1rem; }
+    .notebook .nb-radio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+    .notebook .nb-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.25rem;
+      border-bottom: 1px solid var(--border);
+      padding: 0 0.85rem;
+      margin-bottom: 1rem;
+    }
+    .notebook .nb-tab {
+      padding: 0.6rem 0.95rem;
+      cursor: pointer;
+      font-weight: 620;
+      font-size: 0.9rem;
+      color: var(--muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+    }
+    .notebook .nb-tab:hover { color: var(--text); }
+    .notebook .nb-panels { padding: 0 0.85rem; }
+    .notebook .nb-panel { display: none; }
+    .notebook .nb-radio:nth-of-type(1):checked ~ .nb-panels .nb-panel:nth-child(1),
+    .notebook .nb-radio:nth-of-type(2):checked ~ .nb-panels .nb-panel:nth-child(2),
+    .notebook .nb-radio:nth-of-type(3):checked ~ .nb-panels .nb-panel:nth-child(3),
+    .notebook .nb-radio:nth-of-type(4):checked ~ .nb-panels .nb-panel:nth-child(4),
+    .notebook .nb-radio:nth-of-type(5):checked ~ .nb-panels .nb-panel:nth-child(5),
+    .notebook .nb-radio:nth-of-type(6):checked ~ .nb-panels .nb-panel:nth-child(6) { display: block; }
+    .notebook .nb-radio:nth-of-type(1):checked ~ .nb-tabs .nb-tab:nth-child(1),
+    .notebook .nb-radio:nth-of-type(2):checked ~ .nb-tabs .nb-tab:nth-child(2),
+    .notebook .nb-radio:nth-of-type(3):checked ~ .nb-tabs .nb-tab:nth-child(3),
+    .notebook .nb-radio:nth-of-type(4):checked ~ .nb-tabs .nb-tab:nth-child(4),
+    .notebook .nb-radio:nth-of-type(5):checked ~ .nb-tabs .nb-tab:nth-child(5),
+    .notebook .nb-radio:nth-of-type(6):checked ~ .nb-tabs .nb-tab:nth-child(6) { color: var(--accent); border-bottom-color: var(--accent); }
+    .list-group { border-top: 1px solid var(--border); }
+    .list-group:first-of-type { border-top: none; }
+    .list-group > summary {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.7rem 1.35rem;
+      cursor: pointer;
+      font-weight: 620;
+      list-style: none;
+      background: var(--bg);
+    }
+    .list-group > summary::-webkit-details-marker { display: none; }
+    .list-group > summary::before {
+      content: "▸";
+      color: var(--muted);
+      font-size: 0.8rem;
+      transition: transform 0.12s ease;
+    }
+    .list-group[open] > summary::before { transform: rotate(90deg); }
+    .list-group .group-name { color: var(--text); }
+    .list-group .group-count {
+      font-size: 0.72rem;
+      font-weight: 650;
+      color: var(--muted);
+      background: var(--surface-solid);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.05rem 0.5rem;
+    }
+    .list-group .group-agg {
+      margin-left: 0.4rem;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: var(--muted);
+    }
     .gallery-card { padding: 1rem 1.35rem 1.5rem; }
     .gallery-grid {
       display: grid;
@@ -2880,8 +3042,99 @@ fn strip_list_type(type_name: &str) -> Option<&str> {
         .and_then(|value| value.strip_suffix('>'))
 }
 
+fn render_table_rows(
+    graph: &GraphIr,
+    item_type: &str,
+    columns: &[String],
+    detail_template: Option<&str>,
+    rows: &[&Value],
+) -> String {
+    rows.iter()
+        .filter_map(|item| {
+            let Value::Object(row) = item else {
+                return None;
+            };
+            let cells = columns
+                .iter()
+                .map(|column| {
+                    let cell = render_table_cell(graph, item_type, column, row, detail_template);
+                    format!("        <td>{cell}</td>")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            Some(format!("      <tr>\n{cells}\n      </tr>"))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Group list items by a field, preserving enum declaration order (or first
+/// appearance for non-enum fields). Returns (display label, items).
+fn group_items_by<'a>(
+    graph: &GraphIr,
+    item_type: &str,
+    field: &str,
+    items: &'a [Value],
+) -> Vec<(String, Vec<&'a Value>)> {
+    let is_enum = field_type(graph, item_type, field)
+        .as_deref()
+        .and_then(|type_name| enum_variants_ordered(graph, type_name))
+        .is_some();
+    let mut order: Vec<String> = Vec::new();
+    let mut buckets: std::collections::HashMap<String, Vec<&Value>> =
+        std::collections::HashMap::new();
+    for item in items {
+        let raw = item
+            .as_object()
+            .and_then(|object| object.get(field))
+            .map(display_value)
+            .unwrap_or_default();
+        if !buckets.contains_key(&raw) {
+            order.push(raw.clone());
+        }
+        buckets.entry(raw).or_default().push(item);
+    }
+    if is_enum
+        && let Some(variants) = field_type(graph, item_type, field)
+            .as_deref()
+            .and_then(|type_name| enum_variants_ordered(graph, type_name))
+    {
+        let mut ordered: Vec<String> = variants
+            .into_iter()
+            .filter(|variant| buckets.contains_key(variant))
+            .collect();
+        for key in &order {
+            if !ordered.contains(key) {
+                ordered.push(key.clone());
+            }
+        }
+        order = ordered;
+    }
+    order
+        .into_iter()
+        .map(|raw| {
+            let label = if is_enum {
+                stage_label(&raw)
+            } else {
+                raw.clone()
+            };
+            let group = buckets.remove(&raw).unwrap_or_default();
+            (label, group)
+        })
+        .collect()
+}
+
+fn format_aggregate(sum: f64) -> String {
+    if sum.fract() == 0.0 {
+        format!("{}", sum as i64)
+    } else {
+        format!("{sum:.2}")
+    }
+}
+
 fn render_items_table(
     graph: &GraphIr,
+    page: &super::ir::GraphNode,
     page_path: &str,
     output_type: &str,
     data: &Value,
@@ -2914,33 +3167,90 @@ fn render_items_table(
     }
     let header = columns
         .iter()
-        .map(|column| format!("      <th>{column}</th>"))
+        .map(|column| format!("          <th>{column}</th>"))
         .collect::<Vec<_>>()
         .join("\n");
-    let rows = items
-        .iter()
-        .filter_map(|item| {
-            let Value::Object(row) = item else {
-                return None;
-            };
-            let cells = columns
-                .iter()
-                .map(|column| {
-                    let cell = render_table_cell(
-                        graph,
-                        &item_type,
-                        column,
-                        row,
-                        detail_template.as_deref(),
-                    );
-                    format!("        <td>{cell}</td>")
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            Some(format!("      <tr>\n{cells}\n      </tr>"))
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
+
+    // Grouped list (ERP group-by with per-group count and numeric aggregates).
+    if let Some(groupby) = children(graph, &page.id, "ui_groupby").into_iter().next() {
+        let field = groupby.name.clone();
+        let numeric_cols = columns
+            .iter()
+            .filter(|column| {
+                matches!(
+                    field_type(graph, &item_type, column).as_deref(),
+                    Some("int") | Some("float") | Some("money")
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let groups = group_items_by(graph, &item_type, &field, items);
+        let sections = groups
+            .into_iter()
+            .map(|(label, group_items)| {
+                let count = group_items.len();
+                let aggregates = numeric_cols
+                    .iter()
+                    .map(|column| {
+                        let sum: f64 = group_items
+                            .iter()
+                            .filter_map(|item| item.as_object())
+                            .filter_map(|object| object.get(column))
+                            .filter_map(Value::as_f64)
+                            .sum();
+                        format!(
+                            r#"<span class="group-agg">{label}: {sum}</span>"#,
+                            label = html_escape(&human_field_label(column)),
+                            sum = format_aggregate(sum),
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("");
+                let rows = render_table_rows(
+                    graph,
+                    &item_type,
+                    &columns,
+                    detail_template.as_deref(),
+                    &group_items,
+                );
+                format!(
+                    r#"    <details class="list-group" open>
+      <summary>
+        <span class="group-name">{name}</span>
+        <span class="group-count">{count}</span>
+        {aggregates}
+      </summary>
+      <div class="table-wrap">
+        <table>
+          <thead><tr>
+{header}
+          </tr></thead>
+          <tbody>
+{rows}
+          </tbody>
+        </table>
+      </div>
+    </details>"#,
+                    name = html_escape(&label),
+                )
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Some(format!(
+            r#"  <section class="card table-card">
+    <div class="card-header"><h2 class="card-title">Elenco</h2></div>
+{sections}
+  </section>"#
+        ));
+    }
+
+    let rows = render_table_rows(
+        graph,
+        &item_type,
+        &columns,
+        detail_template.as_deref(),
+        &items.iter().collect::<Vec<_>>(),
+    );
     Some(format!(
         r#"  <section class="card table-card">
     <div class="card-header"><h2 class="card-title">Elenco</h2></div>
@@ -3834,7 +4144,7 @@ flow EchoClienti unit -> text
         assert!(rendered.html.contains("class=\"app-shell\""));
         assert!(rendered.html.contains("class=\"sidebar\""));
         assert!(rendered.html.contains("80000"));
-        assert!(rendered.html.contains("<dt>money</dt>"));
+        assert!(rendered.html.contains("<dt>Money</dt>"));
     }
 
     #[test]
@@ -4192,6 +4502,60 @@ ui Screen
     }
 
     #[test]
+    fn render_list_groups_rows_with_count_and_aggregates() {
+        const SOURCE: &str = r#"axl 4
+app GroupUi
+enum Tipo
+  a
+  b
+entity Rec
+  id: uuid key
+  nome: text required
+  valore: int required
+  tipo: Tipo required
+entity RecPage
+  items: List<Rec> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Lista unit -> Result<RecPage>
+  make r1: Rec
+    id = "1"
+    nome = "Alpha"
+    valore = 10
+    tipo = Tipo.a
+  make r2: Rec
+    id = "2"
+    nome = "Beta"
+    valore = 5
+    tipo = Tipo.b
+  make r3: Rec
+    id = "3"
+    nome = "Gamma"
+    valore = 7
+    tipo = Tipo.a
+  make page: RecPage
+    items = [r1, r2, r3]
+    total = 3
+    limit = 10
+    offset = 0
+  return page
+ui Screen
+  page /rec unit -> Result<RecPage> = Lista
+    groupby tipo
+"#;
+        let graph = compile_source(SOURCE).unwrap().graph;
+        let rendered = render_page(&graph, "/rec", json!(null)).unwrap();
+        assert!(rendered.html.contains("class=\"list-group\""));
+        assert!(rendered.html.contains(r#"group-name">A"#));
+        assert!(rendered.html.contains(r#"group-count">2"#));
+        assert!(rendered.html.contains(r#"group-name">B"#));
+        // Per-group numeric aggregate (sum of `valore`): A = 17, B = 5.
+        assert!(rendered.html.contains("Valore: 17"));
+        assert!(rendered.html.contains("Valore: 5"));
+    }
+
+    #[test]
     fn render_page_displays_entity_fields() {
         let graph = compile_source(MOVEMENT_UI).unwrap().graph;
         let rendered = render_page(
@@ -4206,9 +4570,9 @@ ui Screen
         )
         .unwrap();
         assert_eq!(rendered.data["direction"], "Entrata");
-        assert!(rendered.html.contains("<dt>direction</dt>"));
+        assert!(rendered.html.contains("<dt>Direction</dt>"));
         assert!(rendered.html.contains("Entrata"));
-        assert!(rendered.html.contains("<dt>signed_amount</dt>"));
+        assert!(rendered.html.contains("<dt>Signed_amount</dt>"));
     }
 
     #[test]
@@ -4533,7 +4897,9 @@ ui PreventivoScreen
     fn render_detail_page_emits_nested_entity_list_table() {
         let graph = compile_source(NESTED_DETAIL_UI).unwrap().graph;
         let rendered = render_page(&graph, "/preventivi", json!(null)).unwrap();
-        assert!(rendered.html.contains("<dt>righe</dt>"));
+        // The related List<> field now renders as a notebook tab (line table).
+        assert!(rendered.html.contains("class=\"notebook\""));
+        assert!(rendered.html.contains(r#"nb-tab">Righe"#));
         assert!(rendered.html.contains("class=\"nested-table\""));
         assert!(rendered.html.contains("<th>prodotto_id</th>"));
         assert!(rendered.html.contains("<th>quantita</th>"));

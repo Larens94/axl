@@ -2681,6 +2681,7 @@ fn parse_ui_page_block(
     let mut kanbans = Vec::new();
     let mut galleries = Vec::new();
     let mut views = Vec::new();
+    let mut groupbys = Vec::new();
     let mut cursor = start + 1;
     let mut found_nested = false;
     while cursor < body.len() && body[cursor].indent > line.indent {
@@ -2720,6 +2721,13 @@ fn parse_ui_page_block(
             cursor += 1;
             continue;
         }
+        if let Some(value) = binding_line.text.strip_prefix("groupby ") {
+            if let Some(groupby) = parse_ui_groupby(value.trim(), span(binding_line), diagnostics) {
+                groupbys.push(groupby);
+            }
+            cursor += 1;
+            continue;
+        }
         let (kind, prefix) = if let Some(value) = binding_line.text.strip_prefix("pagination ") {
             ("pagination", value)
         } else if let Some(value) = binding_line.text.strip_prefix("filter ") {
@@ -2735,7 +2743,7 @@ fn parse_ui_page_block(
                     span(binding_line),
                 )
                 .expected(
-                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"\n  kanban field \"Title\"\n  gallery \"Title\" [link field]\n  view \"Label\" /path",
+                    "bind field = body|body.field|path.name|query.name|header.name|cookie.name\n  filter field = query.name\n  pagination field = query.name [default value]\n  kpi field \"Label\" [\"Hint\"]\n  chart field \"Title\"\n  kanban field \"Title\"\n  gallery \"Title\" [link field]\n  view \"Label\" /path\n  groupby field",
                     &binding_line.text,
                 ),
             );
@@ -2906,6 +2914,7 @@ fn parse_ui_page_block(
         kanbans,
         galleries,
         views,
+        groupbys,
         span: span(line),
     });
     cursor
@@ -3392,6 +3401,30 @@ fn parse_ui_view(
     Some(UiView {
         label,
         path: path.to_string(),
+        span,
+    })
+}
+
+fn parse_ui_groupby(
+    source: &str,
+    span: SourceSpan,
+    diagnostics: &mut Vec<Diagnostic>,
+) -> Option<UiGroupby> {
+    let field = source.trim();
+    if field.is_empty() || field.split_whitespace().count() != 1 || !valid_name(field, false) {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-P991",
+                "parse",
+                "a UI groupby requires one field name",
+                span,
+            )
+            .expected("groupby field", source),
+        );
+        return None;
+    }
+    Some(UiGroupby {
+        field: field.to_string(),
         span,
     })
 }

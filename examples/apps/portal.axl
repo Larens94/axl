@@ -304,6 +304,7 @@ ui ContattiUi
     bind session_id = cookie.sid
     pagination limit = query.limit default 50
     pagination offset = query.offset default 0
+    groupby tipo
   form /contatti/new Contatto -> Result<Contatto> = CreaContattoSqlite submit /contatti
     title "Nuovo contatto"
     submit_label "Crea contatto"
@@ -324,6 +325,7 @@ ui InventarioUi
     pagination offset = query.offset default 0
     view "Lista" /inventario
     view "Bacheca" /inventario/bacheca
+    groupby stato
   page /inventario/bacheca ListaSessioneInput -> Result<ArticoloPage> = PaginaInventarioSessione
     bind session_id = cookie.sid
     pagination limit = query.limit default 200
