@@ -502,6 +502,9 @@ pub fn format(program: &Program) -> String {
                             view.path
                         ));
                     }
+                    for groupby in &page.groupbys {
+                        output.push(format!("    groupby {}", groupby.field));
+                    }
                 }
                 for slot in &ui.slots {
                     output.push(format!("  slot {} = {}", slot.name, slot.component));

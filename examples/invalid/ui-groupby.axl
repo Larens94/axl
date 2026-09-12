@@ -1,0 +1,23 @@
+axl 4
+app InvalidGroupby
+entity Rec
+  id: uuid key
+  nome: text required
+entity RecPage
+  items: List<Rec> required
+  total: int required
+  limit: int required
+  offset: int required
+flow Lista unit -> Result<RecPage>
+  make r: Rec
+    id = "1"
+    nome = "Alpha"
+  make page: RecPage
+    items = [r]
+    total = 1
+    limit = 10
+    offset = 0
+  return page
+ui BadGroupbyUi
+  page /rec unit -> Result<RecPage> = Lista
+    groupby nonesistente

@@ -98,6 +98,8 @@ Record detail views (drawer / modal / detail page) render an ERP-style
 "done", current highlighted — a pure-CSS **notebook** (a "Dettaglio" tab of
 scalar fields plus one tab per related `List<Entity>` line table), and create
 forms render a **two-column sheet**.
-Remaining Gate 4 polish: chatter/activity, search + group-by. The
+List pages support **`groupby <field>`**: collapsible groups with per-group
+counts and numeric column sums (e.g. Contatti by tipo, Inventario by stato).
+Remaining Gate 4 polish: chatter/activity, search box + dynamic group-by. The
 target ERP layout anatomy and the gap list/roadmap are captured in
 `docs/erp-layout-reference.md`.

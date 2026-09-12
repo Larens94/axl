@@ -3299,6 +3299,7 @@ fn check_ui(
         check_page_charts(page, declarations, diagnostics);
         check_page_kanbans(page, declarations, diagnostics);
         check_page_galleries(page, declarations, diagnostics);
+        check_page_groupbys(page, declarations, diagnostics);
         match declarations.get(page.flow.as_str()) {
             Some(Declaration::Flow(flow)) => {
                 if flow.input != page.input || flow.output != page.output {
@@ -4080,6 +4081,82 @@ fn check_page_galleries(
                     .expected("text-typed field", &field.type_name),
                 );
             }
+        }
+    }
+}
+
+fn check_page_groupbys(
+    page: &UiPage,
+    declarations: &BTreeMap<&str, &Declaration>,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if page.groupbys.is_empty() {
+        return;
+    }
+    let output = page
+        .output
+        .strip_prefix("Result<")
+        .and_then(|value| value.strip_suffix('>'))
+        .unwrap_or(page.output.as_str());
+    let item_type = declarations
+        .get(output)
+        .and_then(|declaration| match declaration {
+            Declaration::Entity(entity) => entity.fields.iter().find(|field| field.name == "items"),
+            _ => None,
+        })
+        .and_then(|field| {
+            field
+                .type_name
+                .strip_prefix("List<")
+                .and_then(|value| value.strip_suffix('>'))
+        });
+    let Some(item_type) = item_type else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U935",
+                "ui",
+                format!(
+                    "groupby page output '{output}' must expose an 'items: List<Entity>' field"
+                ),
+                page.span.clone(),
+            )
+            .expected("entity with items: List<Entity>", output),
+        );
+        return;
+    };
+    let Some(Declaration::Entity(item)) = declarations.get(item_type) else {
+        diagnostics.push(
+            Diagnostic::error(
+                "AXL-U935",
+                "ui",
+                format!("groupby list item '{item_type}' is not an entity"),
+                page.span.clone(),
+            )
+            .expected("declared entity", item_type),
+        );
+        return;
+    };
+    for groupby in &page.groupbys {
+        if !item.fields.iter().any(|field| field.name == groupby.field) {
+            diagnostics.push(
+                Diagnostic::error(
+                    "AXL-U935",
+                    "ui",
+                    format!(
+                        "groupby field '{}' is not on item entity '{}'",
+                        groupby.field, item.name
+                    ),
+                    groupby.span.clone(),
+                )
+                .expected(
+                    item.fields
+                        .iter()
+                        .map(|field| field.name.as_str())
+                        .collect::<Vec<_>>()
+                        .join("|"),
+                    &groupby.field,
+                ),
+            );
         }
     }
 }
@@ -5974,6 +6051,15 @@ fn lower_ui(ui: &Ui, graph: &mut GraphIr) {
                 .insert("order".into(), view_index.to_string());
             graph.nodes.push(value);
             graph.edges.push(edge(&id, &view_id, "owns", None));
+        }
+        for (groupby_index, groupby) in page.groupbys.iter().enumerate() {
+            let groupby_id = format!("{id}.ui_groupby.{groupby_index}");
+            let mut value = node(&groupby_id, "ui_groupby", &groupby.field);
+            value
+                .metadata
+                .insert("order".into(), groupby_index.to_string());
+            graph.nodes.push(value);
+            graph.edges.push(edge(&id, &groupby_id, "owns", None));
         }
         graph.edges.push(edge(
             &id,
